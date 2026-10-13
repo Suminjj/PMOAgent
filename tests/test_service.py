@@ -78,7 +78,7 @@ def test_duplicate_id_and_idempotent_requests(service):
 @pytest.mark.parametrize("changes", [
     {"end_date": "2026-09-30"}, {"start_date": "2026-02-30"},
     {"purchase_rate": "-1"}, {"sales_rate": "NaN"}, {"sales_rate": "Infinity"},
-    {"purchase_rate": "abc"}, {"rate_unit": ""}, {"grade": "L9"}, {"project": ""},
+    {"purchase_rate": "abc"}, {"rate_unit": ""}, {"grade": "L9"},
     {"person_id": "없는 ID"}
 ])
 def test_invalid_assignment_not_saved(service, changes):

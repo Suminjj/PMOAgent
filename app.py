@@ -1,18 +1,19 @@
 """Run with: python -m streamlit run app.py"""
 import sqlite3
-from datetime import date, datetime
+from datetime import date
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 from pmo.config import db_path, grades
-from pmo.service import ConflictError, Service, ValidationError, validate_assignment, validate_person
+from pmo.service import (
+    ConflictError, Service, ValidationError,
+    validate_assignment, validate_intake, validate_person,
+)
 
 st.set_page_config(page_title="CoE 인력관리", page_icon="👥", layout="wide")
 st.title("CoE 인력관리")
 st.caption("인력과 투입 정보를 등록하고 변경 이력을 확인하세요.")
-today = datetime.now(ZoneInfo("Asia/Seoul")).date()
 try:
     service = Service(db_path())
 except (OSError, sqlite3.Error, RuntimeError) as exc:
@@ -29,8 +30,9 @@ if message := st.session_state.pop("saved_message", None):
     st.success(message)
 
 LABELS = {
-    "id": "고유 ID", "name": "이름", "company": "업체명", "category": "분류",
-    "person_id": "인력 ID", "project": "과제명", "start_date": "시작일", "end_date": "종료일",
+    "id": "내부 관리번호", "account_id": "계정 ID",
+    "name": "이름", "company": "업체명", "category": "분류",
+    "person_id": "내부 관리번호", "project": "과제명", "start_date": "시작일", "end_date": "종료일",
     "grade": "등급", "sales_rate": "매출단가", "purchase_rate": "매입단가",
     "rate_unit": "단가 기준 단위", "version": "버전"
 }
@@ -39,7 +41,7 @@ LABELS = {
 def show_table(rows: list[dict], fields: list[str]) -> None:
     if rows:
         st.dataframe(
-            [{LABELS.get(k, k): r.get(k) for k in fields} for r in rows],
+            [{LABELS.get(k, k): r.get(k) if r.get(k) is not None else "미입력" for k in fields} for r in rows],
             use_container_width=True, hide_index=True
         )
     else:
@@ -48,7 +50,12 @@ def show_table(rows: list[dict], fields: list[str]) -> None:
 
 def stage(kind: str, data: dict, current: dict | None) -> None:
     try:
-        clean = validate_person(data) if kind == "person" else validate_assignment(data)
+        if kind == "intake":
+            clean = validate_intake(data)
+        elif kind == "person":
+            clean = validate_person(data)
+        else:
+            clean = validate_assignment(data)
         if not actor.strip():
             raise ValidationError("변경 주체를 입력하세요.")
         st.session_state["pending"] = {
@@ -68,10 +75,18 @@ def confirm() -> None:
     st.subheader("저장 전 확인")
     data, current = pending["data"], pending["current"]
     st.caption(f"변경 주체: {pending['actor']} · {'수정' if current else '신규 등록'}")
+    display_data = dict(data["person"], **data["assignment"]) if pending["kind"] == "intake" else data
     st.table([{
         "항목": LABELS[k], "기존 값": current.get(k, "") if current else "",
-        "저장할 값": value
-    } for k, value in data.items()])
+        "저장할 값": value if value is not None else "미입력"
+    } for k, value in display_data.items()])
+    if pending["kind"] == "intake":
+        st.caption("내부 관리번호는 저장 시 자동 생성됩니다. 계정 ID와 과제·단가는 나중에 보완할 수 있습니다.")
+        similar = [p for p in service.people() if p["name"] == data["person"]["name"]
+                   and p["company"] == data["person"]["company"]]
+        if similar:
+            st.warning("같은 이름·업체의 인력이 이미 있습니다. 기존 인력의 추가 투입이라면 투입 관리에서 등록하세요.")
+            show_table(similar, ["id", "name", "company", "account_id"])
     reviewed = False
     if pending["kind"] == "assignment":
         overlaps = service.overlaps(data, current["id"] if current else None)
@@ -86,7 +101,9 @@ def confirm() -> None:
         try:
             args = dict(token=pending["token"], actor=pending["actor"],
                         expected_version=current["version"] if current else None)
-            if pending["kind"] == "person":
+            if pending["kind"] == "intake":
+                result_id = service.save_intake(data, token=pending["token"], actor=pending["actor"])
+            elif pending["kind"] == "person":
                 result_id = service.save_person(data, **args)
             else:
                 result_id = service.save_assignment(
@@ -94,7 +111,7 @@ def confirm() -> None:
                     overlap_reviewed=reviewed, **args
                 )
             st.session_state.pop("pending", None)
-            st.session_state["saved_message"] = f"저장했습니다. ID: {result_id}"
+            st.session_state["saved_message"] = f"저장했습니다. 내부 관리번호: {result_id}"
             st.rerun()
         except (ValidationError, ConflictError) as exc:
             st.error(str(exc))
@@ -108,15 +125,19 @@ def confirm() -> None:
 if page == "인력 관리":
     st.subheader("인력 목록")
     people = service.people()
-    query = st.text_input("이름·ID·업체 검색", key="person_search").strip().casefold()
+    query = st.text_input("이름·업체·계정 ID·관리번호 검색", key="person_search").strip().casefold()
+    latest = {a["person_id"]: a for a in service.assignments()}
     filtered = [r for r in people if query in
-                " ".join(str(r[k]) for k in ("id", "name", "company")).casefold()]
-    show_table(filtered, ["id", "name", "company", "category"])
+                " ".join(str(r.get(k) or "") for k in ("id", "name", "company", "account_id")).casefold()]
+    overview = [dict(r, **{k: latest.get(r["id"], {}).get(k)
+                          for k in ("grade", "start_date", "end_date")}) for r in filtered]
+    show_table(overview, ["name", "company", "category", "account_id", "grade", "start_date", "end_date", "id"])
+    st.caption("등급·기간은 시작일이 가장 최근인 투입 건을 표시합니다. 전체 투입은 투입 관리에서 확인하세요.")
     options = [None] + [r["id"] for r in people]
     by_id = {r["id"]: r for r in people}
     target = st.selectbox(
         "등록 또는 수정할 인력", options,
-        format_func=lambda i: "신규 등록" if i is None else f"{by_id[i]['name']} · {i}",
+        format_func=lambda i: "신규 등록" if i is None else f"{by_id[i]['name']} · {by_id[i]['company']} · {i}",
         key="person_target"
     )
     current = by_id.get(target)
@@ -124,18 +145,36 @@ if page == "인력 관리":
     if st.session_state.get("edit_context") != context:
         st.session_state.pop("pending", None)
         st.session_state["edit_context"] = context
-    st.subheader("인력 수정" if current else "인력 등록")
+    st.subheader("인력 수정 / 계정 ID 보완" if current else "신규 투입 대상 등록")
+    if current:
+        st.caption(f"내부 관리번호: {current['id']} · 계정 ID를 입력해도 관리번호와 투입 연결은 유지됩니다.")
+    else:
+        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요.")
     with st.form(f"person_form_{target}"):
-        person_id = st.text_input("인력 ID", value=current["id"] if current else "",
-                                  disabled=bool(current), key=f"pid_{target}")
         name = st.text_input("이름", value=current["name"] if current else "", key=f"name_{target}")
-        company = st.text_input("업체명 (선택)", value=current["company"] if current else "",
+        company = st.text_input("업체명", value=current["company"] if current else "",
                                 key=f"company_{target}")
         categories = ["정", "협력", "컨설팅"]
         category = st.selectbox("분류", categories,
-                                index=categories.index(current["category"]) if current else 0)
+                                index=categories.index(current["category"]) if current else None)
+        account_id = st.text_input("계정 ID (발급 후 입력 / 선택)",
+                                    value=(current["account_id"] or "") if current else "",
+                                    key=f"account_{target}")
+        if not current:
+            grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade")
+            a, b = st.columns(2)
+            start = a.date_input("투입 시작일", value=None, key="intake_start",
+                                 min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
+            end = b.date_input("투입 종료일", value=None, key="intake_end",
+                               min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
         if st.form_submit_button("미리보기", key="preview_person"):
-            stage("person", dict(id=person_id, name=name, company=company, category=category), current)
+            person_data = dict(name=name, company=company, category=category, account_id=account_id)
+            if current:
+                stage("person", dict(person_data, id=current["id"]), current)
+            else:
+                stage("intake", dict(person=person_data, assignment=dict(
+                    grade=grade, start_date=start, end_date=end
+                )), None)
     confirm()
 
 elif page == "투입 관리":
@@ -144,7 +183,7 @@ elif page == "투입 관리":
     by_person = {r["id"]: r for r in people}
     person_id = st.selectbox(
         "인력 선택", [r["id"] for r in people],
-        format_func=lambda i: f"{by_person[i]['name']} · {i}", key="assignment_person"
+        format_func=lambda i: f"{by_person[i]['name']} · {by_person[i]['company']} · {i}", key="assignment_person"
     ) if people else None
     if person_id is None:
         st.info("먼저 인력을 등록하세요.")
@@ -155,7 +194,7 @@ elif page == "투입 관리":
     by_id = {r["id"]: r for r in rows}
     target = st.selectbox(
         "등록 또는 수정할 투입", [None] + list(by_id),
-        format_func=lambda i: "신규 등록" if i is None else f"{by_id[i]['project']} · {i}",
+        format_func=lambda i: "신규 등록" if i is None else f"{by_id[i]['project'] or '과제 미입력'} · {by_id[i]['start_date']} · {i}",
         key=f"assignment_target_{person_id}"
     )
     current = by_id.get(target)
@@ -164,26 +203,26 @@ elif page == "투입 관리":
         st.session_state.pop("pending", None)
         st.session_state["edit_context"] = context
     st.subheader("투입 수정" if current else "투입 등록")
-    st.caption("단가에는 쉼표 없이 숫자를 입력하세요. MM 계산은 아직 미설정입니다.")
+    st.caption("과제·단가는 나중에 보완할 수 있습니다. 단가 입력 시 기준 단위도 입력하세요. MM 계산은 아직 미설정입니다.")
     with st.form(f"assignment_form_{person_id}_{target}"):
-        project = st.text_input("과제명", value=current["project"] if current else "",
+        project = st.text_input("과제명 (선택)", value=(current["project"] or "") if current else "",
                                 key=f"project_{person_id}_{target}")
         a, b = st.columns(2)
-        start = a.date_input("시작일", value=date.fromisoformat(current["start_date"]) if current else today,
+        start = a.date_input("시작일", value=date.fromisoformat(current["start_date"]) if current else None,
                              min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
-        end = b.date_input("종료일", value=date.fromisoformat(current["end_date"]) if current else today,
+        end = b.date_input("종료일", value=date.fromisoformat(current["end_date"]) if current else None,
                            min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
         allowed = list(grades())
         if current and current["grade"] not in allowed:
             st.warning("기존 등급이 현재 허용 목록에 없습니다. 새 등급을 선택하세요.")
         grade = st.selectbox("등급", allowed,
-                             index=allowed.index(current["grade"]) if current and current["grade"] in allowed else 0)
-        sales = st.text_input("매출단가", value=current["sales_rate"] if current else "",
+                             index=allowed.index(current["grade"]) if current and current["grade"] in allowed else None)
+        sales = st.text_input("매출단가 (선택)", value=(current["sales_rate"] or "") if current else "",
                               key=f"sales_{person_id}_{target}")
-        purchase = st.text_input("매입단가", value=current["purchase_rate"] if current else "",
+        purchase = st.text_input("매입단가 (선택)", value=(current["purchase_rate"] or "") if current else "",
                                  key=f"purchase_{person_id}_{target}")
         unit = st.text_input("단가 기준 단위 (예: 원/MM, 원/일)",
-                             value=current["rate_unit"] if current else "",
+                             value=(current["rate_unit"] or "") if current else "",
                              key=f"unit_{person_id}_{target}")
         if st.form_submit_button("미리보기", key="preview_assignment"):
             stage("assignment", dict(person_id=person_id, project=project, start_date=start,
