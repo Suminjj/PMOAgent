@@ -1,2 +1,3 @@
 streamlit==1.65.0
 tzdata>=2025.1
+holidays==0.106

@@ -12,7 +12,8 @@ from pmo.service import ConflictError, Service, ValidationError
 def intake():
     return {
         "person": dict(name="가상 신규 인력", company="가상 업체", category="협력"),
-        "assignment": dict(grade="L6", start_date="2026-11-01", end_date="2027-01-31"),
+        "assignment": dict(grade="L6", start_date="2026-11-01", end_date="2027-01-31",
+                           assignment_type="Full time"),
     }
 
 
@@ -109,7 +110,7 @@ def test_v1_migration_backup_and_all_relationships_preserved(tmp_path):
     assert service.assignments()[0]["version"] == 3
     assert len(service.history()) == 1
     with connection(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 1
         assert con.execute("SELECT count(*) FROM requests").fetchone()[0] == 1

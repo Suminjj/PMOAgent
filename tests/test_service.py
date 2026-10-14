@@ -20,7 +20,7 @@ def person(id="FAKE-001", **changes):
 def assignment(**changes):
     data = dict(person_id="FAKE-001", project="가상 과제", start_date="2026-10-01",
                 end_date="2026-10-31", grade="L6", sales_rate="1234567.89",
-                purchase_rate="1000000.01", rate_unit="원/MM")
+                purchase_rate="1000000.01", rate_unit="원/MM", assignment_type="Full time")
     return dict(data, **changes)
 
 

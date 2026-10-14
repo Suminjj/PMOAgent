@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS assignments (
     project TEXT, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
     grade TEXT NOT NULL, sales_rate TEXT, purchase_rate TEXT,
     rate_unit TEXT, version INTEGER NOT NULL DEFAULT 1,
+    assignment_type TEXT, mm TEXT, mm_details TEXT,
     CHECK(end_date >= start_date)
 );
 CREATE INDEX IF NOT EXISTS assignments_person ON assignments(person_id);
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE TABLE IF NOT EXISTS requests (
     token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
 );
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 """
 
 
@@ -55,10 +56,13 @@ def initialize(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with connection(path) as con:
         version = con.execute("PRAGMA user_version").fetchone()[0]
-        if version == 2:
+        if version == 3:
             return
         if version == 1:
             migrate_v1(con, path)
+            version = 2
+        if version == 2:
+            migrate_v2(con, path)
             return
         tables = con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -74,7 +78,7 @@ def migrate_v1(con: sqlite3.Connection, path: Path) -> None:
     try:
         con.execute("BEGIN IMMEDIATE")
         # A second app session may have upgraded while we waited for the lock.
-        if con.execute("PRAGMA user_version").fetchone()[0] == 2:
+        if con.execute("PRAGMA user_version").fetchone()[0] >= 2:
             con.commit()
             return
         backup = path.with_name(
@@ -107,3 +111,21 @@ def migrate_v1(con: sqlite3.Connection, path: Path) -> None:
         raise
     finally:
         con.execute("PRAGMA foreign_keys = ON")
+
+
+def migrate_v2(con: sqlite3.Connection, path: Path) -> None:
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("PRAGMA user_version").fetchone()[0] == 3:
+            con.commit()
+            return
+        backup = path.with_name(path.name + ".backup-v2-" + uuid4().hex[:8] + ".db")
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
+            source.backup(destination)
+        for column in ("assignment_type", "mm", "mm_details"):
+            con.execute(f"ALTER TABLE assignments ADD COLUMN {column} TEXT")
+        con.execute("PRAGMA user_version = 3")
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise

@@ -1,11 +1,14 @@
 """Run with: python -m streamlit run app.py"""
 import sqlite3
+import json
 from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 import streamlit as st
 
 from pmo.config import db_path, grades
+from pmo.mm import calculate_full_time
 from pmo.service import (
     ConflictError, Service, ValidationError,
     validate_assignment, validate_intake, validate_person,
@@ -34,8 +37,54 @@ LABELS = {
     "name": "이름", "company": "업체명", "category": "분류",
     "person_id": "내부 관리번호", "project": "과제명", "start_date": "시작일", "end_date": "종료일",
     "grade": "등급", "sales_rate": "매출단가", "purchase_rate": "매입단가",
-    "rate_unit": "단가 기준 단위", "version": "버전"
+    "rate_unit": "단가 기준 단위", "version": "버전",
+    "assignment_type": "투입 Type", "mm": "투입 MM"
 }
+
+
+def mm_fields(start, end, current, key):
+    types = ["Full time", "Part time"]
+    existing = current.get("assignment_type") if current else "Full time"
+    mode = st.selectbox("투입 Type", types,
+                        index=types.index(existing) if existing in types else None,
+                        key=f"type_{key}")
+    manual = None
+    if mode == "Part time":
+        manual = st.text_input("투입 MM (수동)",
+                               value=(current.get("mm") or "") if current and existing == "Part time" else "",
+                               key=f"manual_mm_{key}")
+        st.caption("입력한 MM는 선택한 투입 기간 전체의 MM입니다.")
+    elif mode == "Full time":
+        if start and end:
+            try:
+                detail = calculate_full_time(start, end)
+                st.metric("자동 계산 투입 MM", f"{Decimal(detail['mm']):.6f}")
+                st.table([{"월": r["month"], "투입 근무일": r["assigned_days"],
+                           "월 전체 근무일": r["working_days"],
+                           "MM": f"{r['assigned_days']} ÷ {r['working_days']} = {Decimal(r['mm']):.6f}"}
+                          for r in detail["months"]])
+                with st.expander("계산에서 제외한 공휴일 확인"):
+                    excluded = [d for r in detail["months"] for d in r["excluded_holidays"]]
+                    st.write(excluded or "해당 월에 평일 공휴일이 없습니다.")
+                st.caption("시작·종료일 포함 · 토·일요일 및 대한민국 공휴일(대체공휴일 포함) 제외")
+            except ValueError as exc:
+                st.error(str(exc))
+        else:
+            st.info("시작일과 종료일을 입력하면 투입 MM를 자동 계산합니다.")
+    return mode, manual
+
+
+def invalidate_preview(kind, data):
+    pending = st.session_state.get("pending")
+    if not pending or pending["kind"] != kind:
+        return
+    try:
+        validators = {"intake": validate_intake, "person": validate_person, "assignment": validate_assignment}
+        if validators[kind](data) == pending["data"] and actor.strip() == pending["actor"]:
+            return
+    except ValidationError:
+        pass
+    st.session_state.pop("pending", None)
 
 
 def show_table(rows: list[dict], fields: list[str]) -> None:
@@ -79,7 +128,10 @@ def confirm() -> None:
     st.table([{
         "항목": LABELS[k], "기존 값": current.get(k, "") if current else "",
         "저장할 값": value if value is not None else "미입력"
-    } for k, value in display_data.items()])
+    } for k, value in display_data.items() if k != "mm_details"])
+    if display_data.get("mm_details"):
+        with st.expander("저장할 MM 산정 근거"):
+            st.json(display_data["mm_details"])
     if pending["kind"] == "intake":
         st.caption("내부 관리번호는 저장 시 자동 생성됩니다. 계정 ID와 과제·단가는 나중에 보완할 수 있습니다.")
         similar = [p for p in service.people() if p["name"] == data["person"]["name"]
@@ -130,8 +182,8 @@ if page == "인력 관리":
     filtered = [r for r in people if query in
                 " ".join(str(r.get(k) or "") for k in ("id", "name", "company", "account_id")).casefold()]
     overview = [dict(r, **{k: latest.get(r["id"], {}).get(k)
-                          for k in ("grade", "start_date", "end_date")}) for r in filtered]
-    show_table(overview, ["name", "company", "category", "account_id", "grade", "start_date", "end_date", "id"])
+                          for k in ("grade", "start_date", "end_date", "assignment_type", "mm")}) for r in filtered]
+    show_table(overview, ["name", "company", "category", "account_id", "grade", "start_date", "end_date", "assignment_type", "mm", "id"])
     st.caption("등급·기간은 시작일이 가장 최근인 투입 건을 표시합니다. 전체 투입은 투입 관리에서 확인하세요.")
     options = [None] + [r["id"] for r in people]
     by_id = {r["id"]: r for r in people}
@@ -150,7 +202,7 @@ if page == "인력 관리":
         st.caption(f"내부 관리번호: {current['id']} · 계정 ID를 입력해도 관리번호와 투입 연결은 유지됩니다.")
     else:
         st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요.")
-    with st.form(f"person_form_{target}"):
+    with st.container():
         name = st.text_input("이름", value=current["name"] if current else "", key=f"name_{target}")
         company = st.text_input("업체명", value=current["company"] if current else "",
                                 key=f"company_{target}")
@@ -167,14 +219,15 @@ if page == "인력 관리":
                                  min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
             end = b.date_input("투입 종료일", value=None, key="intake_end",
                                min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
-        if st.form_submit_button("미리보기", key="preview_person"):
-            person_data = dict(name=name, company=company, category=category, account_id=account_id)
-            if current:
-                stage("person", dict(person_data, id=current["id"]), current)
-            else:
-                stage("intake", dict(person=person_data, assignment=dict(
-                    grade=grade, start_date=start, end_date=end
-                )), None)
+            mode, manual_mm = mm_fields(start, end, None, "intake")
+        person_data = dict(name=name, company=company, category=category, account_id=account_id)
+        kind = "person" if current else "intake"
+        input_data = dict(person_data, id=current["id"]) if current else dict(
+            person=person_data, assignment=dict(grade=grade, start_date=start, end_date=end,
+                                                assignment_type=mode, mm=manual_mm))
+        invalidate_preview(kind, input_data)
+        if st.button("미리보기", key="preview_person"):
+            stage(kind, input_data, current)
     confirm()
 
 elif page == "투입 관리":
@@ -190,7 +243,7 @@ elif page == "투입 관리":
         st.stop()
     rows = service.assignments(person_id)
     show_table(rows, ["id", "project", "start_date", "end_date", "grade",
-                      "sales_rate", "purchase_rate", "rate_unit"])
+                      "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit"])
     by_id = {r["id"]: r for r in rows}
     target = st.selectbox(
         "등록 또는 수정할 투입", [None] + list(by_id),
@@ -203,8 +256,8 @@ elif page == "투입 관리":
         st.session_state.pop("pending", None)
         st.session_state["edit_context"] = context
     st.subheader("투입 수정" if current else "투입 등록")
-    st.caption("과제·단가는 나중에 보완할 수 있습니다. 단가 입력 시 기준 단위도 입력하세요. MM 계산은 아직 미설정입니다.")
-    with st.form(f"assignment_form_{person_id}_{target}"):
+    st.caption("과제·단가는 나중에 보완할 수 있습니다. 단가 입력 시 기준 단위도 입력하세요.")
+    with st.container():
         project = st.text_input("과제명 (선택)", value=(current["project"] or "") if current else "",
                                 key=f"project_{person_id}_{target}")
         a, b = st.columns(2)
@@ -217,6 +270,7 @@ elif page == "투입 관리":
             st.warning("기존 등급이 현재 허용 목록에 없습니다. 새 등급을 선택하세요.")
         grade = st.selectbox("등급", allowed,
                              index=allowed.index(current["grade"]) if current and current["grade"] in allowed else None)
+        mode, manual_mm = mm_fields(start, end, current, f"{person_id}_{target}")
         sales = st.text_input("매출단가 (선택)", value=(current["sales_rate"] or "") if current else "",
                               key=f"sales_{person_id}_{target}")
         purchase = st.text_input("매입단가 (선택)", value=(current["purchase_rate"] or "") if current else "",
@@ -224,10 +278,12 @@ elif page == "투입 관리":
         unit = st.text_input("단가 기준 단위 (예: 원/MM, 원/일)",
                              value=(current["rate_unit"] or "") if current else "",
                              key=f"unit_{person_id}_{target}")
-        if st.form_submit_button("미리보기", key="preview_assignment"):
-            stage("assignment", dict(person_id=person_id, project=project, start_date=start,
-                                     end_date=end, grade=grade, sales_rate=sales,
-                                     purchase_rate=purchase, rate_unit=unit), current)
+        input_data = dict(person_id=person_id, project=project, start_date=start,
+                          end_date=end, grade=grade, sales_rate=sales,
+                          purchase_rate=purchase, rate_unit=unit, assignment_type=mode, mm=manual_mm)
+        invalidate_preview("assignment", input_data)
+        if st.button("미리보기", key="preview_assignment"):
+            stage("assignment", input_data, current)
     confirm()
 
 else:

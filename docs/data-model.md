@@ -5,7 +5,7 @@
 | 테이블 | 주요 필드 | 역할 |
 | --- | --- | --- |
 | people | id, account_id, name, company, category, version | 내부 관리번호, 발급 후 계정 ID와 기본 정보 |
-| assignments | id, person_id, project, start_date, end_date, grade, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보 |
+| assignments | id, person_id, project, start_date, end_date, grade, assignment_type, mm, mm_details, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보와 MM 산정 근거 |
 | checklist | assignment_id, item, status, reason | 신규 투입과 함께 생성되는 준비 항목 |
 | audit | entity, entity_id, before_json, after_json, changed_at, actor | 등록·수정 전후 값과 주체 |
 | requests | token, payload_hash, result_id | 동일 저장 요청 재실행 방지 |
@@ -50,9 +50,19 @@
 - 분류별 업체명 및 계약 필수값
 - 매출·매입단가별 단위, 적용 기간과 실제 조건 변경 처리
 - 구매기간·구매MM·계약 관계
-- 구매시스템 기준 MM 공식·휴일 달력·반올림 규칙
+- 회사 지정·임시공휴일과 구매시스템 달력 일치 및 검수 금액 반올림 규칙
 - 체크리스트 상태 변경과 해당 없음 사유 검증 화면
 
-스키마 버전은 PRAGMA user_version=2이다. v1은 백업 후 마이그레이션하며 기존
+스키마 버전은 PRAGMA user_version=3이다. v1·v2는 백업 후 마이그레이션하며 기존
 관리번호·금액·이력·연결 관계를 보존한다. 기존의 직접 입력한 ID를 계정 ID로 추정하지 않는다.
 미확인 스키마는 자동 재생성하거나 삭제하지 않고 실행을 중단한다.
+
+## MM 저장
+
+- assignment_type은 Full time / Part time이다. 신규 등록에서 필수이며 기존 DB에서
+  가져온 건은 NULL을 유지하여 과거 투입 방식을 임의 추정하지 않는다.
+- mm은 Decimal 문자열로 저장한다. Full time의 사용자 입력값을 신뢰하지 않고 업무 함수에서 계산한다.
+- mm_details는 자동 계산 시 월별 분자·분모, 제외 공휴일, 전체 분수, 달력 버전과 추가 휴일을 보존한다.
+  Part time은 수동 입력이라는 근거와 MM 값을 보존한다.
+- 날짜·Type 수정 시 MM를 다시 산정하고 전후 값은 변경 이력에 함께 저장한다.
+- MM는 투입 정보이며 확정 검수 금액을 의미하지 않는다.

@@ -1,0 +1,30 @@
+
+CREATE TABLE IF NOT EXISTS people (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN ('정','협력','컨설팅')),
+    version INTEGER NOT NULL DEFAULT 1, account_id TEXT
+);
+CREATE TABLE IF NOT EXISTS assignments (
+    id TEXT PRIMARY KEY, person_id TEXT NOT NULL REFERENCES people(id),
+    project TEXT, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+    grade TEXT NOT NULL, sales_rate TEXT, purchase_rate TEXT,
+    rate_unit TEXT, version INTEGER NOT NULL DEFAULT 1,
+    CHECK(end_date >= start_date)
+);
+CREATE INDEX IF NOT EXISTS assignments_person ON assignments(person_id);
+CREATE TABLE IF NOT EXISTS checklist (
+    assignment_id TEXT NOT NULL REFERENCES assignments(id),
+    item TEXT NOT NULL, status TEXT NOT NULL DEFAULT '미진행',
+    reason TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(assignment_id, item)
+);
+CREATE TABLE IF NOT EXISTS audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL, entity_id TEXT NOT NULL,
+    before_json TEXT, after_json TEXT NOT NULL,
+    changed_at TEXT NOT NULL, actor TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS requests (
+    token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
+);
+PRAGMA user_version = 2;

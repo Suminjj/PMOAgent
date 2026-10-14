@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from pmo.config import grades
 from pmo.db import connection, initialize
+from pmo.mm import calculate_full_time
 
 
 class ValidationError(ValueError):
@@ -70,6 +71,21 @@ def validate_assignment(data: dict) -> dict:
         result[key] = None if value is None or str(value).strip() == "" else money(str(value), label)
     if any(result[k] is not None for k in ("sales_rate", "purchase_rate")) and not result["rate_unit"]:
         raise ValidationError("단가를 입력하면 단가 기준 단위도 입력하세요.")
+    assignment_type = data.get("assignment_type")
+    if assignment_type not in ("Full time", "Part time"):
+        raise ValidationError("투입 Type을 선택하세요.")
+    result["assignment_type"] = assignment_type
+    if assignment_type == "Full time":
+        try:
+            detail = calculate_full_time(date.fromisoformat(result["start_date"]),
+                                         date.fromisoformat(result["end_date"]))
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        result["mm"] = detail["mm"]
+    else:
+        result["mm"] = money(str(data.get("mm")) if data.get("mm") is not None else "", "투입 MM")
+        detail = {"mode": "manual", "mm": result["mm"]}
+    result["mm_details"] = json.dumps(detail, ensure_ascii=False, sort_keys=True)
     return result
 
 
