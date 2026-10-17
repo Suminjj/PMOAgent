@@ -1,8 +1,7 @@
 """평가 하네스: 질문별 정답 도구·결과·응답 시간·성공 여부를 기록한다.
 
-현재는 'oracle' 모드만 있다. 정답 도구 호출 순서를 그대로 실행해 도구 계층과 데이터가
-질문에 답할 수 있는지 검증한다. LLM 연결 후에는 Planner를 구현해 같은 질문으로
-LLM의 도구 선택과 응답 시간을 기록한다.
+- oracle: 정답 도구 호출을 그대로 실행해 도구 계층과 데이터가 질문에 답할 수 있는지 검증한다.
+- agent: LLM Agent가 실제로 고른 도구 호출을 정답과 비교하고, 답변과 응답 시간을 함께 기록한다.
 """
 import json
 import tempfile
@@ -21,18 +20,33 @@ RESULTS_DIR = ROOT / "evals" / "results"
 
 
 class Planner(Protocol):
-    """질문을 받아 실행할 도구 호출 목록 [(이름, 입력)]을 정한다."""
+    """질문을 받아 실행할(또는 실행한) 도구 호출 목록 [(이름, 입력)]을 돌려준다."""
     name: str
 
-    def plan(self, question: dict, tools: list[dict]) -> list[tuple[str, dict]]: ...
+    def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]: ...
 
 
 class OraclePlanner:
     """정답 도구 호출을 그대로 사용한다(LLM 없이 도구·데이터 검증용)."""
     name = "oracle"
 
-    def plan(self, question: dict, tools: list[dict]) -> list[tuple[str, dict]]:
+    def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]:
         return [(s["tool"], s["args"]) for s in question["steps"]]
+
+
+class AgentPlanner:
+    """LLM Agent에 질문을 그대로 묻고, Agent가 호출한 도구를 돌려준다."""
+
+    def __init__(self, client):
+        from pmo.agent.runner import ask  # LLM 없이 oracle만 쓸 때 불필요한 import를 피한다
+        self._ask = ask
+        self.client = client
+        self.name = client.name.replace(":", "-").replace("/", "-")
+        self.last: dict = {}
+
+    def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]:
+        self.last = self._ask(service, question["question"], self.client)
+        return [(c["tool"], c["arguments"]) for c in self.last["calls"]]
 
 
 def check(expect: dict, result: dict) -> list[str]:
@@ -66,16 +80,24 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
         seed_demo(service, today)
         for q in spec["questions"]:
             t0 = time.perf_counter()
-            calls = planner.plan(q, tool_specs())
+            calls = planner.plan(q, tool_specs(), service)
             expected = [(s["tool"], s["args"]) for s in q["steps"]]
             problems = []
             if [c[0] for c in calls] != [e[0] for e in expected]:
                 problems.append(f"도구 순서 {[c[0] for c in calls]} (기대 {[e[0] for e in expected]})")
             for (name, args), step in zip(calls, q["steps"]):
                 problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
-            rows.append({"id": q["id"], "question": q["question"], "tools": [c[0] for c in calls],
-                         "success": not problems, "problems": problems,
-                         "duration_ms": round((time.perf_counter() - t0) * 1000)})
+            row = {"id": q["id"], "question": q["question"], "tools": [c[0] for c in calls],
+                   "success": not problems, "problems": problems,
+                   "duration_ms": round((time.perf_counter() - t0) * 1000)}
+            last = getattr(planner, "last", None)
+            if last:
+                row.update(answer=last["answer"], agent_error=last["error"],
+                           agent_ms=last["duration_ms"])
+                if last["error"]:
+                    row["success"] = False
+                    row["problems"].append(f"Agent 오류: {last['error']}")
+            rows.append(row)
     report = {"planner": planner.name, "today": spec["today"],
               "run_at": datetime.now(TIMEZONE).isoformat(),
               "passed": sum(r["success"] for r in rows), "total": len(rows), "results": rows}

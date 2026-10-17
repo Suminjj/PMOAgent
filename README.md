@@ -84,9 +84,43 @@ python -m streamlit run app.py
 
 단가는 쉼표 없이 입력하며 0원도 유효한 입력입니다. 빈 단가는 미입력으로 저장·표시하며
 0원으로 대체하지 않습니다. 이름·업체명이 같아도 별도의 내부 관리번호로 등록할 수 있습니다.
-검수 금액 계산, 월별 구매 필요 판정, 자연어 요청은 후속 단계입니다.
+검수 금액 계산, 월별 구매 필요 판정, 자연어 등록·수정은 후속 단계입니다.
 신규 투입 저장 시 4개 준비 체크리스트 항목은 함께 생성합니다.
 항목의 조회·상태 변경 화면은 다음 단계에서 구현합니다.
+
+## 로컬 LLM으로 자연어 조회 (Ollama)
+
+LLM은 PC에서 직접 실행하는 [Ollama](https://ollama.com)를 사용합니다. 질문과 데이터가 PC 밖으로 나가지 않습니다.
+LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
+
+1. Ollama를 설치하고 실행합니다(Windows 설치 파일 사용).
+2. 모델을 받습니다. RAM 32GB PC 기준으로 아래 순서로 시험해 보세요.
+
+   ```powershell
+   ollama pull qwen3:8b       # 기본값, 가볍고 빠름
+   ollama pull gemma4:9b      # 비교 후보
+   ollama pull qwen3:14b      # 비교 후보 (조금 더 무거움)
+   ollama show qwen3:8b       # Capabilities에 tools가 있어야 함
+   ```
+
+3. 평가 질문으로 모델을 비교합니다. 질문별 정답 도구 선택 여부, 답변, 응답 시간이 출력되고
+   `evals/results/`에 저장됩니다.
+
+   ```powershell
+   .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b,gemma4:9b,qwen3:14b
+   ```
+
+4. 고른 모델로 앱의 '자연어 조회' 메뉴에서 질문합니다. 터미널에서 한 번 물어볼 수도 있습니다.
+
+   ```powershell
+   $env:PMO_OLLAMA_MODEL = "qwen3:8b"
+   $env:PMO_DB_PATH = "data\demo.db"
+   .venv\Scripts\python.exe -m scripts.ask "베타컨설팅 10월 계약 종료 예정 인력 알려줘"
+   .venv\Scripts\python.exe -m streamlit run app.py
+   ```
+
+Agent는 조회 도구만 사용하며 등록·수정은 하지 않습니다. 구매 필요 판정·검수 금액은 규칙이 미확정이라
+'구현 예정'으로 안내합니다. 첫 질문은 모델을 메모리에 올리느라 느릴 수 있습니다.
 
 ## 설정
 
@@ -95,6 +129,9 @@ python -m streamlit run app.py
 | PMO_DB_PATH | 저장소의 data/pmo.db | 별도 DB 파일 경로 |
 | PMO_GRADES | L7,L6,L5 | 쉼표로 구분한 허용 등급 |
 | PMO_EXTRA_HOLIDAYS | 빈 값 | 추가 제외할 회사 휴일·임시공휴일(YYYY-MM-DD, 쉼표 구분) |
+| PMO_OLLAMA_MODEL | qwen3:8b | 자연어 조회에 쓸 Ollama 모델 |
+| PMO_OLLAMA_URL | http://localhost:11434 | Ollama 서버 주소 |
+| PMO_OLLAMA_THINK | 빈 값 | `true`/`false`로 추론 모드 지정(지원 모델만). 비우면 모델 기본값 |
 
 Windows PowerShell 예:
 
@@ -122,8 +159,8 @@ python -m scripts.run_evals
 ```
 
 `run_evals`는 가상 데이터를 임시 DB에 넣고 대표 질문(`evals/questions.json`)마다 정답 도구를 실행해
-성공 여부와 소요 시간을 `evals/results/`에 기록합니다. 지금은 LLM 없이 도구·데이터만 검증하며,
-LLM 연결 후에는 같은 질문으로 LLM의 도구 선택과 응답 시간을 기록하도록 확장합니다.
+성공 여부와 소요 시간을 `evals/results/`에 기록합니다. `--model`을 주면 로컬 LLM Agent로 같은 질문을
+실행해 모델별 정답률과 응답 시간을 비교합니다(위 '로컬 LLM' 참고).
 
 별도 임시 DB와 가상 데이터로 저장 지속성, 동명이인, 유효성 검증,
 변경 이력, 중복 요청, 수정 충돌, 트랜잭션 롤백을 검증합니다.
@@ -137,7 +174,9 @@ Streamlit AppTest로 미리보기·취소·저장·수정·재실행 흐름을 �
 - `pmo/db.py`: 연결, 스키마와 마이그레이션
 - `pmo/service.py`: 유효성 검증, 등록·수정·이력 저장, 계약·알림·투입 이력 조회, 실행 기록
 - `pmo/contracts.py`: 계약 검증과 알림 기준 계산
-- `pmo/tools.py`: 향후 Agent가 호출할 도구 계층
+- `pmo/tools.py`: Agent가 호출하는 도구 계층
+- `pmo/agent/`: LLM 연결(Ollama), 시스템 프롬프트, Agent 실행 루프
+- `scripts/ask.py`: 터미널에서 자연어 질문
 - `pmo/harness.py`, `scripts/run_evals.py`, `evals/`: 평가 하네스
 - `pmo/demo.py`, `scripts/seed_demo.py`: 가상 데이터
 - `agent_skills/`: 서비스 Agent 업무 지침 (아직 서비스에 연결되지 않음)
