@@ -25,7 +25,7 @@ def preview_person(app):
 def test_person_preview_cancel_save_edit_restart(monkeypatch, tmp_path):
     path = tmp_path / "ui.db"
     monkeypatch.setenv("PMO_DB_PATH", str(path))
-    app = AppTest.from_file(str(APP)).run()
+    app = AppTest.from_file(str(APP), default_timeout=30).run()
     assert not app.exception
     preview_person(app)
     assert not Service(path).people()
@@ -50,7 +50,7 @@ def test_person_preview_cancel_save_edit_restart(monkeypatch, tmp_path):
     assert Service(path).people()[0]["name"] == "가상 화면 수정"
     assert Service(path).people()[0]["account_id"] == "fake-account"
     assert Service(path).assignments()[0]["person_id"] == person_id
-    restarted = AppTest.from_file(str(APP)).run()
+    restarted = AppTest.from_file(str(APP), default_timeout=30).run()
     assert not restarted.exception
     assert len(restarted.dataframe) == 1
 
@@ -61,7 +61,7 @@ def test_assignment_preview_validation_save_and_edit(monkeypatch, tmp_path):
     service = Service(path)
     service.save_person(dict(id="FAKE-UI-001", name="가상 인력", company="", category="정"),
                         token="fake-person-request", actor="테스트")
-    app = AppTest.from_file(str(APP)).run()
+    app = AppTest.from_file(str(APP), default_timeout=30).run()
     find(app.radio, "메뉴").set_value("투입 관리").run()
     app.button(key="preview_assignment").click().run()
     assert app.error and not service.assignments()

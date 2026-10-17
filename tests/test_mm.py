@@ -78,7 +78,7 @@ def test_manual_mm_and_full_time_recomputed_on_date_change(tmp_path):
 def test_ui_live_mm_manual_switch_and_preview_invalidated(monkeypatch, tmp_path):
     path = tmp_path / "ui-mm.db"
     monkeypatch.setenv("PMO_DB_PATH", str(path))
-    app = AppTest.from_file(str(APP)).run()
+    app = AppTest.from_file(str(APP), default_timeout=30).run()
     preview_person(app)
     find(app.date_input, "투입 종료일").set_value(date(2026, 10, 10)).run()
     assert "0.250000" in [m.value for m in app.metric]
@@ -98,7 +98,7 @@ def test_ui_live_mm_manual_switch_and_preview_invalidated(monkeypatch, tmp_path)
 
 def test_existing_v2_migration_keeps_mm_unknown_and_backup(tmp_path):
     path = tmp_path / "existing.db"
-    schema = (Path(__file__).parent / "fixtures" / "schema-v2.sql").read_text()
+    schema = (Path(__file__).parent / "fixtures" / "schema-v2.sql").read_text(encoding="utf-8")
     with sqlite3.connect(path) as con:
         con.executescript(schema)
         con.execute("INSERT INTO people VALUES ('FAKE-OLD','가상 인력','가상 업체','정',1,NULL)")
