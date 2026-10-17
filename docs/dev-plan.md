@@ -19,7 +19,7 @@
 | 6 | 화면: 구매계약 관리, 계약 종료 알림, 시작 시 알림 배너, 투입 현재·과거 구분, 실행 기록 | 완료 |
 | 7 | Agent 도구 계층(`pmo/tools.py`)과 평가 질문·하네스(oracle) | 완료 |
 | 8 | 가상 데이터 시드, AGENTS.md·CLAUDE.md, 개발 스킬·서비스 업무 지침, README | 완료 |
-| 9 | (시간이 남으면) LLM 연결 자연어 조회 | 미착수 — LLM API 미정 |
+| 9 | 로컬 LLM(Ollama) 연결 자연어 조회, 모델 비교 평가 | 완료 |
 
 ## 폴더 구조
 
@@ -33,13 +33,15 @@ pmo/
   contracts.py             계약 검증·알림 기준 계산 (DB 없는 순수 함수)
   mm.py                    Full time MM 계산
   tools.py                 Agent 도구 계층 (입력 스키마·결과 형식)
+  agent/                   LLM 연결(llm.py), 프롬프트(prompts.py), 실행 루프(runner.py)
   harness.py               평가 하네스 (Planner, 질문별 결과 기록)
   demo.py                  가상 데이터
 scripts/
   seed_demo.py             가상 데이터 넣기
-  run_evals.py             평가 질문 실행
+  run_evals.py             평가 질문 실행 (--model로 로컬 LLM 비교)
+  ask.py                   터미널 자연어 질문
 evals/questions.json       대표 질문·정답 도구·기대 결과
-agent_skills/              서비스 Agent 업무 지침 (서비스 미연결)
+agent_skills/              서비스 Agent 업무 지침 (부분 연결)
 .claude/skills/            Claude Code 개발 스킬
 docs/                      데이터 설계, 개발 계획
 tests/                     자동 테스트
@@ -66,6 +68,6 @@ requests  저장 요청 토큰 (중복 저장 방지)
 ## 다음 단계 제안
 
 1. 체크리스트 상태 변경·해당 없음 사유 화면
-2. LLM 제공자 확정 후 `Planner` 구현 → 단일 Agent 자연어 조회 → 평가 질문으로 정확도·응답 시간 측정
+2. 로컬 모델 비교 후 기본 모델 확정, 평가 질문 확대, 업무 지침(agent_skills) 프롬프트 주입
 3. 구매 필요 판정·검수 금액 규칙 확정 후 해당 도구 구현
 4. 인력·계약·검수 전문 Agent 분리 (멀티에이전트), 업무 지침 RAG 검색
