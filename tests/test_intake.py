@@ -85,7 +85,7 @@ def test_failed_assignment_rolls_back_intake_and_audit(tmp_path):
 
 
 def legacy_database(path):
-    schema = (Path(__file__).parent / "fixtures" / "schema-v1.sql").read_text()
+    schema = (Path(__file__).parent / "fixtures" / "schema-v1.sql").read_text(encoding="utf-8")
     with sqlite3.connect(path) as con:
         con.executescript(schema)
         con.execute("INSERT INTO people VALUES ('FAKE-OLD','가상 기존 인력','가상 업체','협력',2)")
@@ -110,7 +110,7 @@ def test_v1_migration_backup_and_all_relationships_preserved(tmp_path):
     assert service.assignments()[0]["version"] == 3
     assert len(service.history()) == 1
     with connection(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 4
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 1
         assert con.execute("SELECT count(*) FROM requests").fetchone()[0] == 1

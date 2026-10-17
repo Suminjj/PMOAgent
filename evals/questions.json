@@ -1,0 +1,70 @@
+{
+  "about": "자연어 조회 평가 질문. 가상 데이터(pmo/demo.py)를 기준일 today에 넣은 뒤 실행한다. steps는 정답 도구 호출 순서, expect는 결과 검증 조건이다.",
+  "today": "2026-10-17",
+  "questions": [
+    {
+      "id": "Q1",
+      "question": "이가상 지금 무슨 과제에 투입되어 있어?",
+      "template": "A 차장 지금 무슨 과제에 투입되어 있어?",
+      "steps": [
+        {"tool": "find_people", "args": {"name": "이가상"}, "expect": {"ok": true, "count": 1}},
+        {"tool": "get_assignment_timeline", "args": {"person_id": "DEMO-002"},
+         "expect": {"ok": true, "current_projects": ["가상 과제 Y"]}}
+      ]
+    },
+    {
+      "id": "Q2",
+      "question": "김가상의 CoE 전체 투입 과제와 기간을 알려줘.",
+      "template": "A 차장의 CoE 전체 투입 과제와 기간을 알려줘.",
+      "note": "동명이인 2명. Agent는 바로 답하지 말고 대상 확인을 요청해야 한다.",
+      "steps": [
+        {"tool": "find_people", "args": {"name": "김가상"}, "expect": {"ok": true, "count": 2}}
+      ]
+    },
+    {
+      "id": "Q3",
+      "question": "박가상 구매계약 언제까지야?",
+      "template": "A 차장 구매계약 언제까지야?",
+      "steps": [
+        {"tool": "find_people", "args": {"name": "박가상"}, "expect": {"ok": true, "count": 1}},
+        {"tool": "list_contracts", "args": {"person_id": "DEMO-003"},
+         "expect": {"ok": true, "end_dates": ["2026-12-01"]}}
+      ]
+    },
+    {
+      "id": "Q4",
+      "question": "베타컨설팅의 10월 계약 종료 예정 인력 알려줘.",
+      "template": "B 업체의 10월 계약 종료 예정 인력 알려줘.",
+      "steps": [
+        {"tool": "contracts_ending", "args": {"year": 2026, "month": 10, "company": "베타컨설팅"},
+         "expect": {"ok": true, "names": ["이가상"]}}
+      ]
+    },
+    {
+      "id": "Q5",
+      "question": "처리 안 한 계약 만료 알림 있어?",
+      "steps": [
+        {"tool": "pending_contract_alerts", "args": {}, "expect": {"ok": true, "names": ["김가상", "이가상"]}}
+      ]
+    },
+    {
+      "id": "Q6",
+      "question": "11월 구매계약이 필요한 인력 리스트 뽑아줘.",
+      "template": "11월 구매계약이 필요한 인력 리스트 뽑아줘.",
+      "note": "구매 필요 판정 기준 미확정. 구현 예정 도구라 실패해야 정상이다.",
+      "steps": [
+        {"tool": "monthly_purchase_needs", "args": {"year": 2026, "month": 11}, "expect": {"ok": false}}
+      ]
+    },
+    {
+      "id": "Q7",
+      "question": "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
+      "template": "B 업체의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
+      "note": "검수 금액 규칙 미확정. 구현 예정 도구라 실패해야 정상이다.",
+      "steps": [
+        {"tool": "inspection_amount_by_revenue_project",
+         "args": {"company": "베타컨설팅", "year": 2026, "month": 9}, "expect": {"ok": false}}
+      ]
+    }
+  ]
+}
