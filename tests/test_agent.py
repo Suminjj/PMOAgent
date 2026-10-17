@@ -108,7 +108,9 @@ def test_agent_planner_in_eval_harness():
                 self.current = list(script[key]) if key else [text("모르겠습니다.")]
             return self.current.pop(0)
 
-    report = run(AgentPlanner(PerQuestion()), save=False)
+    seen = []
+    report = run(AgentPlanner(PerQuestion()), save=False, on_result=lambda r: seen.append(r["id"]))
+    assert seen == [r["id"] for r in report["results"]]  # 질문마다 바로 알림
     rows = {r["id"]: r for r in report["results"]}
     assert rows["Q1"]["success"] and rows["Q1"]["answer"] == "가상 과제 Y"
     assert rows["Q1"]["agent_ms"] >= 0
@@ -157,6 +159,7 @@ def test_ollama_client_request_and_tool_call_parsing(fake_ollama):
     assert reply == {"content": "", "tool_calls": [{"name": "find_people", "arguments": {"name": "김가상"}}]}
     path, body = FakeOllama.received[0]
     assert path == "/api/chat" and body["model"] == "qwen3:8b" and body["stream"] is False
+    assert body["options"]["num_ctx"] == 8192  # Ollama 기본 4096이면 지시문·도구 설명이 잘릴 수 있다
     assert body["tools"][0]["function"]["parameters"]["properties"]["name"]["type"] == "string"
 
 

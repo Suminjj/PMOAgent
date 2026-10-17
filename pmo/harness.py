@@ -70,7 +70,8 @@ def check(expect: dict, result: dict) -> list[str]:
 
 
 def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
-        save: bool = True) -> dict:
+        save: bool = True, on_result=None) -> dict:
+    """on_result(row): 질문 하나가 끝날 때마다 호출된다(진행 상황 출력용)."""
     planner = planner or OraclePlanner()
     spec = json.loads(Path(questions_path).read_text(encoding="utf-8"))
     today = date.fromisoformat(spec["today"])
@@ -98,6 +99,8 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                     row["success"] = False
                     row["problems"].append(f"Agent 오류: {last['error']}")
             rows.append(row)
+            if on_result:
+                on_result(row)
     report = {"planner": planner.name, "today": spec["today"],
               "run_at": datetime.now(TIMEZONE).isoformat(),
               "passed": sum(r["success"] for r in rows), "total": len(rows), "results": rows}

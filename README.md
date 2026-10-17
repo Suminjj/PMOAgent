@@ -123,6 +123,10 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
 Agent는 조회 도구만 사용하며 등록·수정은 하지 않습니다. 구매 필요 판정·검수 금액은 규칙이 미확정이라
 '구현 예정'으로 안내합니다. 첫 질문은 모델을 메모리에 올리느라 느릴 수 있습니다.
 
+평가는 질문이 끝날 때마다 결과를 출력합니다. 그래픽카드 메모리가 작아 `ollama ps`의 PROCESSOR가
+CPU/GPU로 나뉘면 질문당 1분 이상 걸릴 수 있습니다. 이때는 모델을 하나씩 돌리고,
+qwen3처럼 추론 모드가 있는 모델은 `$env:PMO_OLLAMA_THINK = "false"`로 꺼서 속도를 비교해 보세요.
+
 ## 설정
 
 | 환경변수 | 기본값 | 용도 |
@@ -133,6 +137,7 @@ Agent는 조회 도구만 사용하며 등록·수정은 하지 않습니다. �
 | PMO_OLLAMA_MODEL | qwen3:8b | 자연어 조회에 쓸 Ollama 모델 |
 | PMO_OLLAMA_URL | http://localhost:11434 | Ollama 서버 주소 |
 | PMO_OLLAMA_THINK | 빈 값 | `true`/`false`로 추론 모드 지정(지원 모델만). 비우면 모델 기본값 |
+| PMO_OLLAMA_NUM_CTX | 8192 | 모델이 한 번에 읽는 길이(토큰). Ollama 기본 4096은 지시문·도구 설명이 잘릴 수 있어 늘려 둠 |
 
 Windows PowerShell 예:
 

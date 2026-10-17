@@ -38,16 +38,18 @@ class OllamaClient:
     """로컬 Ollama 서버(/api/chat). 네트워크 밖으로 데이터를 보내지 않는다."""
 
     def __init__(self, model: str | None = None, base_url: str | None = None,
-                 timeout: float = 120.0):
+                 timeout: float = 300.0):
         self.model = model or os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b")
         self.base_url = (base_url or os.environ.get("PMO_OLLAMA_URL", "http://localhost:11434")).rstrip("/")
         self.timeout = timeout
+        self.num_ctx = int(os.environ.get("PMO_OLLAMA_NUM_CTX", "8192"))
         self.name = f"ollama:{self.model}"
 
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
         payload = {
             "model": self.model, "messages": messages, "stream": False,
-            "options": {"temperature": 0},
+            # num_ctx: Ollama 기본 문맥(4096)은 지시문+도구 설명+조회 결과를 다 담지 못해 앞부분이 잘릴 수 있다.
+            "options": {"temperature": 0, "num_ctx": self.num_ctx},
             "tools": [{"type": "function", "function": {
                 "name": t["name"], "description": t["description"], "parameters": t["input_schema"],
             }} for t in tools],

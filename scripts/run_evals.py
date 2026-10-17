@@ -13,17 +13,19 @@ import sys
 from pmo.harness import AgentPlanner, OraclePlanner, run
 
 
+def print_row(row: dict) -> None:
+    mark = "PASS" if row["success"] else "FAIL"
+    ms = row.get("agent_ms", row["duration_ms"])
+    print(f"[{mark}] {row['id']} {ms:>6}ms  {row['question']}")
+    print(f"        도구: {' → '.join(row['tools']) or '(호출 없음)'}")
+    if row.get("answer"):
+        print("        답변: " + row["answer"].replace("\n", " ")[:160])
+    for problem in row["problems"]:
+        print(f"        - {problem}")
+    sys.stdout.flush()
+
+
 def report(result: dict) -> None:
-    print(f"\n=== {result['planner']} ===")
-    for row in result["results"]:
-        mark = "PASS" if row["success"] else "FAIL"
-        ms = row.get("agent_ms", row["duration_ms"])
-        print(f"[{mark}] {row['id']} {ms:>6}ms  {row['question']}")
-        print(f"        도구: {' → '.join(row['tools']) or '(호출 없음)'}")
-        if row.get("answer"):
-            print("        답변: " + row["answer"].replace("\n", " ")[:160])
-        for problem in row["problems"]:
-            print(f"        - {problem}")
     times = [r.get("agent_ms", r["duration_ms"]) for r in result["results"]]
     print(f"{result['passed']}/{result['total']} 통과 · 평균 {sum(times) // max(len(times), 1)}ms"
           f" · 결과 파일: {result.get('saved_to')}")
@@ -38,9 +40,12 @@ def main() -> int:
     else:
         from pmo.agent.llm import OllamaClient
         planners = [AgentPlanner(OllamaClient(model=m.strip())) for m in args.model.split(",") if m.strip()]
-    results = [run(p) for p in planners]
-    for result in results:
+    results = []
+    for planner in planners:
+        print(f"\n=== {planner.name} === (질문 하나가 끝날 때마다 표시됩니다)", flush=True)
+        result = run(planner, on_result=print_row)
         report(result)
+        results.append(result)
     if len(results) > 1:
         print("\n=== 비교 ===")
         for r in results:
