@@ -1,8 +1,9 @@
 # PMOAgent — CoE 인력관리
 
-Python · Streamlit · SQLite로 동작하는 로컬 PoC입니다. 현재 단계에서는
-인력과 투입 정보를 등록·조회·수정하고 변경 이력을 확인할 수 있습니다.
-LLM API 키 없이 실행할 수 있습니다.
+Python · Streamlit · SQLite로 동작하는 로컬 MVP입니다. 인력·투입·구매계약 정보를
+등록·조회·수정하고, 계약 종료 예정 목록과 종료 14일 전 알림, 변경 이력을 확인할 수 있습니다.
+LLM API 키 없이 폼과 버튼으로 사용합니다. 개발 지침은 [AGENTS.md](AGENTS.md),
+개발 계획과 구조는 [docs/dev-plan.md](docs/dev-plan.md)에 있습니다.
 
 ## 실행
 
@@ -41,6 +42,27 @@ python -m streamlit run app.py
 실제 데이터는 개인 PC에만 저장하고 Git에 커밋하지 마세요.
 별도의 샘플 데이터는 자동으로 등록하지 않습니다.
 
+## 가상 데이터로 시연하기
+
+업무 DB와 분리된 시연용 DB에 가상 인력 5명·투입·계약을 넣고 그 DB로 앱을 실행합니다.
+오늘 날짜를 기준으로 종료 예정·알림 사례가 보이도록 만들어집니다.
+데이터가 이미 있는 DB에는 넣지 않습니다.
+
+```bash
+python -m scripts.seed_demo              # data/demo.db 생성
+PMO_DB_PATH=data/demo.db python -m streamlit run app.py
+```
+
+Windows PowerShell:
+
+```powershell
+python -m scripts.seed_demo
+$env:PMO_DB_PATH = "data\demo.db"
+python -m streamlit run app.py
+```
+
+시연 DB를 지우고 다시 만들려면 앱을 종료한 뒤 `data/demo.db` 파일만 삭제하고 다시 실행하세요.
+
 ## 사용 순서
 
 1. 사이드바의 변경 주체를 입력합니다. 이 값은 이력 기록용이며 사용자 인증은 아닙니다.
@@ -53,10 +75,16 @@ python -m streamlit run app.py
    과제·매출·매입단가는 모르면 비워둘 수 있습니다. 단가를 입력하면 단위(예: 원/MM)도 입력합니다.
 5. 투입 기간이 다른 건과 겹치면 내역을 검토하고 검토 확인란을 선택합니다.
 6. 목록 아래에서 기존 인력·투입을 선택하여 수정하고 변경 이력에서 전후 값을 확인합니다.
+   투입 관리는 현재·예정·과거 투입을 나눠 보여주며, 투입 과제와 별도로 매출귀속 프로젝트를 입력할 수 있습니다.
+7. 구매계약 관리에서 협력·컨설팅 인력의 계약을 등록합니다. 계약번호 발급 전이면 상태를 '준비'로,
+   발급 후 '확정'으로 바꾸고 계약번호를 입력합니다. 연장 계약은 새로 등록하면서 이전 계약을 선택합니다.
+8. 구매계약 관리 상단에서 연·월·업체를 골라 계약 종료 예정 인력을 조회합니다.
+9. 계약 종료 14일 전부터 화면 상단과 '계약 종료 알림' 메뉴에 표시됩니다. 앱을 다시 실행해도
+   미확인 대상은 계속 표시됩니다. '확인'은 알림을 봤다는 기록이며 계약 갱신 완료와는 별개입니다.
 
 단가는 쉼표 없이 입력하며 0원도 유효한 입력입니다. 빈 단가는 미입력으로 저장·표시하며
 0원으로 대체하지 않습니다. 이름·업체명이 같아도 별도의 내부 관리번호로 등록할 수 있습니다.
-검수 금액 계산, 계약 관리, 자연어 요청은 후속 단계입니다.
+검수 금액 계산, 월별 구매 필요 판정, 자연어 요청은 후속 단계입니다.
 신규 투입 저장 시 4개 준비 체크리스트 항목은 함께 생성합니다.
 항목의 조회·상태 변경 화면은 다음 단계에서 구현합니다.
 
@@ -90,7 +118,12 @@ PMO_DB_PATH=/absolute/path/pmo.db PMO_GRADES=L7,L6,L5 python -m streamlit run ap
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
+python -m scripts.run_evals
 ```
+
+`run_evals`는 가상 데이터를 임시 DB에 넣고 대표 질문(`evals/questions.json`)마다 정답 도구를 실행해
+성공 여부와 소요 시간을 `evals/results/`에 기록합니다. 지금은 LLM 없이 도구·데이터만 검증하며,
+LLM 연결 후에는 같은 질문으로 LLM의 도구 선택과 응답 시간을 기록하도록 확장합니다.
 
 별도 임시 DB와 가상 데이터로 저장 지속성, 동명이인, 유효성 검증,
 변경 이력, 중복 요청, 수정 충돌, 트랜잭션 롤백을 검증합니다.
@@ -100,9 +133,15 @@ Streamlit AppTest로 미리보기·취소·저장·수정·재실행 흐름을 �
 ## 구성 및 데이터
 
 - `app.py`: Streamlit 입력·조회·미리보기·확인 화면
-- `pmo/config.py`: DB 경로와 허용 등급 설정
-- `pmo/db.py`: 연결과 초기 스키마
-- `pmo/service.py`: 유효성 검증과 등록·수정·이력 저장
+- `pmo/config.py`: DB 경로, 허용 등급, 기준일(Asia/Seoul) 설정
+- `pmo/db.py`: 연결, 스키마와 마이그레이션
+- `pmo/service.py`: 유효성 검증, 등록·수정·이력 저장, 계약·알림·투입 이력 조회, 실행 기록
+- `pmo/contracts.py`: 계약 검증과 알림 기준 계산
+- `pmo/tools.py`: 향후 Agent가 호출할 도구 계층
+- `pmo/harness.py`, `scripts/run_evals.py`, `evals/`: 평가 하네스
+- `pmo/demo.py`, `scripts/seed_demo.py`: 가상 데이터
+- `agent_skills/`: 서비스 Agent 업무 지침 (아직 서비스에 연결되지 않음)
+- `.claude/skills/`: Claude Code 개발 스킬
 - `tests/`: 업무 로직 및 화면 흐름 테스트
 - [데이터 설계](docs/data-model.md): 필드 의미, 저장 규칙 및 후속 TODO
 
@@ -130,6 +169,9 @@ DB 백업·복구는 앱을 종료한 상태에서 `data/pmo.db` 또는 설정�
 변경 실패 시 DB 구조 변경을 되돌리고 오류를 표시합니다. 수동 복구가 필요하면 앱을 종료하고,
 현재 DB를 별도 보관한 뒤 백업 파일을 원래 DB 경로로 복사하세요.
 백업 파일도 업무 데이터를 포함하므로 Git에 추가하지 마세요.
+
+구매계약 기능 업데이트 시 v3 DB는 `pmo.db.backup-v3-구분값.db` 백업 후 v4로 변경합니다.
+기존 인력·투입·이력은 그대로 두고 계약·알림·실행 기록 테이블과 매출귀속 프로젝트 칸만 추가합니다.
 
 MM 기능 업데이트 시 v2 DB도 백업 후 v3로 변경합니다.
 기존 투입 건의 Type과 MM는 임의 추정하지 않고 미입력으로 유지합니다.

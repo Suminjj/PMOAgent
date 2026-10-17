@@ -1,4 +1,0 @@
-interface:
-  display_name: "PMOAgent 기능 구현·검증"
-  short_description: "AGENTS.md에 따라 PMOAgent 기능을 구현하고 검증하는 개발 절차"
-  default_prompt: "$pmo-feature-development를 사용해 PMOAgent의 요청한 기능을 구현하고 검증해줘."
