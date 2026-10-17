@@ -2,7 +2,7 @@
 
     python -m scripts.run_evals                          # oracle: 도구·데이터 검증 (LLM 없음)
     python -m scripts.run_evals --model qwen3:8b          # 로컬 Ollama 모델로 Agent 평가
-    python -m scripts.run_evals --model qwen3:8b,gemma4:9b  # 여러 모델 비교
+    python -m scripts.run_evals --model qwen3:8b,gemma4:12b  # 여러 모델 비교
 
 가상 데이터를 임시 DB에 넣고 질문별 도구 선택·성공 여부·응답 시간을 기록한다.
 결과는 evals/results/ 에 JSON으로 저장된다(Git 추적 제외).

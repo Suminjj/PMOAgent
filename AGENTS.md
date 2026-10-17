@@ -49,7 +49,7 @@
 - [확정] 개발 AI: Claude Code
 - [확정] 언어 Python, 화면 Streamlit, DB 로컬 SQLite
 - [확정] LLM: PC에서 실행하는 로컬 LLM(Ollama). 데이터를 외부로 보내지 않는다.
-- [제안] 기본 모델 `qwen3:8b`, 비교 후보 `gemma4:9b`·`qwen3:14b`. 최종 모델은 평가 결과로 정한다 [TODO]
+- [제안] 기본 모델 `qwen3:8b`, 비교 후보 `gemma4:12b`·`qwen3:14b`. 최종 모델은 평가 결과로 정한다 [TODO]
 - [확정] 초기부터 복잡한 프레임워크를 도입하지 않고 MVP 완성을 우선한다. LangGraph 등 도입 시점은 [TODO]
 - [제안] 데이터 처리는 표준 라이브러리 우선, 필요 시 pandas
 - 기존 저장소의 구성·의존성과 충돌하면 먼저 설명한다.

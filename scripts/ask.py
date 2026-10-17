@@ -1,7 +1,7 @@
 """자연어로 한 번 물어보기 (로컬 Ollama).
 
     python -m scripts.ask "베타컨설팅 10월 계약 종료 예정 인력 알려줘"
-    python -m scripts.ask --model gemma4:9b "김가상 지금 무슨 과제야?"
+    python -m scripts.ask --model gemma4:12b "김가상 지금 무슨 과제야?"
 
 DB는 PMO_DB_PATH(기본 data/pmo.db)를 쓴다. 시연 DB를 쓰려면 PMO_DB_PATH=data/demo.db.
 조회만 하며 데이터를 바꾸지 않는다.

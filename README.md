@@ -98,16 +98,17 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
 
    ```powershell
    ollama pull qwen3:8b       # 기본값, 가볍고 빠름
-   ollama pull gemma4:9b      # 비교 후보
+   ollama pull gemma4:12b     # 비교 후보 (Google, 약 8GB)
    ollama pull qwen3:14b      # 비교 후보 (조금 더 무거움)
    ollama show qwen3:8b       # Capabilities에 tools가 있어야 함
+   # 이름에 cloud가 붙은 모델(예: gemma4:cloud)은 Ollama 서버에서 실행되어 데이터가 PC 밖으로 나가므로 쓰지 않습니다.
    ```
 
 3. 평가 질문으로 모델을 비교합니다. 질문별 정답 도구 선택 여부, 답변, 응답 시간이 출력되고
    `evals/results/`에 저장됩니다.
 
    ```powershell
-   .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b,gemma4:9b,qwen3:14b
+   .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b,gemma4:12b,qwen3:14b
    ```
 
 4. 고른 모델로 앱의 '자연어 조회' 메뉴에서 질문합니다. 터미널에서 한 번 물어볼 수도 있습니다.
