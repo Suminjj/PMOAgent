@@ -24,7 +24,8 @@
 ## 폴더 구조
 
 ```
-app.py                     Streamlit 화면 (입력·미리보기·확인·조회)
+app.py                     Streamlit 화면 (홈: AI Agent 챗봇·수행 결과 / 메뉴별 입력·조회 화면)
+ui/agent_view.py           홈 화면 오른쪽 수행 결과 패널
 pmo/
   config.py                DB 경로, 등급, 기준일(Asia/Seoul), 알림 일수
   db.py                    SQLite 연결·스키마·마이그레이션(v1→v4, 백업)

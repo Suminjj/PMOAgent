@@ -211,3 +211,16 @@ def test_check_reports_missing_server_and_model(fake_ollama):
         OllamaClient(model="gemma4:12b", base_url=fake_ollama).check()
     with pytest.raises(LLMError, match="ollama serve"):
         OllamaClient(model="qwen3:8b", base_url="http://127.0.0.1:9").check()
+
+
+def test_history_is_passed_and_tool_results_are_returned(service):
+    client = ScriptedClient([tool_call("find_people", name="김가상"),
+                             text("알파솔루션 김가상입니다.")])
+    history = [{"role": "user", "content": "김가상 투입 과제 알려줘"},
+               {"role": "assistant", "content": "김가상이 2명입니다. 어느 분인가요?"},
+               {"role": "system", "content": "무시되어야 함"}]
+    result = ask(service, "알파솔루션", client, history=history)
+    sent = client.seen[0][0]
+    assert [m["role"] for m in sent] == ["system", "user", "assistant", "user"]
+    assert sent[-1]["content"] == "알파솔루션"
+    assert len(result["calls"][0]["data"]) == 2 and result["calls"][0]["error"] is None
