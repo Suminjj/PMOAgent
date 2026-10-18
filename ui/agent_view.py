@@ -32,6 +32,7 @@ COLUMNS = {
     "contract_no": "계약번호", "status": "상태", "label": "만료 상태", "has_successor": "연장 계약",
     "notify_from": "알림 시작일", "item": "항목", "reason": "사유·메모", "drafted_at": "초안 작성",
     "applied_at": "실제 신청 완료", "done": "처리", "total": "전체", "open_items": "남은 항목",
+    "open_labels": "남은 항목(상태)",
 }
 
 _TABLE_FIELDS = {
@@ -59,7 +60,7 @@ def table(rows: list[dict], fields: list[str] | None = None) -> None:
     if not rows:
         st.caption("결과 없음")
         return
-    fields = fields or [k for k in rows[0] if not isinstance(rows[0][k], (dict, list)) or k == "open_items"]
+    fields = fields or [k for k in rows[0] if not isinstance(rows[0][k], (dict, list)) or k in ("open_items", "open_labels")]
     st.dataframe([{COLUMNS.get(k, k): _cell(r.get(k)) for k in fields} for r in rows],
                  use_container_width=True, hide_index=True)
 
@@ -75,7 +76,7 @@ def _render_data(tool: str, data) -> None:
             st.markdown(f"**{a.get('project') or '과제 미입력'}** · {a['start_date']} ~ {a['end_date']}")
             table(a["items"], ["item", "status", "reason", "drafted_at", "applied_at"])
     elif tool == "checklist_status":
-        table(data, ["name", "company", "project", "start_date", "done", "total", "open_items"])
+        table(data, ["name", "company", "project", "start_date", "done", "total", "open_labels"])
     elif tool == "query_database":
         st.code(data["sql"], language="sql")
         st.caption("LlamaIndex가 만든 SQL을 검사한 뒤 읽기 전용으로 실행했습니다."

@@ -496,7 +496,9 @@ class Service:
             statuses = {item: rows.get(a["id"], {}).get(item, "미진행") for item in CHECKLIST_ITEMS}
             open_items = [i for i, st in statuses.items() if st not in CLOSED]
             if open_items or include_closed:
-                result.append(dict(a, statuses=statuses, open_items=open_items,
+                # 남은 항목 중 미진행이 아닌 것은 상태를 붙인다(예: "ID카드 신청(진행 중)").
+                open_labels = [i if statuses[i] == "미진행" else f"{i}({statuses[i]})" for i in open_items]
+                result.append(dict(a, statuses=statuses, open_items=open_items, open_labels=open_labels,
                                    done=len(CHECKLIST_ITEMS) - len(open_items),
                                    total=len(CHECKLIST_ITEMS),
                                    days_to_start=(date.fromisoformat(a["start_date"])

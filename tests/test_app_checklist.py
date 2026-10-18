@@ -56,3 +56,16 @@ def test_draft_keeps_status(ready):
     assert not app.exception
     row = Service(path).checklist(aid)[2]
     assert row["draft"] and row["status"] == "미진행"
+
+
+def test_overview_table_shows_each_item_status(ready):
+    path, app, aid = ready
+    service = Service(path)
+    item = service.checklist(aid)[1]
+    service.update_checklist_item(aid, item["item"], "진행 중", token="ui-overview", actor="담당자",
+                                  expected_version=item["version"])
+    app.run()
+    table = app.dataframe[0].value
+    row = table[table["투입 관리번호"] == aid].iloc[0]
+    assert row["ID카드 신청"] == "진행 중" and row["좌석 배정"] == "미진행"
+    assert "남은 항목" not in table.columns
