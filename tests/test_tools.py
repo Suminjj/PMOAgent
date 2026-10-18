@@ -59,7 +59,7 @@ def test_eval_detects_wrong_tool_choice():
     class Wrong:
         name = "wrong"
 
-        def plan(self, question, tools):
+        def plan(self, question, tools, service):
             return [("pending_contract_alerts", {})]
 
     report = run(Wrong(), save=False)

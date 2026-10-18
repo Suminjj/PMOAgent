@@ -31,7 +31,8 @@ try:
 except sqlite3.Error:
     pending_alerts = []
     st.sidebar.error("계약 만료 알림을 확인하지 못했습니다.")
-page = st.sidebar.radio("메뉴", ["인력 관리", "투입 관리", "구매계약 관리", "계약 종료 알림", "변경 이력"])
+page = st.sidebar.radio("메뉴", ["인력 관리", "투입 관리", "구매계약 관리", "계약 종료 알림",
+                                "자연어 조회", "변경 이력"])
 if pending_alerts:
     st.sidebar.warning(f"미확인 계약 종료 알림 {len(pending_alerts)}건")
 if pending_alerts and page != "계약 종료 알림":
@@ -437,6 +438,35 @@ elif page == "계약 종료 알림":
                     st.error(str(exc))
                 except sqlite3.Error:
                     st.error("확인 처리를 저장하지 못했습니다. 다시 시도하세요.")
+
+elif page == "자연어 조회":
+    from pmo.agent.llm import OllamaClient
+    from pmo.agent.runner import ask
+
+    st.subheader("자연어 조회 (베타)")
+    client = OllamaClient()
+    st.caption(f"로컬 LLM({client.name})이 조회 도구를 골라 답합니다. 데이터는 PC 밖으로 나가지 않으며, "
+               "등록·수정은 하지 않습니다. 결과는 각 메뉴의 화면에서 다시 확인하세요.")
+    question = st.text_input("질문", placeholder="예: 베타컨설팅 10월 계약 종료 예정 인력 알려줘",
+                             key="nl_question")
+    if st.button("질문하기", key="nl_ask", type="primary"):
+        if not question.strip():
+            st.error("질문을 입력하세요.")
+        else:
+            with st.spinner("도구를 고르고 조회하는 중입니다…"):
+                st.session_state["nl_result"] = dict(ask(service, question.strip(), client),
+                                                     question=question.strip())
+    result = st.session_state.get("nl_result")
+    if result:
+        st.markdown(f"**질문:** {result['question']}")
+        if result["ok"]:
+            st.markdown(result["answer"])
+        else:
+            st.error(result["error"])
+            st.info("LLM 없이도 각 메뉴 화면에서 같은 정보를 조회할 수 있습니다.")
+        with st.expander(f"사용한 도구 {len(result['calls'])}개 · {result['duration_ms']}ms"):
+            for call in result["calls"]:
+                st.write(f"{'✅' if call['ok'] else '⚠️'} {call['tool']} {call['arguments']}")
 
 else:
     st.subheader("변경 이력")

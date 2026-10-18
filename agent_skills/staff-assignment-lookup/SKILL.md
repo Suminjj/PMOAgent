@@ -1,7 +1,7 @@
 ---
 name: staff-assignment-lookup
 description: 특정 인력이 지금 어느 과제에 투입되어 있는지, 과거·예정 투입 과제와 기간이 무엇인지 묻는 요청에 사용한다.
-status: 서비스 미연결 (LLM API 연결 후 적용)
+status: 부분 연결 (도구는 Agent에 연결됨, 이 지침 본문은 프롬프트 미주입)
 ---
 
 # 인력 투입 조회
