@@ -414,11 +414,13 @@ elif page == "근무 환경 준비":
     if not overview:
         st.success("준비가 남은 투입이 없습니다.")
         st.stop()
+    # 항목마다 상태를 한 칸씩 보여준다. '진행'은 완료·해당 없음으로 끝난 항목 수다.
     st.dataframe([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
                    "시작일": r["start_date"], "시작까지": start_label(r["days_to_start"]),
-                   "진행": f"{r['done']}/{r['total']}", "남은 항목": ", ".join(r["open_items"]) or "-",
+                   "끝난 항목": f"{r['done']}/{r['total']}", **r["statuses"],
                    "투입 관리번호": r["id"]} for r in overview],
                  use_container_width=True, hide_index=True)
+    st.caption("'끝난 항목'은 완료·해당 없음 처리한 항목 수입니다. 진행 중인 항목은 아직 끝나지 않은 것으로 셉니다.")
     by_assignment = {r["id"]: r for r in overview}
     aid = st.selectbox(
         "확인할 투입", list(by_assignment), key="ck_assignment",

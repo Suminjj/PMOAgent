@@ -115,7 +115,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 def _checklist_status(service: Service, person_id: str | None) -> list[dict]:
     if not person_id:
         return [{k: r[k] for k in ("id", "name", "company", "project", "start_date", "done", "total",
-                                   "open_items")} for r in service.checklist_overview()]
+                                   "open_labels")} for r in service.checklist_overview()]
     return [{"assignment_id": a["id"], "project": a["project"], "start_date": a["start_date"],
              "end_date": a["end_date"],
              "items": [{k: c[k] for k in ("item", "status", "reason", "drafted_at", "applied_at")}

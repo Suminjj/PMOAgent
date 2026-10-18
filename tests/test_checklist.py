@@ -118,6 +118,14 @@ def test_overview_lists_open_items_by_start_date(service):
     assert {r["id"] for r in service.checklist_overview(include_closed=True)} == {late, soon}
 
 
+def test_overview_shows_status_of_items_in_progress(service):
+    aid = setup_assignment(service)
+    update(service, aid, "ID카드 신청", "진행 중")
+    row = service.checklist_overview()[0]
+    assert row["statuses"]["ID카드 신청"] == "진행 중" and row["done"] == 0   # 진행 중은 아직 끝나지 않음
+    assert row["open_labels"] == ["좌석 배정", "ID카드 신청(진행 중)", "OA기기 신청", "방문예약"]
+
+
 def test_missing_items_from_old_data_are_shown_and_created_on_save(service):
     aid = setup_assignment(service)
     with connection(service.path) as con:
