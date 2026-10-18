@@ -3,9 +3,9 @@ import streamlit as st
 
 EXAMPLES = (
     "처리 안 한 계약 만료 알림 있어?",
-    "베타컨설팅 이번 달 계약 종료 예정 인력 알려줘",
     "이가상 지금 무슨 과제에 투입되어 있어?",
-    "근무 환경 준비가 남은 투입 알려줘",
+    "협력 인력 중 계정 ID가 없는 사람 몇 명이야?",
+    "이가상 ID카드 신청 진행 중으로 바꿔줘",
 )
 
 TOOL_LABELS = {
@@ -17,7 +17,12 @@ TOOL_LABELS = {
     "checklist_status": "근무 환경 준비 현황",
     "monthly_purchase_needs": "월별 구매 필요 인력 (구현 예정)",
     "inspection_amount_by_revenue_project": "매출귀속 프로젝트별 검수 금액 (구현 예정)",
-    "prepare_contract_change": "계약 변경 미리보기 (구현 예정)",
+    "query_database": "자유 조회 (Text-to-SQL, 읽기 전용)",
+    "prepare_checklist_update": "근무 환경 준비 상태 변경",
+    "prepare_contract_save": "구매계약 등록·수정",
+    "prepare_contract_delete": "구매계약 삭제",
+    "prepare_account_id": "계정 ID 입력",
+    "prepare_alert_ack": "계약 종료 알림 확인",
 }
 
 COLUMNS = {
@@ -27,6 +32,7 @@ COLUMNS = {
     "contract_no": "계약번호", "status": "상태", "label": "만료 상태", "has_successor": "연장 계약",
     "notify_from": "알림 시작일", "item": "항목", "reason": "사유·메모", "drafted_at": "초안 작성",
     "applied_at": "실제 신청 완료", "done": "처리", "total": "전체", "open_items": "남은 항목",
+    "open_labels": "남은 항목(상태)",
 }
 
 _TABLE_FIELDS = {
@@ -54,7 +60,7 @@ def table(rows: list[dict], fields: list[str] | None = None) -> None:
     if not rows:
         st.caption("결과 없음")
         return
-    fields = fields or [k for k in rows[0] if not isinstance(rows[0][k], (dict, list)) or k == "open_items"]
+    fields = fields or [k for k in rows[0] if not isinstance(rows[0][k], (dict, list)) or k in ("open_items", "open_labels")]
     st.dataframe([{COLUMNS.get(k, k): _cell(r.get(k)) for k in fields} for r in rows],
                  use_container_width=True, hide_index=True)
 
@@ -70,15 +76,24 @@ def _render_data(tool: str, data) -> None:
             st.markdown(f"**{a.get('project') or '과제 미입력'}** · {a['start_date']} ~ {a['end_date']}")
             table(a["items"], ["item", "status", "reason", "drafted_at", "applied_at"])
     elif tool == "checklist_status":
-        table(data, ["name", "company", "project", "start_date", "done", "total", "open_items"])
+        table(data, ["name", "company", "project", "start_date", "done", "total", "open_labels"])
+    elif tool == "query_database":
+        st.code(data["sql"], language="sql")
+        st.caption("LlamaIndex가 만든 SQL을 검사한 뒤 읽기 전용으로 실행했습니다."
+                   + (" 결과가 많아 일부만 표시합니다." if data.get("truncated") else ""))
+        table(data["rows"], data["columns"] or None)
     elif isinstance(data, list):
         table(data, _TABLE_FIELDS.get(tool))
     else:
         st.json(data)
 
 
-def render_turn_results(turn: dict) -> None:
-    """질문 한 번에 Agent가 사용한 도구와 결과를 차례로 보여준다."""
+def render_turn_results(turn: dict, service=None, actor: str = "", turn_index: int = 0) -> None:
+    """질문 한 번에 Agent가 사용한 도구와 결과를 차례로 보여준다.
+
+    prepare_* 도구 결과(변경 계획)는 '현재 → 변경' 확인 카드로 보여주고, 사용자 확인 후에만 저장한다.
+    """
+    from ui.agent_actions import render_plan
     st.caption(f"질문: {turn['question']}")
     if not turn["calls"]:
         if turn["ok"]:
@@ -91,7 +106,11 @@ def render_turn_results(turn: dict) -> None:
             args = ", ".join(f"{k}={v}" for k, v in call["arguments"].items()) or "입력 없음"
             st.markdown(f"**{number}. {TOOL_LABELS.get(call['tool'], call['tool'])}**")
             st.caption(f"{call['tool']}({args})")
-            if call["ok"]:
+            if call["ok"] and call["tool"].startswith("prepare_") and service is not None:
+                render_plan(service, call["data"]["plan"], f"act{turn_index}_{number}", actor, turn, number)
+            elif call["ok"]:
                 _render_data(call["tool"], call.get("data"))
+            elif call["tool"].startswith("prepare_"):
+                st.info(f"확인 카드를 만들지 않았습니다: {call.get('error')}")
             else:
                 st.warning(call.get("error") or "도구 실행에 실패했습니다.")

@@ -25,6 +25,11 @@ except (OSError, sqlite3.Error, RuntimeError) as exc:
 
 actor = st.sidebar.text_input("변경 주체", value="로컬 담당자")
 st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가 아닙니다.")
+# 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
+_people_count = len(service.people())
+st.sidebar.caption(f"연결된 DB: {service.path.name} · 인력 {_people_count}명")
+if _people_count == 0:
+    st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 # 앱 실행(재실행) 시마다 미처리 계약 만료 대상을 다시 확인한다.
 try:
     pending_alerts = service.pending_alerts()
@@ -208,13 +213,13 @@ if page == "홈":
 
     with chat_col:
         st.subheader("AI Agent")
-        st.caption(f"로컬 LLM({client.name})이 조회 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
-                   "등록·수정은 아직 왼쪽 메뉴의 각 화면에서 하세요.")
+        st.caption(f"로컬 LLM({client.name})이 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
+                   "등록·수정·삭제는 오른쪽에 '현재 → 변경' 확인 카드가 뜨고, '확인 후 저장'을 눌러야 반영됩니다.")
         with st.container(height=480, border=True):
             if not turns:
                 with st.chat_message("assistant"):
-                    st.markdown("무엇을 도와드릴까요? 인력의 투입 과제, 구매계약 기간, "
-                                "계약 종료 예정, 근무 환경 준비 상황을 물어보세요.")
+                    st.markdown("무엇을 도와드릴까요? 인력·투입·구매계약·근무 환경 준비를 묻거나, "
+                                "상태 변경·계약 등록·수정·삭제를 요청하세요. 저장은 오른쪽 확인 카드에서 확인 후 진행됩니다.")
             for turn in turns:
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
@@ -224,6 +229,8 @@ if page == "홈":
                     else:
                         st.error(turn["error"])
                         st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
+                    for message in turn.get("done", {}).values():
+                        st.success(message)
                     st.caption(f"도구 {len(turn['calls'])}개 사용 · {turn['duration_ms'] / 1000:.1f}초")
         asked = None
         if not turns:
@@ -259,7 +266,7 @@ if page == "홈":
                     "결과를 볼 질문", list(range(len(turns))), index=selected,
                     key=f"home_pick_{len(turns)}",
                     format_func=lambda i: f"{i + 1}. {turns[i]['question'][:40]}")
-            render_turn_results(turns[selected])
+            render_turn_results(turns[selected], service, actor, selected)
 
 elif page == "인력 관리":
     st.subheader("인력 목록")
@@ -398,11 +405,13 @@ elif page == "근무 환경 준비":
     if not overview:
         st.success("준비가 남은 투입이 없습니다.")
         st.stop()
+    # 항목마다 상태를 한 칸씩 보여준다. '진행'은 완료·해당 없음으로 끝난 항목 수다.
     st.dataframe([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
                    "시작일": r["start_date"], "시작까지": start_label(r["days_to_start"]),
-                   "진행": f"{r['done']}/{r['total']}", "남은 항목": ", ".join(r["open_items"]) or "-",
+                   "끝난 항목": f"{r['done']}/{r['total']}", **r["statuses"],
                    "투입 관리번호": r["id"]} for r in overview],
                  use_container_width=True, hide_index=True)
+    st.caption("'끝난 항목'은 완료·해당 없음 처리한 항목 수입니다. 진행 중인 항목은 아직 끝나지 않은 것으로 셉니다.")
     by_assignment = {r["id"]: r for r in overview}
     aid = st.selectbox(
         "확인할 투입", list(by_assignment), key="ck_assignment",

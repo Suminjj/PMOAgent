@@ -179,6 +179,36 @@
           }
         }
       ]
+    },
+    {
+      "id": "Q9",
+      "question": "이가상 ID카드 신청 진행 중으로 바꿔줘",
+      "template": "A 차장 ID카드 신청 진행 중으로 바꿔줘",
+      "note": "저장은 하지 않고 값을 채운 제안만 해야 한다.",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "이가상"
+          },
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "prepare_checklist_update",
+          "args": {
+            "person_id": "DEMO-002",
+            "item": "ID카드 신청",
+            "status": "진행 중"
+          },
+          "expect": {
+            "ok": true,
+            "action": "checklist_update"
+          }
+        }
+      ]
     }
   ]
 }

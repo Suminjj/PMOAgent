@@ -1,5 +1,6 @@
 """홈 화면(AI Agent 챗봇 + 수행 결과) 테스트 (Streamlit AppTest + 가짜 Ollama 서버, 가상 데이터)."""
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -85,3 +86,29 @@ def test_example_button_and_llm_unavailable(app, monkeypatch):
     app.button(key="home_example_0").click().run()
     assert not app.exception
     assert any("연결할 수 없습니다" in e.value for e in app.error)
+
+
+def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
+    REPLIES[:] = [tool("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중"),
+                  say("화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요.")]
+    app.chat_input[0].set_value("이가상 ID카드 신청 진행 중으로 바꿔줘").run()
+    assert not app.exception
+    service = Service(Path(os.environ["PMO_DB_PATH"]))
+    aid = service.assignments("DEMO-002")[0]["id"]
+    assert service.checklist(aid)[1]["status"] == "미진행"            # 카드만으로는 저장 안 됨
+    rows = app.table[0].value
+    assert list(rows["변경"])[3] == "진행 중"                          # 현재 → 변경 카드
+    assert not [s for s in app.selectbox if s.key and s.key.startswith("act")]  # 값을 고르는 양식이 없음
+    app.button(key="act0_1_confirm").click().run()
+    assert not app.exception
+    assert service.checklist(aid)[1]["status"] == "진행 중"
+
+
+def test_cancel_does_not_save(app):
+    REPLIES[:] = [tool("prepare_account_id", person_id="DEMO-002", account_id="lee.fake"), say("확인해 주세요.")]
+    app.chat_input[0].set_value("이가상 계정 ID lee.fake로 넣어줘").run()
+    app.button(key="act0_1_cancel").click().run()
+    assert not app.exception
+    service = Service(Path(os.environ["PMO_DB_PATH"]))
+    assert next(p for p in service.people() if p["id"] == "DEMO-002")["account_id"] is None
+    assert any("취소했습니다" in i.value for i in app.info)

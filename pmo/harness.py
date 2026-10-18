@@ -62,6 +62,8 @@ def check(expect: dict, result: dict) -> list[str]:
         problems.append(f"인력 {sorted({r['name'] for r in data})} (기대 {sorted(expect['names'])})")
     if "end_dates" in expect and sorted(r["end_date"] for r in data) != sorted(expect["end_dates"]):
         problems.append(f"종료일 {[r['end_date'] for r in data]} (기대 {expect['end_dates']})")
+    if "action" in expect and (data or {}).get("plan", {}).get("action") != expect["action"]:
+        problems.append(f"변경 계획 {(data or {}).get('plan', {}).get('action')} (기대 {expect['action']})")
     if "current_projects" in expect:
         got = sorted(r["project"] for r in data["current"])
         if got != sorted(expect["current_projects"]):

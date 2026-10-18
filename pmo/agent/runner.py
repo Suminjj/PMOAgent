@@ -24,6 +24,25 @@ def _tool_message(name: str, result: dict) -> dict:
     return {"role": "tool", "tool_name": name, "content": text}
 
 
+def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> dict:
+    """prepare_* 도구에 대상 인력이 빠졌으면 사용자 문장에 나온 등록 인력 이름으로 채운다.
+
+    작은 로컬 모델은 find_people을 건너뛰고 person_id를 비워 보내는 일이 있다. 이번 질문을 먼저 보고,
+    없으면 최근 사용자 메시지를 거슬러 본다. 동명이인은 이름만 넣어 두고 변경 계획 단계에서 되묻는다.
+    """
+    if not tool.startswith("prepare_") or str(args.get("person_id") or "").strip():
+        return args
+    names = {p["name"] for p in service.people()}
+    for text in texts:
+        found = sorted({n for n in names if n and n in text}, key=len, reverse=True)
+        found = [n for n in found if not any(n != m and n in m for m in found)]  # 긴 이름 우선
+        if len(found) == 1:
+            return dict(args, person_id=found[0])
+        if found:
+            return args   # 여러 사람이 언급되면 추측하지 않는다
+    return args
+
+
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
         history: list[dict] | None = None) -> dict:
@@ -50,7 +69,9 @@ def ask(service: Service, question: str, client: ChatClient,
             messages.append({"role": "assistant", "content": reply["content"],
                              "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
                                             for c in reply["tool_calls"]]})
+            texts = [question] + [m["content"] for m in reversed(history or []) if m.get("role") == "user"]
             for call in reply["tool_calls"]:
+                call["arguments"] = _fill_person(service, call["name"], call["arguments"] or {}, texts)
                 result = call_tool(service, call["name"], call["arguments"])
                 calls.append({"tool": call["name"], "arguments": call["arguments"], "ok": result["ok"],
                               "data": result.get("data"), "error": result.get("error")})
