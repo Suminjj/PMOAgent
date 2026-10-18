@@ -108,6 +108,13 @@ def ask(service: Service, question: str, client: ChatClient,
                 {"role": "user", "content": question}]
     calls: list[dict] = []
     answer, error = "", None
+    if spec.planned_notice:
+        # 쓸 수 있는 도구가 모두 구현 예정인 Agent: 도구 상태만 확인해 기록하고 정해진 안내로 답한다.
+        for name in spec.tools or ():
+            result = call_tool(service, name, {})
+            calls.append({"tool": name, "arguments": {}, "ok": result["ok"],
+                          "data": result.get("data"), "error": result.get("error")})
+        max_steps, answer = 0, spec.planned_notice
     try:
         for _ in range(max_steps):
             reply = client.chat(messages, tools)
@@ -132,7 +139,8 @@ def ask(service: Service, question: str, client: ChatClient,
                               "data": result.get("data"), "error": result.get("error")})
                 messages.append(_tool_message(call["name"], result))
         else:
-            error = f"{max_steps}번 안에 답을 마치지 못했습니다."
+            if not answer:
+                error = f"{max_steps}번 안에 답을 마치지 못했습니다."
     except LLMError as exc:
         error = str(exc)
     if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):

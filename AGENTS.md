@@ -170,7 +170,8 @@
   - 인력관리: find_people, get_assignment_timeline, query_database, prepare_account_id
   - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
   - 구매계약: find_people, list_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
-  - 검수: inspection_amount_by_revenue_project(구현 예정)
+  - 검수: inspection_amount_by_revenue_project(구현 예정). 도구가 모두 구현 예정이라 LLM 없이 정해진 안내로 답한다
+    (평가에서 작은 모델이 도구를 부르지 않고 엉뚱한 카테고리를 안내해서). 규칙이 확정되어 도구를 구현하면 LLM을 쓴다.
   - 자동(전체): 모든 도구, 업무 지침 미주입 (기존 단일 Agent, 비교 기준)
 - [제안] 전문 Agent의 시스템 프롬프트 = 공통 규칙(`prompts.py`) + 역할 + `agent_skills/` 업무 지침 본문.
   지침의 앞머리·'성공 기준' 절과, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.

@@ -126,7 +126,8 @@ def test_category_routing_in_eval_harness():
     assert report["planner"] == "fake-router-category"
     rows = {r["id"]: r for r in report["results"]}
     assert rows["Q7"]["agent_used"] == "inspection" and rows["Q9"]["agent_used"] == "environment"
-    assert any("[업무 지침: inspection-amount]" in p for p, _ in client.prompts)
+    assert any("[업무 지침: contract-expiry]" in p for p, _ in client.prompts)
+    assert rows["Q7"]["success"] and "구현 예정" in rows["Q7"]["answer"]   # 검수는 LLM 없이 고정 안내
     with pytest.raises(ValueError):
         AgentPlanner(client, "router")
 
@@ -222,3 +223,13 @@ def test_eval_allows_skipping_find_people_when_names_are_resolved():
     rows = {r["id"]: r for r in run(AgentPlanner(SkipsLookup()), save=False)["results"]}
     assert rows["Q8"]["success"] and rows["Q9"]["success"], (rows["Q8"]["problems"], rows["Q9"]["problems"])
     assert not rows["Q2"]["success"]                                  # 동명이인 확인은 생략 불가
+
+
+def test_planned_only_agent_answers_without_llm(service):
+    """비교 평가 Q7: 검수 Agent가 두 번 연속 도구를 부르지 않고 엉뚱한 카테고리를 안내함."""
+    client = ScriptedClient([])                                       # LLM을 부르면 pop에서 실패
+    result = ask(service, "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.", client, agent="inspection")
+    assert result["ok"] and "구현 예정" in result["answer"] and not client.seen
+    assert [(c["tool"], c["ok"]) for c in result["calls"]] == [("inspection_amount_by_revenue_project", False)]
+    assert "구현 예정" in result["calls"][0]["error"]
+    assert all(not a.planned_notice for k, a in AGENTS.items() if k != "inspection")

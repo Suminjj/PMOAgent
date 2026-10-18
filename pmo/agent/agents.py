@@ -27,6 +27,8 @@ class AgentSpec:
     skills: tuple[str, ...] = ()       # 주입할 agent_skills/<이름>/SKILL.md
     examples: tuple[str, ...] = ()
     scope: str = ""                    # 다른 Agent가 안내할 때 쓰는 담당 업무 한 줄
+    # 도구가 모두 '구현 예정'이면 LLM을 부르지 않고 이 안내를 그대로 답한다(작은 모델이 엉뚱한 카테고리를 안내하던 문제).
+    planned_notice: str = ""
 
 
 AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
@@ -69,7 +71,9 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
               ("inspection_amount_by_revenue_project",),
               ("inspection-amount",), (
                   "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
-              ), "업체별 월 검수 금액"),
+              ), "업체별 월 검수 금액",
+              "검수 금액 계산은 아직 구현 예정입니다. 매출귀속 프로젝트별 배분·반올림·부가세 규칙이 정해지지 않아 "
+              "금액을 계산하거나 추정하지 않습니다. 다른 업무는 홈 화면에서 해당 카테고리를 골라 요청해 주세요."),
 ]}
 
 
