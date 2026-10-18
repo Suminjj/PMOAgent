@@ -47,6 +47,10 @@ def _person(service, key: str, values: dict, categories=None):
     by_id = {p["id"]: p for p in people}
     preset = values.get("person_id")
     if preset and preset not in by_id:
+        from pmo.tools import resolve_person
+        resolved, _ = resolve_person(service, preset)   # 이름이 들어온 경우 보완
+        preset = resolved if resolved in by_id else preset
+    if preset and preset not in by_id:
         st.warning(f"Agent가 제안한 인력({preset})을 목록에서 찾지 못했습니다. 직접 선택하세요.")
     pid = st.selectbox("대상 인력", list(by_id), index=_index(list(by_id), preset, None),
                        placeholder="인력을 선택하세요", key=f"{key}_person",

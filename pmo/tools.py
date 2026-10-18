@@ -40,6 +40,7 @@ def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 STR = {"type": "string"}
 DATE = {"type": "string", "description": "YYYY-MM-DD"}
+PERSON = {"type": "string", "description": "find_people 결과의 id(내부 관리번호). 이름이 아니다."}
 
 
 def _enum(values) -> dict:
@@ -50,10 +51,60 @@ PROPOSAL_NOTE = ("저장하지 않았습니다. 화면 오른쪽 양식에 값�
                  "사용자가 값을 확인·선택하고 '확인 후 저장'을 눌러야 반영됩니다.")
 
 
+def resolve_person(service: Service, value: str | None) -> tuple[str | None, list[dict]]:
+    """관리번호가 아니라 이름이 들어와도 사람을 찾는다. (확정 id 또는 None, 후보 목록)
+
+    작은 로컬 모델은 find_people을 건너뛰고 person_id에 이름을 넣는 일이 있어 코드에서 보완한다.
+    """
+    value = str(value or "").strip()
+    if not value:
+        return None, []
+    people = service.people()
+    if any(p["id"] == value for p in people):
+        return value, []
+    for title in ("차장", "과장", "대리", "부장", "사원", "주임", "책임", "선임", "수석", "님", "씨"):
+        value = value.removesuffix(title).strip()
+    exact = [p for p in people if p["name"] == value]
+    candidates = exact or (service.find_people(value) if value else [])
+    if len(candidates) == 1:
+        return candidates[0]["id"], []
+    return None, [{k: c[k] for k in ("id", "name", "company", "category")} for c in candidates]
+
+
+def resolve_contract(service: Service, person_id: str | None, value: str | None) -> str | None:
+    """contract_id 자리에 계약번호가 들어와도 그 인력의 계약에서 찾는다."""
+    value = str(value or "").strip()
+    if not value or not person_id:
+        return value or None
+    contracts = service.contracts(person_id)
+    if any(c["id"] == value for c in contracts):
+        return value
+    matches = [c["id"] for c in contracts if c["contract_no"] == value]
+    return matches[0] if len(matches) == 1 else None
+
+
 def _proposal(action: str):
     def handler(service: Service, args: dict) -> dict:
         values = {k: v for k, v in args.items() if v not in (None, "")}
-        return {"proposal": {"action": action, "values": values}, "message": PROPOSAL_NOTE}
+        result = {"proposal": {"action": action, "values": values}, "message": PROPOSAL_NOTE}
+        if "person_id" in values:
+            person_id, candidates = resolve_person(service, values["person_id"])
+            if person_id:
+                values["person_id"] = person_id
+            elif candidates:
+                given = values.pop("person_id")
+                result["candidates"] = candidates
+                result["message"] = (f"'{given}'에 해당하는 인력이 {len(candidates)}명입니다. "
+                                     "어느 분인지 사용자에게 확인하세요. 화면 양식에서도 직접 고를 수 있습니다.")
+            else:
+                raise ValidationError(f"'{values['person_id']}'에 해당하는 인력이 없습니다. 이름을 확인하세요.")
+        if "contract_id" in values:
+            contract_id = resolve_contract(service, values.get("person_id"), values["contract_id"])
+            if contract_id:
+                values["contract_id"] = contract_id
+            else:
+                values.pop("contract_id")
+        return result
     return handler
 INT = {"type": "integer"}
 
@@ -86,19 +137,19 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     # --- 등록·수정·삭제 제안: 값만 채우고 저장하지 않는다 ---
     Tool("prepare_checklist_update", "근무 환경 준비 항목의 상태 변경을 제안한다(저장 안 함). "
          "알아낸 값만 넣고 모르는 값은 비운다. 사용자가 화면에서 확인한 뒤 저장한다.",
-         _obj({"person_id": STR, "item": _enum(CHECKLIST_ITEMS), "status": _enum(CHECKLIST_STATUSES),
+         _obj({"person_id": PERSON, "item": _enum(CHECKLIST_ITEMS), "status": _enum(CHECKLIST_STATUSES),
                "reason": STR}), handler=_proposal("checklist_update")),
     Tool("prepare_contract_save", "구매계약 신규 등록 또는 수정(기간 변경·연장·계약번호 입력 등)을 제안한다(저장 안 함). "
          "수정이면 list_contracts로 찾은 contract_id를 넣는다.",
-         _obj({"person_id": STR, "contract_id": STR, "company": STR, "contract_no": STR,
+         _obj({"person_id": PERSON, "contract_id": STR, "company": STR, "contract_no": STR,
                "start_date": DATE, "end_date": DATE, "status": _enum(CONTRACT_STATUSES)}),
          handler=_proposal("contract_save")),
     Tool("prepare_contract_delete", "구매계약 삭제를 제안한다(삭제 안 함). 사용자가 화면에서 대상을 확인해야 삭제된다.",
-         _obj({"person_id": STR, "contract_id": STR}), handler=_proposal("contract_delete")),
+         _obj({"person_id": PERSON, "contract_id": STR}), handler=_proposal("contract_delete")),
     Tool("prepare_account_id", "발급된 회사 계정 ID를 인력 정보에 입력하도록 제안한다(저장 안 함).",
-         _obj({"person_id": STR, "account_id": STR}), handler=_proposal("account_id")),
+         _obj({"person_id": PERSON, "account_id": STR}), handler=_proposal("account_id")),
     Tool("prepare_alert_ack", "계약 종료 알림 확인 처리를 제안한다(저장 안 함). 알림 확인은 계약 갱신 완료가 아니다.",
-         _obj({"person_id": STR}), handler=_proposal("alert_ack")),
+         _obj({"person_id": PERSON}), handler=_proposal("alert_ack")),
     # --- 구현 예정: 규칙 미확정 ---
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
          "구매 필요 판정 기준 미확정(TODO).",

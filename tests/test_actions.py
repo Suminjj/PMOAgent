@@ -86,3 +86,30 @@ def test_delete_contract_guards(service):
     with pytest.raises(ConflictError, match="이미 삭제"):
         service.delete_contract(other["id"], token=str(uuid4()), actor="담당자",
                                 expected_version=other["version"])
+
+
+def test_name_given_as_person_id_is_resolved(service):
+    """작은 모델이 find_people을 건너뛰고 이름을 넣어도 관리번호로 바꿔 제안한다."""
+    result = call_tool(service, "prepare_checklist_update",
+                       {"person_id": "이가상", "item": "ID카드 신청", "status": "진행 중"})
+    assert result["ok"] and result["data"]["proposal"]["values"]["person_id"] == "DEMO-002"
+    titled = call_tool(service, "prepare_account_id", {"person_id": "이가상 차장"})
+    assert titled["data"]["proposal"]["values"]["person_id"] == "DEMO-002"
+
+
+def test_namesake_returns_candidates_and_unknown_name_fails(service):
+    result = call_tool(service, "prepare_checklist_update", {"person_id": "김가상", "item": "좌석 배정"})
+    assert result["ok"] and "person_id" not in result["data"]["proposal"]["values"]
+    assert {c["id"] for c in result["data"]["candidates"]} == {"DEMO-001", "DEMO-005"}
+    assert "2명" in result["data"]["message"]
+    missing = call_tool(service, "prepare_account_id", {"person_id": "홍길동"})
+    assert missing["ok"] is False and "없습니다" in missing["error"]
+
+
+def test_contract_number_given_as_contract_id_is_resolved(service):
+    result = call_tool(service, "prepare_contract_save",
+                       {"person_id": "이가상", "contract_id": "DEMO-C-200", "end_date": "2026-12-31"})
+    values = result["data"]["proposal"]["values"]
+    assert values["contract_id"] == contract_of(service, "DEMO-002", "DEMO-C-200")["id"]
+    wrong = call_tool(service, "prepare_contract_delete", {"person_id": "DEMO-002", "contract_id": "없는번호"})
+    assert "contract_id" not in wrong["data"]["proposal"]["values"]   # 모르면 비워서 사용자가 선택
