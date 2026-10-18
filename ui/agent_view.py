@@ -2,25 +2,9 @@
 import streamlit as st
 
 from pmo.agent.agents import AGENTS, AUTO
+from pmo.tools import TOOL_LABELS  # 도구 한국어 이름 (Agent 답변 정리에도 씀)
 
 EXAMPLES = AGENTS[AUTO].examples   # 카테고리별 예시 질문은 pmo/agent/agents.py
-
-TOOL_LABELS = {
-    "find_people": "인력 찾기",
-    "get_assignment_timeline": "투입 이력 조회",
-    "list_contracts": "구매계약 조회",
-    "contracts_ending": "월·업체별 계약 종료 예정",
-    "pending_contract_alerts": "미확인 계약 종료 알림",
-    "checklist_status": "근무 환경 준비 현황",
-    "monthly_purchase_needs": "월별 구매 필요 인력 (구현 예정)",
-    "inspection_amount_by_revenue_project": "매출귀속 프로젝트별 검수 금액 (구현 예정)",
-    "query_database": "자유 조회 (Text-to-SQL, 읽기 전용)",
-    "prepare_checklist_update": "근무 환경 준비 상태 변경",
-    "prepare_contract_save": "구매계약 등록·수정",
-    "prepare_contract_delete": "구매계약 삭제",
-    "prepare_account_id": "계정 ID 입력",
-    "prepare_alert_ack": "계약 종료 알림 확인",
-}
 
 COLUMNS = {
     "id": "관리번호", "name": "이름", "company": "업체명", "category": "분류", "account_id": "계정 ID",

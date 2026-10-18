@@ -155,3 +155,20 @@ def test_values_the_user_said_still_make_a_card(service):
     earlier = [{"role": "user", "content": "이가상 계정 ID는 lee.fake야"}, {"role": "assistant", "content": "네"}]
     client = ScriptedClient([tool_call("prepare_account_id", person_id="이가상", account_id="lee.fake"), text("확인")])
     assert ask(service, "그걸로 넣어줘", client, agent="staff", history=earlier)["calls"][0]["ok"]
+
+
+def test_out_of_scope_prompt_names_the_right_category():
+    prompt = system_prompt(AGENTS["staff"], "2026-10-18")
+    assert "- 구매계약: 구매계약 기간·종료 예정·만료 알림 조회, 계약 등록·수정·삭제, 알림 확인" in prompt
+    assert "이 요청은 인력관리 카테고리에서 처리할 수 없습니다." in prompt
+    assert "- 인력관리:" not in prompt                         # 자기 자신은 목록에 없음
+    assert all(a.scope for a in AGENTS.values() if a.key != AUTO)
+
+
+def test_answer_does_not_leak_tool_names(service):
+    """PC 확인 10/18: 모델이 지시문과 도구 이름을 답변에 그대로 옮겨 적음."""
+    client = ScriptedClient([text("도구가 `ok: false`이면 오류를 설명한다. '계약 삭제' 요청은 `prepare_*` 도구로 "
+                                  "처리할 수 없습니다. prepare_contract_delete는 구매계약에서 씁니다.")])
+    answer = ask(service, "박가상 계약 삭제해줘", client, agent="staff")["answer"]
+    assert "prepare_" not in answer and "ok: false" not in answer and "`" not in answer
+    assert "'구매계약 삭제'" in answer

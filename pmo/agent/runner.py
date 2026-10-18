@@ -3,6 +3,7 @@
 agent(pmo/agent/agents.py)를 주면 그 카테고리의 도구·업무 지침만 쓴다. 없으면 자동(전체) 단일 Agent.
 """
 import json
+import re
 import time
 from datetime import date, datetime
 
@@ -10,7 +11,7 @@ from pmo.agent.llm import ChatClient, LLMError
 from pmo.agent.agents import AgentSpec, allowed_tools, get_agent, system_prompt
 from pmo.config import TIMEZONE
 from pmo.service import Service
-from pmo.tools import call_tool, tool_specs
+from pmo.tools import TOOL_LABELS, call_tool, tool_specs
 
 MAX_STEPS = 6
 # 챗봇 대화에서 이전 질문·답변을 몇 개까지 넘길지 (동명이인 되물음 등 이어지는 대화용)
@@ -70,6 +71,14 @@ def _ungrounded(service: Service, tool: str, args: dict, texts: list[str]) -> st
     return None
 
 
+def _clean_answer(answer: str) -> str:
+    """작은 모델이 답변에 도구 이름·내부 표기를 옮겨 적으면 사용자용 말로 바꾼다."""
+    for name in sorted(TOOL_LABELS, key=len, reverse=True):
+        answer = answer.replace(f"`{name}`", f"'{TOOL_LABELS[name]}'").replace(name, f"'{TOOL_LABELS[name]}'")
+    answer = re.sub(r"`?prepare_\*`?\s*도구", "변경 준비 기능", answer)
+    return re.sub(r"`?ok\s*:\s*false`?", "실패", answer)
+
+
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
         history: list[dict] | None = None, agent: AgentSpec | str | None = None) -> dict:
@@ -95,7 +104,7 @@ def ask(service: Service, question: str, client: ChatClient,
         for _ in range(max_steps):
             reply = client.chat(messages, tools)
             if not reply["tool_calls"]:
-                answer = reply["content"]
+                answer = _clean_answer(reply["content"])
                 break
             messages.append({"role": "assistant", "content": reply["content"],
                              "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
