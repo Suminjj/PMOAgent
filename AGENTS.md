@@ -146,6 +146,8 @@
 - [확정] 저장·삭제는 반드시 사용자 확인을 거친다. '완료'(실제 신청 여부)와 삭제는 확인란을 한 번 더 선택해야 한다.
   카드를 만든 뒤 데이터가 바뀌었으면 버전 검사로 저장을 막는다. 값을 바꾸려면 채팅으로 다시 요청하거나 메뉴 화면을 쓴다.
 - [제안] 작은 로컬 모델이 관리번호 자리에 이름을 넣는 경우가 있어, 코드에서 이름(직함 제거)·계약번호로 대상을 보완한다.
+  조회 도구(투입 이력·계약·준비 현황)도 같다. 이름이 없거나 동명이인이면 빈 결과 대신 되물을 오류를 돌려준다.
+- [제안] 확인 카드만 만든 턴에 모델이 '변경되었습니다'처럼 답하면 코드가 '변경 준비를 마쳤습니다(아직 저장 전)'로 고친다.
 - [제안] 사용자만 알 수 있는 값(계정 ID, 새 계약번호)은 사용자 문장(이번 질문·최근 사용자 메시지)에 그대로 있어야 카드를 만든다.
   모델이 할 수 없는 요청을 다른 저장 도구로 대신 처리하며 값을 지어내는 것을 막는다(`runner.GROUNDED_FIELDS`).
 - [제안] Agent로 할 수 있는 저장 작업: 근무 환경 준비 상태 변경, 구매계약 등록·수정, 구매계약 삭제, 계정 ID 입력, 계약 종료 알림 확인.
@@ -168,7 +170,8 @@
   - 인력관리: find_people, get_assignment_timeline, query_database, prepare_account_id
   - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
   - 구매계약: find_people, list_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
-  - 검수: inspection_amount_by_revenue_project(구현 예정)
+  - 검수: inspection_amount_by_revenue_project(구현 예정). 도구가 모두 구현 예정이라 LLM 없이 정해진 안내로 답한다
+    (평가에서 작은 모델이 도구를 부르지 않고 엉뚱한 카테고리를 안내해서). 규칙이 확정되어 도구를 구현하면 LLM을 쓴다.
   - 자동(전체): 모든 도구, 업무 지침 미주입 (기존 단일 Agent, 비교 기준)
 - [제안] 전문 Agent의 시스템 프롬프트 = 공통 규칙(`prompts.py`) + 역할 + `agent_skills/` 업무 지침 본문.
   지침의 앞머리·'성공 기준' 절과, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.
@@ -199,7 +202,8 @@
 5. [구현] 실행 기록: 저장 함수·도구 호출의 입력·성공 여부·오류·소요 시간을 `run_log`에 기록
 6. [구현] 테스트: 저장·조회·알림 핵심 로직 자동 테스트, 평가 질문 oracle 실행(`python -m scripts.run_evals`)
 7. [구현] LLM 평가: `python -m scripts.run_evals --model 모델1,모델2`로 질문별 도구 선택 정답·답변·응답 시간·성공 여부를 기록하고 모델을 비교.
-   `--routing auto,category`로 자동(전체) 단일 Agent와 카테고리별 전문 Agent(질문의 `agent` 태그)를 비교
+   `--routing auto,category`로 자동(전체) 단일 Agent와 카테고리별 전문 Agent(질문의 `agent` 태그)를 비교.
+   이름을 받는 도구 앞의 find_people은 `optional` 단계로 두어 생략해도 정답으로 본다(동명이인 질문은 생략 불가)
 8. [TODO] 답변 내용 자체의 정확도 채점·Text-to-SQL 평가 질문(현재는 도구 선택과 도구 결과만 자동 채점), 질문 추가
 
 ## 8. 개발용 스킬과 서비스 Agent 업무 지침

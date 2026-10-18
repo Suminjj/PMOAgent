@@ -126,7 +126,8 @@ def test_category_routing_in_eval_harness():
     assert report["planner"] == "fake-router-category"
     rows = {r["id"]: r for r in report["results"]}
     assert rows["Q7"]["agent_used"] == "inspection" and rows["Q9"]["agent_used"] == "environment"
-    assert any("[업무 지침: inspection-amount]" in p for p, _ in client.prompts)
+    assert any("[업무 지침: contract-expiry]" in p for p, _ in client.prompts)
+    assert rows["Q7"]["success"] and "구현 예정" in rows["Q7"]["answer"]   # 검수는 LLM 없이 고정 안내
     with pytest.raises(ValueError):
         AgentPlanner(client, "router")
 
@@ -172,3 +173,63 @@ def test_answer_does_not_leak_tool_names(service):
     answer = ask(service, "박가상 계약 삭제해줘", client, agent="staff")["answer"]
     assert "prepare_" not in answer and "ok: false" not in answer and "`" not in answer
     assert "'구매계약 삭제'" in answer
+
+
+# --- 10/18 비교 평가(qwen3:8b)에서 나온 문제 ---------------------------------------------
+
+def test_specialist_calls_its_own_planned_tool_and_never_points_to_itself():
+    prompt = system_prompt(AGENTS["inspection"], "2026-10-18")
+    assert "'구현 예정'이어도 먼저 맡은 도구를 호출" in prompt
+    assert "'검수'을(를) 고르라고 안내하지 않는다" in prompt
+    assert "## 사용 시점" not in prompt                         # 예시 질문 절은 빼서 프롬프트를 줄임
+
+
+def test_read_tools_accept_names_instead_of_returning_empty(service):
+    """자동(전체) Q8: checklist_status(person_id='이가상') → 빈 결과 → '모두 완료' 로 지어낸 답."""
+    from pmo.tools import call_tool
+    status = call_tool(service, "checklist_status", {"person_id": "이가상 차장"})
+    assert status["ok"] and len(status["data"]) == 1 and len(status["data"][0]["items"]) == 4
+    assert call_tool(service, "list_contracts", {"person_id": "박가상"})["data"][0]["end_date"] == "2026-12-01"
+    assert call_tool(service, "get_assignment_timeline", {"person_id": "이가상"})["data"]["current"]
+    namesake = call_tool(service, "get_assignment_timeline", {"person_id": "김가상"})
+    assert not namesake["ok"] and "2명" in namesake["error"]
+    assert not call_tool(service, "list_contracts", {"person_id": "홍길동"})["ok"]
+
+
+def test_prepared_change_is_not_described_as_saved(service):
+    """Q9: 카드만 만들었는데 '진행 중으로 변경되었습니다'라고 답함."""
+    client = ScriptedClient([tool_call("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중"),
+                             text("이가상의 ID카드 신청 상태가 '진행 중'으로 변경되었습니다. 확인 카드에서 눌러 주세요.")])
+    answer = ask(service, "이가상 ID카드 신청 진행 중으로 바꿔줘", client, agent="environment")["answer"]
+    assert "변경되었습니다" not in answer and "변경 준비를 마쳤습니다(아직 저장 전)" in answer
+    client = ScriptedClient([text("변경되었습니다")])                 # 카드가 없는 턴은 건드리지 않는다
+    assert ask(service, "안녕", client)["answer"] == "변경되었습니다"
+
+
+def test_eval_allows_skipping_find_people_when_names_are_resolved():
+    class SkipsLookup:
+        name = "fake:skip"
+
+        def chat(self, messages, tools):
+            if messages[-1]["role"] == "tool":
+                return text("완료")
+            q = messages[-1]["content"]
+            if q.startswith("이가상 근무 환경"):
+                return tool_call("checklist_status", person_id="이가상")
+            if q.startswith("이가상 ID카드"):
+                return tool_call("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중")
+            return text("모르겠습니다")
+
+    rows = {r["id"]: r for r in run(AgentPlanner(SkipsLookup()), save=False)["results"]}
+    assert rows["Q8"]["success"] and rows["Q9"]["success"], (rows["Q8"]["problems"], rows["Q9"]["problems"])
+    assert not rows["Q2"]["success"]                                  # 동명이인 확인은 생략 불가
+
+
+def test_planned_only_agent_answers_without_llm(service):
+    """비교 평가 Q7: 검수 Agent가 두 번 연속 도구를 부르지 않고 엉뚱한 카테고리를 안내함."""
+    client = ScriptedClient([])                                       # LLM을 부르면 pop에서 실패
+    result = ask(service, "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.", client, agent="inspection")
+    assert result["ok"] and "구현 예정" in result["answer"] and not client.seen
+    assert [(c["tool"], c["ok"]) for c in result["calls"]] == [("inspection_amount_by_revenue_project", False)]
+    assert "구현 예정" in result["calls"][0]["error"]
+    assert all(not a.planned_notice for k, a in AGENTS.items() if k != "inspection")

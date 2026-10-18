@@ -79,6 +79,14 @@ def _clean_answer(answer: str) -> str:
     return re.sub(r"`?ok\s*:\s*false`?", "실패", answer)
 
 
+_DONE_WORDS = re.compile(r"(변경|저장|삭제|등록|수정|입력|반영)(되었습니다|됐습니다|했습니다)")
+
+
+def _not_saved_yet(answer: str) -> str:
+    """확인 카드만 만든 턴에 '변경되었습니다'처럼 저장된 것처럼 말하면 고친다(저장은 사용자가 확인해야 함)."""
+    return _DONE_WORDS.sub(r"\1 준비를 마쳤습니다(아직 저장 전)", answer)
+
+
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
         history: list[dict] | None = None, agent: AgentSpec | str | None = None) -> dict:
@@ -100,6 +108,13 @@ def ask(service: Service, question: str, client: ChatClient,
                 {"role": "user", "content": question}]
     calls: list[dict] = []
     answer, error = "", None
+    if spec.planned_notice:
+        # 쓸 수 있는 도구가 모두 구현 예정인 Agent: 도구 상태만 확인해 기록하고 정해진 안내로 답한다.
+        for name in spec.tools or ():
+            result = call_tool(service, name, {})
+            calls.append({"tool": name, "arguments": {}, "ok": result["ok"],
+                          "data": result.get("data"), "error": result.get("error")})
+        max_steps, answer = 0, spec.planned_notice
     try:
         for _ in range(max_steps):
             reply = client.chat(messages, tools)
@@ -124,9 +139,12 @@ def ask(service: Service, question: str, client: ChatClient,
                               "data": result.get("data"), "error": result.get("error")})
                 messages.append(_tool_message(call["name"], result))
         else:
-            error = f"{max_steps}번 안에 답을 마치지 못했습니다."
+            if not answer:
+                error = f"{max_steps}번 안에 답을 마치지 못했습니다."
     except LLMError as exc:
         error = str(exc)
+    if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
+        answer = _not_saved_yet(answer)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
     if error is None and not answer:

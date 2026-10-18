@@ -27,6 +27,8 @@ class AgentSpec:
     skills: tuple[str, ...] = ()       # 주입할 agent_skills/<이름>/SKILL.md
     examples: tuple[str, ...] = ()
     scope: str = ""                    # 다른 Agent가 안내할 때 쓰는 담당 업무 한 줄
+    # 도구가 모두 '구현 예정'이면 LLM을 부르지 않고 이 안내를 그대로 답한다(작은 모델이 엉뚱한 카테고리를 안내하던 문제).
+    planned_notice: str = ""
 
 
 AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
@@ -69,7 +71,9 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
               ("inspection_amount_by_revenue_project",),
               ("inspection-amount",), (
                   "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
-              ), "업체별 월 검수 금액"),
+              ), "업체별 월 검수 금액",
+              "검수 금액 계산은 아직 구현 예정입니다. 매출귀속 프로젝트별 배분·반올림·부가세 규칙이 정해지지 않아 "
+              "금액을 계산하거나 추정하지 않습니다. 다른 업무는 홈 화면에서 해당 카테고리를 골라 요청해 주세요."),
 ]}
 
 
@@ -78,13 +82,14 @@ def get_agent(key: str | None) -> AgentSpec:
 
 
 def skill_text(name: str, tools: set[str] | None = None) -> str:
-    """업무 지침 본문. 앞머리(frontmatter)와 '성공 기준'(개발·평가용) 절은 뺀다.
+    """업무 지침 본문. 앞머리(frontmatter)와 '사용 시점'·'성공 기준'(개발·평가용) 절은 뺀다.
 
     tools를 주면 도구 표에서 그 Agent가 쓸 수 없는 도구의 행을 뺀다(작은 모델이 없는 도구를 부르지 않게).
     """
     text = (SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8").replace("\r\n", "\n")
     text = re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.S)
-    text = re.sub(r"\n## 성공 기준\n.*?(?=\n## |\Z)", "\n", text, flags=re.S)
+    # 사용 시점(예시 질문)은 카테고리를 이미 골랐으니 빼서 프롬프트를 줄인다(CPU에서 응답 시간에 영향).
+    text = re.sub(r"\n## (성공 기준|사용 시점)\n.*?(?=\n## |\Z)", "\n", text, flags=re.S)
     if tools is not None:
         def keep(line: str) -> bool:
             m = re.match(r"\| `(\w+)` \|", line)
@@ -99,9 +104,10 @@ def system_prompt(agent: AgentSpec, today: str) -> str:
         return base
     others = "\n".join(f"- {a.label}: {a.scope}" for a in AGENTS.values() if a.key not in (AUTO, agent.key))
     parts = [base, agent.role,
+             "맡은 업무의 요청이면 기능이 '구현 예정'이어도 먼저 맡은 도구를 호출하고, 도구 결과로 답한다.\n"
              f"다른 카테고리가 맡는 업무:\n{others}\n"
-             "맡은 업무 밖의 요청이면 도구를 부르지 말고 아래처럼 한두 문장으로만 답한다. "
-             "[카테고리]에는 위 목록에서 그 업무를 맡는 카테고리 이름을 넣는다.\n"
+             "요청이 위 목록의 다른 카테고리 업무일 때만 도구를 부르지 말고 아래처럼 한두 문장으로 답한다. "
+             f"[카테고리]에는 위 목록에서 그 업무를 맡는 카테고리 이름을 넣는다. '{agent.label}'을(를) 고르라고 안내하지 않는다.\n"
              f"\"이 요청은 {agent.label} 카테고리에서 처리할 수 없습니다. 홈 화면에서 '[카테고리]'를 골라 다시 요청해 주세요.\"\n"
              "할 수 없는 요청을 비슷한 다른 도구로 대신 처리하지 않는다(예: 계약 삭제 요청에 계정 ID 입력 도구를 쓰지 않는다)."]
     parts += [f"[업무 지침: {name}]\n{skill_text(name, set(agent.tools))}" for name in agent.skills]
