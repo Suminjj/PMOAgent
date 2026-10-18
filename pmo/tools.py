@@ -42,7 +42,7 @@ def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
 
 STR = {"type": "string"}
 DATE = {"type": "string", "description": "YYYY-MM-DD"}
-PERSON = {"type": "string", "description": "find_people 결과의 id(내부 관리번호). 이름이 아니다."}
+PERSON = {"type": "string", "description": "대상 인력. find_people 결과의 id(예: DEMO-002) 또는 사용자가 말한 이름. 비우지 않는다."}
 
 
 def _enum(values) -> dict:
