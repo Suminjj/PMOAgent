@@ -5,18 +5,20 @@
 
 ## 연결 상태
 
-| 지침 | 업무 | 서비스 연결 |
-| --- | --- | --- |
-| [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회 | 부분 연결 (도구 구현, 지침 본문 미주입) |
-| [contract-expiry](contract-expiry/SKILL.md) | 구매계약 기간·종료 예정·만료 알림 조회 | 부분 연결 (도구 일부 구현, 지침 본문 미주입) |
-| [work-environment-checklist](work-environment-checklist/SKILL.md) | 근무 환경 준비 현황 조회 | 부분 연결 (조회 도구 구현, 지침 본문 미주입) |
-| [data-change](data-change/SKILL.md) | 상태 변경·계약 등록·수정·삭제·계정 ID·알림 확인 (확인 카드 준비) | 부분 연결 (prepare_* 도구 구현, 지침 본문 미주입) |
+| 지침 | 업무 | 주입되는 Agent | 서비스 연결 |
+| --- | --- | --- | --- |
+| [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회, 계정 ID 입력 | 인력관리 | 연결 |
+| [work-environment-checklist](work-environment-checklist/SKILL.md) | 근무 환경 준비 현황 조회·상태 변경 | 근무 환경 준비 | 연결 |
+| [contract-expiry](contract-expiry/SKILL.md) | 구매계약 기간·종료 예정·만료 알림, 계약 등록·수정·삭제·알림 확인 | 구매계약 | 연결 (구매 필요 판정은 구현 예정) |
+| [inspection-amount](inspection-amount/SKILL.md) | 매출귀속 프로젝트별 검수 금액 | 검수 | 지침만 연결 (도구 구현 예정) |
+| [data-change](data-change/SKILL.md) | 변경 요청 공통 규칙 (확인 카드 준비) | 인력관리·근무 환경 준비·구매계약 | 연결 |
 
-- **부분 연결**: 로컬 LLM Agent(`pmo/agent/`)가 연결되어 도구를 호출한다. 다만 Agent에는
-  `pmo/agent/prompts.py`의 공통 규칙만 들어가고, 이 폴더의 지침 본문은 아직 프롬프트에 넣지 않는다.
-  질문에 맞는 지침을 골라 넣는 기능(스킬 선택·RAG)은 다음 단계다. 문서가 있다고 Agent가 따르는 것이 아니다.
+- **연결**: 홈 화면에서 카테고리를 고르면 그 전문 Agent(`pmo/agent/agents.py`)의 시스템 프롬프트에 위 지침 본문이 들어간다.
+  앞머리와 '성공 기준'(개발·평가용) 절, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.
+- **자동(전체)** Agent에는 지침을 넣지 않고 `pmo/agent/prompts.py`의 공통 규칙만 쓴다(비교 기준).
+- 질문에 맞는 지침을 자동으로 고르는 기능(라우터·RAG)은 다음 단계다.
 - 도구는 `pmo/tools.py`에 정의되어 있고, 구현 여부는 각 지침의 "연결 도구" 표를 따른다.
-- 도구 이름·입력을 바꾸면 이 지침과 `evals/questions.json`을 함께 고친다.
+- 도구 이름·입력을 바꾸면 이 지침, `pmo/agent/agents.py`, `evals/questions.json`을 함께 고친다.
 
 ## 공통 원칙
 

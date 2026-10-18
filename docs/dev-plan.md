@@ -37,6 +37,7 @@ pmo/
   checklist.py             근무 환경 준비 항목·상태 규칙, 신청 초안
   tools.py                 Agent 도구 계층 (입력 스키마·결과 형식)
   agent/                   LLM 연결(llm.py), 프롬프트(prompts.py), 실행 루프(runner.py), 변경 계획(actions.py),
+                           카테고리별 전문 Agent(agents.py),
                            Text-to-SQL(text_to_sql.py, LlamaIndex·읽기 전용)
   harness.py               평가 하네스 (Planner, 질문별 결과 기록)
   demo.py                  가상 데이터
@@ -45,7 +46,7 @@ scripts/
   run_evals.py             평가 질문 실행 (--model로 로컬 LLM 비교)
   ask.py                   터미널 자연어 질문
 evals/questions.json       대표 질문·정답 도구·기대 결과
-agent_skills/              서비스 Agent 업무 지침 (부분 연결)
+agent_skills/              서비스 Agent 업무 지침 (전문 Agent 프롬프트에 주입)
 .claude/skills/            Claude Code 개발 스킬
 docs/                      데이터 설계, 개발 계획
 tests/                     자동 테스트
@@ -72,6 +73,6 @@ requests  저장 요청 토큰 (중복 저장 방지)
 ## 다음 단계 제안
 
 1. (완료) 체크리스트 상태 변경·해당 없음 사유·신청 초안 화면
-2. 평가 질문 확대(바꿔 말한 질문·까다로운 질문)와 답변 채점 → 모델 재비교, 업무 지침(agent_skills) 프롬프트 주입
+2. 평가 질문 확대(바꿔 말한 질문·까다로운 질문)와 답변 채점 → 모델 재비교 (업무 지침 주입은 전문 Agent에 완료)
 3. 구매 필요 판정·검수 금액 규칙 확정 후 해당 도구 구현
-4. 인력·계약·검수 전문 Agent 분리 (멀티에이전트), 업무 지침 RAG 검색
+4. (완료) 업무 카테고리별 전문 Agent 4개 + 자동(전체), 수동 선택 → 다음: 자동 라우터 Agent, 업무 지침 RAG 검색

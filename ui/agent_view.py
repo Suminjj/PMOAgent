@@ -1,12 +1,9 @@
 """홈 화면 오른쪽 '수행 결과' 패널: Agent가 호출한 도구와 조회 결과를 표로 보여준다."""
 import streamlit as st
 
-EXAMPLES = (
-    "처리 안 한 계약 만료 알림 있어?",
-    "이가상 지금 무슨 과제에 투입되어 있어?",
-    "협력 인력 중 계정 ID가 없는 사람 몇 명이야?",
-    "이가상 ID카드 신청 진행 중으로 바꿔줘",
-)
+from pmo.agent.agents import AGENTS, AUTO
+
+EXAMPLES = AGENTS[AUTO].examples   # 카테고리별 예시 질문은 pmo/agent/agents.py
 
 TOOL_LABELS = {
     "find_people": "인력 찾기",

@@ -114,11 +114,17 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
 
    ```powershell
    .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b,gemma4:12b,qwen3:14b
+   # 자동(전체) 단일 Agent와 카테고리별 전문 Agent 비교
+   .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b --routing auto,category
    ```
 
 4. 앱 첫 화면인 '홈'에서 질문합니다. 왼쪽은 AI Agent와의 대화, 오른쪽은 Agent가 사용한 도구와 조회 결과 표입니다.
    "어느 김가상이요?"처럼 Agent가 되물으면 이어서 답하면 됩니다(최근 대화 8개를 함께 보냄).
    질문이 여러 개면 오른쪽 위에서 결과를 볼 질문을 고를 수 있습니다. 터미널에서 한 번 물어볼 수도 있습니다.
+
+   입력창 위의 **업무 카테고리**(자동(전체) · 인력관리 · 근무 환경 준비 · 구매계약 · 검수)를 고르면
+   그 업무 전문 Agent가 필요한 도구와 업무 지침(`agent_skills/`)만 가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.
+   맡은 업무 밖의 질문이면 다른 카테고리를 고르라고 안내합니다. 터미널에서는 `--agent contract`처럼 지정합니다.
 
    ```powershell
    $env:PMO_OLLAMA_MODEL = "qwen3:8b"
@@ -197,11 +203,11 @@ Streamlit AppTest로 미리보기·취소·저장·수정·재실행 흐름을 �
 - `pmo/service.py`: 유효성 검증, 등록·수정·이력 저장, 계약·알림·투입 이력 조회, 실행 기록
 - `pmo/contracts.py`: 계약 검증과 알림 기준 계산
 - `pmo/tools.py`: Agent가 호출하는 도구 계층
-- `pmo/agent/`: LLM 연결(Ollama), 시스템 프롬프트, Agent 실행 루프
+- `pmo/agent/`: LLM 연결(Ollama), 시스템 프롬프트, Agent 실행 루프, 카테고리별 전문 Agent(`agents.py`)
 - `scripts/ask.py`: 터미널에서 자연어 질문
 - `pmo/harness.py`, `scripts/run_evals.py`, `evals/`: 평가 하네스
 - `pmo/demo.py`, `scripts/seed_demo.py`: 가상 데이터
-- `agent_skills/`: 서비스 Agent 업무 지침 (아직 서비스에 연결되지 않음)
+- `agent_skills/`: 서비스 Agent 업무 지침 (전문 Agent 프롬프트에 주입, 자동(전체)에는 미주입)
 - `.claude/skills/`: Claude Code 개발 스킬
 - `tests/`: 업무 로직 및 화면 흐름 테스트
 - [데이터 설계](docs/data-model.md): 필드 의미, 저장 규칙 및 후속 TODO

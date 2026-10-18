@@ -36,7 +36,7 @@
 - 투입 계획과 계약 기간을 비교한 월별 구매 필요 인력 조회
 - 구매시스템 기준 투입 MM 계산 (Full time 월별 근무일 비율은 구현됨, 5.4 참고)
 - 업체별 월 검수 금액을 매출귀속 프로젝트별로 계산·집계
-- 단일 Agent의 자연어 도구 호출 → 인력·계약·검수 전문 Agent의 멀티에이전트
+- 단일 Agent의 자연어 도구 호출 → 인력·계약·검수 전문 Agent의 멀티에이전트 (수동 카테고리 선택은 구현됨, 5.6 참고. 자동 라우터는 이후)
 - 업무별 재사용 스킬, 필요 시 RAG 기반 업무 지침 검색
 
 ### 2.3 제외
@@ -159,6 +159,21 @@
   - B 업체의 10월 계약 종료 예정 인력 알려줘.
   - B 업체의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘. (계산 규칙 [TODO])
 
+### 5.6 업무 카테고리별 전문 Agent (멀티에이전트, 수동 선택)
+
+- [확정] 홈 화면 입력창 위에서 업무 카테고리를 고른다: 자동(전체), 인력관리, 근무 환경 준비, 구매계약, 검수 (총 4개 + 자동).
+- [제안] 각 전문 Agent는 맡은 업무의 도구만 받는다. 정의는 `pmo/agent/agents.py`의 `AGENTS`다.
+  - 인력관리: find_people, get_assignment_timeline, query_database, prepare_account_id
+  - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
+  - 구매계약: find_people, list_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
+  - 검수: inspection_amount_by_revenue_project(구현 예정)
+  - 자동(전체): 모든 도구, 업무 지침 미주입 (기존 단일 Agent, 비교 기준)
+- [제안] 전문 Agent의 시스템 프롬프트 = 공통 규칙(`prompts.py`) + 역할 + `agent_skills/` 업무 지침 본문.
+  지침의 앞머리·'성공 기준' 절과, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.
+- [제안] 목록 밖 도구를 부르면 실행하지 않고 실패 결과를 돌려주며, 맡은 업무 밖이면 다른 카테고리를 고르도록 안내한다.
+- [제안] query_database는 세 Agent에 모두 주고, 볼 수 있는 테이블은 공통(SAFE_TABLES)이다. Agent별 테이블 제한은 필요하면 추가한다.
+- [TODO] 질문을 보고 Agent를 자동으로 고르는 라우터 Agent, 한 질문이 여러 업무에 걸칠 때의 협업 방식
+
 ## 6. 코드 구성 원칙
 
 - [확정] 화면(`app.py`, `ui/`), 업무 로직(`pmo/service.py`, `pmo/contracts.py`, `pmo/checklist.py`, `pmo/mm.py`), DB 접근(`pmo/db.py`), LLM 연동(`pmo/agent/`)을 분리한다.
@@ -181,7 +196,8 @@
 4. [구현] 오류 처리: 검증·충돌 오류를 사용자 메시지로 표시, 도구는 예외 대신 실패 결과 반환
 5. [구현] 실행 기록: 저장 함수·도구 호출의 입력·성공 여부·오류·소요 시간을 `run_log`에 기록
 6. [구현] 테스트: 저장·조회·알림 핵심 로직 자동 테스트, 평가 질문 oracle 실행(`python -m scripts.run_evals`)
-7. [구현] LLM 평가: `python -m scripts.run_evals --model 모델1,모델2`로 질문별 도구 선택 정답·답변·응답 시간·성공 여부를 기록하고 모델을 비교
+7. [구현] LLM 평가: `python -m scripts.run_evals --model 모델1,모델2`로 질문별 도구 선택 정답·답변·응답 시간·성공 여부를 기록하고 모델을 비교.
+   `--routing auto,category`로 자동(전체) 단일 Agent와 카테고리별 전문 Agent(질문의 `agent` 태그)를 비교
 8. [TODO] 답변 내용 자체의 정확도 채점·Text-to-SQL 평가 질문(현재는 도구 선택과 도구 결과만 자동 채점), 질문 추가
 
 ## 8. 개발용 스킬과 서비스 Agent 업무 지침
@@ -190,6 +206,7 @@
 - 서비스 Agent용 업무 지침: `agent_skills/` (향후 서비스 LLM에 제공할 업무 절차)
 - [확정] 둘을 섞지 않는다. 업무 지침 문서를 만들었다고 서비스에 연결되었다고 간주하지 않는다.
   각 업무 지침에는 연결 상태와 도구별 구현 여부를 표시한다.
+- [제안] 업무 지침 본문은 카테고리별 전문 Agent의 프롬프트에 주입한다(5.6). 주입하는 지침은 `agent_skills/README.md` 표에 적는다.
 
 ## 9. 검증 기준
 
@@ -232,3 +249,5 @@
 - [ ] 평가 질문 확대 후 qwen3:14b·gemma4:12b 재비교
 - [x] Text-to-SQL: LlamaIndex 사용 (조회 SQL 생성만)
 - [ ] LangGraph 등 Agent 프레임워크 도입 시점
+- [x] 업무 카테고리별 전문 Agent 수동 선택 (4개 + 자동(전체))
+- [ ] 자동 라우터 Agent, Agent별 Text-to-SQL 테이블 제한

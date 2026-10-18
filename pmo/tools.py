@@ -123,10 +123,11 @@ def _checklist_status(service: Service, person_id: str | None) -> list[dict]:
             for a in service.assignments(person_id)]
 
 
-def tool_specs(include_planned: bool = False) -> list[dict]:
-    """LLM에 넘길 도구 목록(이름·설명·입력 스키마)."""
+def tool_specs(include_planned: bool = False, names=None) -> list[dict]:
+    """LLM에 넘길 도구 목록(이름·설명·입력 스키마). names를 주면 그 도구만(전문 Agent용)."""
     return [{"name": t.name, "description": t.description, "input_schema": t.parameters}
-            for t in TOOLS.values() if include_planned or t.status == IMPLEMENTED]
+            for t in TOOLS.values()
+            if (include_planned or t.status == IMPLEMENTED) and (names is None or t.name in names)]
 
 
 def _check_args(tool: Tool, args: dict) -> dict:
