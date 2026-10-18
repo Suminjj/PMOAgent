@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable
 
-from pmo.agent.actions import build_plan
+from pmo.agent.actions import _person, build_plan
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
 from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES as CHECKLIST_STATUSES
@@ -66,18 +66,18 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          _obj({"name": STR}, ("name",)),
          handler=lambda s, a: s.find_people(a["name"])),
     Tool("get_assignment_timeline", "인력의 현재 투입·과거 투입·예정 투입 과제와 기간을 조회한다.",
-         _obj({"person_id": STR}, ("person_id",)),
-         handler=lambda s, a: s.assignment_timeline(a["person_id"])),
+         _obj({"person_id": PERSON}, ("person_id",)),
+         handler=lambda s, a: s.assignment_timeline(_pid(s, a["person_id"]))),
     Tool("list_contracts", "인력의 구매계약(계약번호·기간·상태·연장 여부)을 조회한다.",
-         _obj({"person_id": STR}, ("person_id",)),
-         handler=lambda s, a: s.contracts(a["person_id"])),
+         _obj({"person_id": PERSON}, ("person_id",)),
+         handler=lambda s, a: s.contracts(_pid(s, a["person_id"]))),
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
          handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
     Tool("checklist_status", "근무 환경 준비(좌석 배정·ID카드 신청·OA기기 신청·방문예약) 진행 상황을 조회한다. "
          "person_id를 주면 그 인력의 투입별 항목 상태, 없으면 준비가 남은 투입 목록을 돌려준다.",
-         _obj({"person_id": STR}),
-         handler=lambda s, a: _checklist_status(s, a.get("person_id"))),
+         _obj({"person_id": {"type": "string", "description": "대상 인력의 id 또는 이름. 비우면 준비가 남은 전체 투입"}}),
+         handler=lambda s, a: _checklist_status(s, _pid(s, a["person_id"]) if a.get("person_id") else None)),
     Tool("pending_contract_alerts", "계약 종료 14일 전부터 표시되는 미확인 만료 알림 목록을 조회한다.",
          _obj({}),
          handler=lambda s, a: s.pending_alerts()),
@@ -129,6 +129,14 @@ TOOL_LABELS = {
     "prepare_account_id": "계정 ID 입력",
     "prepare_alert_ack": "계약 종료 알림 확인",
 }
+
+
+def _pid(service: Service, value: str) -> str:
+    """조회 도구에 이름이 들어와도 관리번호로 바꾼다. 없거나 동명이인이면 되물을 오류를 낸다.
+
+    작은 모델이 find_people 없이 이름을 넣으면 빈 결과가 나오고, 모델이 '모두 완료'처럼 지어내 답하던 문제를 막는다.
+    """
+    return _person(service, {"person_id": value})["id"]
 
 
 def _checklist_status(service: Service, person_id: str | None) -> list[dict]:

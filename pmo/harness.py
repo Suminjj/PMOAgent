@@ -95,12 +95,16 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
         for q in spec["questions"]:
             t0 = time.perf_counter()
             calls = planner.plan(q, tool_specs(), service)
-            expected = [(s["tool"], s["args"]) for s in q["steps"]]
+            called = [c[0] for c in calls]
+            # optional 단계(예: 이름을 받는 도구 앞의 find_people)는 건너뛰어도 된다. 코드가 이름을 관리번호로 바꾼다.
+            steps = [st for st in q["steps"] if not st.get("optional") or st["tool"] in called]
             problems = []
-            if [c[0] for c in calls] != [e[0] for e in expected]:
-                problems.append(f"도구 순서 {[c[0] for c in calls]} (기대 {[e[0] for e in expected]})")
-            for (name, args), step in zip(calls, q["steps"]):
-                problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
+            if called != [st["tool"] for st in steps]:
+                want = [st["tool"] + ("(생략 가능)" if st.get("optional") else "") for st in q["steps"]]
+                problems.append(f"도구 순서 {called} (기대 {want})")
+            else:
+                for (name, args), step in zip(calls, steps):
+                    problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
             row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"),
                    "tools": [c[0] for c in calls],
                    "success": not problems, "problems": problems,

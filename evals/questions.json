@@ -1,5 +1,5 @@
 {
-  "about": "자연어 조회 평가 질문. 가상 데이터(pmo/demo.py)를 기준일 today에 넣은 뒤 실행한다. steps는 정답 도구 호출 순서, expect는 결과 검증 조건이다. agent는 홈 화면에서 고를 카테고리(pmo/agent/agents.py의 키)로, --routing category 평가에서 이 Agent에 묻는다.",
+  "about": "자연어 조회 평가 질문. 가상 데이터(pmo/demo.py)를 기준일 today에 넣은 뒤 실행한다. steps는 정답 도구 호출 순서, expect는 결과 검증 조건이다. agent는 홈 화면에서 고를 카테고리(pmo/agent/agents.py의 키)로, --routing category 평가에서 이 Agent에 묻는다. optional: true인 단계는 건너뛰어도 된다(이름을 받는 도구 앞의 find_people).",
   "today": "2026-10-17",
   "questions": [
     {
@@ -16,7 +16,8 @@
           "expect": {
             "ok": true,
             "count": 1
-          }
+          },
+          "optional": true
         },
         {
           "tool": "get_assignment_timeline",
@@ -65,7 +66,8 @@
           "expect": {
             "ok": true,
             "count": 1
-          }
+          },
+          "optional": true
         },
         {
           "tool": "list_contracts",
@@ -174,7 +176,8 @@
           "expect": {
             "ok": true,
             "count": 1
-          }
+          },
+          "optional": true
         },
         {
           "tool": "checklist_status",
@@ -203,7 +206,8 @@
           "expect": {
             "ok": true,
             "count": 1
-          }
+          },
+          "optional": true
         },
         {
           "tool": "prepare_checklist_update",
