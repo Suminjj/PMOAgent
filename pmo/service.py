@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from pmo.checklist import CLOSED, ITEMS as CHECKLIST_ITEMS, make_draft, validate_change
 from pmo.config import TIMEZONE, grades, today as kst_today
 from pmo.contracts import (
     CONTRACT_CATEGORIES, expiry_state, month_range, notify_from, validate_contract,
@@ -236,7 +237,7 @@ class Service:
             if table == "assignments":
                 con.executemany(
                     "INSERT INTO checklist(assignment_id,item) VALUES (?,?)",
-                    [(entity_id, item) for item in ("좌석 배정", "ID카드 신청", "OA기기 신청", "방문예약")]
+                    [(entity_id, item) for item in CHECKLIST_ITEMS]
                 )
         Service._audit(con, table, entity_id, dict(before) if before else None, after, actor)
         return entity_id
@@ -457,3 +458,107 @@ class Service:
             after = dict(before, status="확인", acknowledged_at=now, acknowledged_by=actor)
             self._audit(con, "contract_alerts", str(alert_id), dict(before), after, actor)
             return int(alert_id)
+
+    # ------------------------------------------------------------------
+    # 근무 환경 준비 체크리스트
+    # ------------------------------------------------------------------
+    def checklist(self, assignment_id: str) -> list[dict]:
+        """투입 건의 4개 항목을 정해진 순서로 돌려준다.
+
+        예전 데이터에 빠진 항목이 있으면 exists=False인 '미진행'으로 보여주고, 처음 저장할 때 만든다.
+        """
+        assignment_id = required(assignment_id, "투입 관리번호")
+        with connection(self.path) as con:
+            rows = {r["item"]: dict(r) for r in con.execute(
+                "SELECT * FROM checklist WHERE assignment_id=?", (assignment_id,))}
+        result = []
+        for item in CHECKLIST_ITEMS:
+            row = rows.get(item) or {"assignment_id": assignment_id, "item": item, "status": "미진행",
+                                     "reason": "", "version": 0, "draft": None, "drafted_at": None,
+                                     "applied_at": None, "updated_at": None, "updated_by": None}
+            result.append(dict(row, exists=item in rows))
+        return result
+
+    def checklist_overview(self, include_closed: bool = False, today: date | None = None) -> list[dict]:
+        """투입 건별 준비 현황. 기본은 끝나지 않은 투입 중 미처리 항목이 남은 건만, 시작일 순."""
+        day = (today or self.clock()).isoformat()
+        with connection(self.path) as con:
+            assignments = [dict(r) for r in con.execute(
+                """SELECT a.id, a.person_id, a.project, a.start_date, a.end_date,
+                          p.name, p.company, p.category, p.account_id
+                   FROM assignments a JOIN people p ON p.id=a.person_id
+                   WHERE a.end_date >= ? ORDER BY a.start_date, p.name""", (day,))]
+            rows = {}
+            for r in con.execute("SELECT assignment_id, item, status FROM checklist"):
+                rows.setdefault(r["assignment_id"], {})[r["item"]] = r["status"]
+        result = []
+        for a in assignments:
+            statuses = {item: rows.get(a["id"], {}).get(item, "미진행") for item in CHECKLIST_ITEMS}
+            open_items = [i for i, st in statuses.items() if st not in CLOSED]
+            if open_items or include_closed:
+                result.append(dict(a, statuses=statuses, open_items=open_items,
+                                   done=len(CHECKLIST_ITEMS) - len(open_items),
+                                   total=len(CHECKLIST_ITEMS),
+                                   days_to_start=(date.fromisoformat(a["start_date"])
+                                                  - date.fromisoformat(day)).days))
+        return result
+
+    @staticmethod
+    def _checklist_target(con, assignment_id: str, item: str):
+        assignment = con.execute(
+            """SELECT a.*, p.name, p.company, p.category, p.account_id FROM assignments a
+               JOIN people p ON p.id=a.person_id WHERE a.id=?""", (assignment_id,)).fetchone()
+        if not assignment:
+            raise ValidationError("등록된 투입 건을 선택하세요.")
+        con.execute("INSERT OR IGNORE INTO checklist(assignment_id,item,version) VALUES (?,?,0)",
+                    (assignment_id, item))
+        row = con.execute("SELECT * FROM checklist WHERE assignment_id=? AND item=?",
+                          (assignment_id, item)).fetchone()
+        return dict(assignment), dict(row)
+
+    @logged("update_checklist_item")
+    def update_checklist_item(self, assignment_id: str, item: str, status: str, reason: str = "", *,
+                              actual_done: bool = False, token: str, actor: str,
+                              expected_version: int) -> str:
+        """항목 상태를 바꾼다. 완료는 실제 신청·예약을 마쳤다는 확인(actual_done)이 있어야 한다."""
+        change = validate_change(item, status, reason, actual_done)
+        assignment_id = required(assignment_id, "투입 관리번호")
+        token, actor = required(token, "저장 요청 ID"), required(actor, "변경 주체")
+        fingerprint = self._fingerprint(["checklist", assignment_id, item, change, actual_done,
+                                         actor, expected_version])
+        with connection(self.path) as con:
+            con.execute("BEGIN IMMEDIATE")
+            previous = self._previous_request(con, token, fingerprint)
+            if previous is not None:
+                return previous
+            _, before = self._checklist_target(con, assignment_id, item)
+            if before["version"] != expected_version:
+                raise ConflictError("체크리스트가 변경되었습니다. 최신 내용을 다시 조회하고 확인하세요.")
+            now = datetime.now(TIMEZONE).isoformat()
+            applied_at = (before["applied_at"] or now) if change["status"] == "완료" else None
+            after = dict(before, **change, applied_at=applied_at, updated_at=now, updated_by=actor,
+                         version=before["version"] + 1)
+            con.execute("""UPDATE checklist SET status=?, reason=?, applied_at=?, updated_at=?,
+                           updated_by=?, version=? WHERE assignment_id=? AND item=?""",
+                        (after["status"], after["reason"], applied_at, now, actor, after["version"],
+                         assignment_id, item))
+            entity_id = f"{assignment_id}:{item}"
+            self._audit(con, "checklist", entity_id, before, after, actor)
+            con.execute("INSERT INTO requests VALUES (?,?,?)", (token, fingerprint, entity_id))
+            return entity_id
+
+    @logged("create_checklist_draft")
+    def create_checklist_draft(self, assignment_id: str, item: str, *, actor: str) -> str:
+        """신청 초안을 만들어 저장한다. 상태는 바꾸지 않는다(초안 ≠ 실제 신청)."""
+        actor = required(actor, "변경 주체")
+        with connection(self.path) as con:
+            con.execute("BEGIN IMMEDIATE")
+            assignment, before = self._checklist_target(con, required(assignment_id, "투입 관리번호"), item)
+            draft = make_draft(item, assignment, assignment)
+            now = datetime.now(TIMEZONE).isoformat()
+            # 초안은 상태와 무관하므로 버전을 올리지 않는다(작성 중인 상태 변경 미리보기를 깨지 않게).
+            after = dict(before, draft=draft, drafted_at=now)
+            con.execute("UPDATE checklist SET draft=?, drafted_at=? WHERE assignment_id=? AND item=?",
+                        (draft, now, assignment_id, item))
+            self._audit(con, "checklist", f"{assignment_id}:{item}", before, after, actor)
+            return draft

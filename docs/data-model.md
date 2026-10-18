@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | people | id, account_id, name, company, category, version | 내부 관리번호, 발급 후 계정 ID와 기본 정보 |
 | assignments | id, person_id, project, start_date, end_date, grade, assignment_type, mm, mm_details, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보와 MM 산정 근거 |
-| checklist | assignment_id, item, status, reason | 신규 투입과 함께 생성되는 준비 항목 |
+| checklist | assignment_id, item, status, reason, version, draft, drafted_at, applied_at, updated_at, updated_by | 신규 투입과 함께 생성되는 준비 항목과 처리 상태 |
 | audit | entity, entity_id, before_json, after_json, changed_at, actor | 등록·수정 전후 값과 주체 |
 | requests | token, payload_hash, result_id | 동일 저장 요청 재실행 방지 |
 | contracts | id, person_id, assignment_id, company, contract_no, start_date, end_date, status, previous_contract_id, note, version | 인력별 구매계약. 연장은 이전 계약을 가리킨다 |
@@ -55,9 +55,8 @@
 - 매출·매입단가별 단위, 적용 기간과 실제 조건 변경 처리
 - 구매MM과 계약의 관계, 월별 구매 필요 판정 기준
 - 회사 지정·임시공휴일과 구매시스템 달력 일치 및 검수 금액 반올림 규칙
-- 체크리스트 상태 변경과 해당 없음 사유 검증 화면
 
-스키마 버전은 PRAGMA user_version=4다. v1·v2·v3는 백업 후 마이그레이션하며 기존
+스키마 버전은 PRAGMA user_version=5다. v1~v4는 백업 후 마이그레이션하며 기존
 관리번호·금액·이력·연결 관계를 보존한다. 기존의 직접 입력한 ID를 계정 ID로 추정하지 않는다.
 미확인 스키마는 자동 재생성하거나 삭제하지 않고 실행을 중단한다.
 
@@ -95,3 +94,13 @@
 - 저장 함수(save_*), 알림 확인, 도구 호출(tool:*)마다 입력·성공 여부·결과 요약·오류·소요 시간을 남긴다.
 - 저장 요청 토큰은 기록하지 않는다. 기록 실패는 업무 처리 결과를 바꾸지 않는다.
 - 로컬 DB에 함께 저장되므로 실제 데이터를 쓰는 DB는 Git에 올리지 않는다.
+
+## 근무 환경 준비 체크리스트 (v5)
+
+- 항목은 좌석 배정·ID카드 신청·OA기기 신청·방문예약 4개이며 (assignment_id, item)이 유일하다.
+- 상태는 미진행·진행 중·완료·해당 없음. 해당 없음은 reason이 필수다.
+- 완료는 담당자가 "실제 신청·예약을 마쳤다"고 확인해야 저장되고, 처음 완료한 시각을 applied_at에 남긴다.
+  완료에서 다른 상태로 되돌리면 applied_at을 지운다.
+- 신청 초안(draft, drafted_at)은 상태와 별개다. 초안을 만들어도 상태와 version은 바뀌지 않는다.
+- 상태 변경은 version 검사와 요청 토큰으로 오래된 화면의 덮어쓰기·중복 저장을 막고, 전후 값을 audit에 남긴다.
+- 예전 데이터에 빠진 항목은 화면에 미진행으로 보여주고 처음 저장할 때 만든다. 마이그레이션에서 임의로 채우지 않는다.

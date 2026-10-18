@@ -7,10 +7,13 @@
 
 | 지침 | 업무 | 서비스 연결 |
 | --- | --- | --- |
-| [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회 | 미연결 (도구는 구현됨) |
-| [contract-expiry](contract-expiry/SKILL.md) | 구매계약 기간·종료 예정·만료 알림 조회 | 미연결 (도구 일부 구현) |
+| [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회 | 부분 연결 (도구 구현, 지침 본문 미주입) |
+| [contract-expiry](contract-expiry/SKILL.md) | 구매계약 기간·종료 예정·만료 알림 조회 | 부분 연결 (도구 일부 구현, 지침 본문 미주입) |
+| [work-environment-checklist](work-environment-checklist/SKILL.md) | 근무 환경 준비 현황 조회 | 부분 연결 (조회 도구 구현, 지침 본문 미주입) |
 
-- **미연결**: LLM API가 아직 연결되지 않아 이 문서를 읽는 Agent가 없다. 문서가 있다고 서비스에서 동작하는 것이 아니다.
+- **부분 연결**: 로컬 LLM Agent(`pmo/agent/`)가 연결되어 도구를 호출한다. 다만 Agent에는
+  `pmo/agent/prompts.py`의 공통 규칙만 들어가고, 이 폴더의 지침 본문은 아직 프롬프트에 넣지 않는다.
+  질문에 맞는 지침을 골라 넣는 기능(스킬 선택·RAG)은 다음 단계다. 문서가 있다고 Agent가 따르는 것이 아니다.
 - 도구는 `pmo/tools.py`에 정의되어 있고, 구현 여부는 각 지침의 "연결 도구" 표를 따른다.
 - 도구 이름·입력을 바꾸면 이 지침과 `evals/questions.json`을 함께 고친다.
 

@@ -31,8 +31,8 @@ try:
 except sqlite3.Error:
     pending_alerts = []
     st.sidebar.error("계약 만료 알림을 확인하지 못했습니다.")
-page = st.sidebar.radio("메뉴", ["인력 관리", "투입 관리", "구매계약 관리", "계약 종료 알림",
-                                "자연어 조회", "변경 이력"])
+page = st.sidebar.radio("메뉴", ["인력 관리", "투입 관리", "근무 환경 준비", "구매계약 관리",
+                                "계약 종료 알림", "자연어 조회", "변경 이력"])
 if pending_alerts:
     st.sidebar.warning(f"미확인 계약 종료 알림 {len(pending_alerts)}건")
 if pending_alerts and page != "계약 종료 알림":
@@ -40,6 +40,7 @@ if pending_alerts and page != "계약 종료 알림":
                "왼쪽 메뉴의 '계약 종료 알림'에서 확인하세요.")
 if st.session_state.get("page") != page:
     st.session_state.pop("pending", None)
+    st.session_state.pop("ck_pending", None)
     st.session_state["page"] = page
 if message := st.session_state.pop("saved_message", None):
     st.success(message)
@@ -317,6 +318,110 @@ elif page == "투입 관리":
         if st.button("미리보기", key="preview_assignment"):
             stage("assignment", input_data, current)
     confirm()
+
+elif page == "근무 환경 준비":
+    from pmo.checklist import STATUSES
+
+    st.subheader("준비가 남은 투입")
+    st.caption("좌석 배정·ID카드 신청·OA기기 신청·방문예약 진행 상황입니다. "
+               "'완료'는 사내 시스템에서 실제 신청·예약을 마친 경우에만 선택하세요.")
+    include_closed = st.checkbox("준비를 마친 투입도 보기", key="ck_include_closed")
+    overview = service.checklist_overview(include_closed=include_closed)
+
+    def start_label(days: int) -> str:
+        return "투입 중" if days < 0 else ("오늘 시작" if days == 0 else f"시작 D-{days}")
+
+    if not overview:
+        st.success("준비가 남은 투입이 없습니다.")
+        st.stop()
+    st.dataframe([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
+                   "시작일": r["start_date"], "시작까지": start_label(r["days_to_start"]),
+                   "진행": f"{r['done']}/{r['total']}", "남은 항목": ", ".join(r["open_items"]) or "-",
+                   "투입 관리번호": r["id"]} for r in overview],
+                 use_container_width=True, hide_index=True)
+    by_assignment = {r["id"]: r for r in overview}
+    aid = st.selectbox(
+        "확인할 투입", list(by_assignment), key="ck_assignment",
+        format_func=lambda i: f"{by_assignment[i]['name']} · {by_assignment[i]['company']} · "
+                              f"{by_assignment[i]['project'] or '과제 미입력'} · {by_assignment[i]['start_date']}")
+    if st.session_state.get("ck_context") != aid:
+        st.session_state.pop("ck_pending", None)
+        st.session_state["ck_context"] = aid
+
+    for index, row in enumerate(service.checklist(aid)):
+        with st.container(border=True):
+            head, state = st.columns([3, 2])
+            head.markdown(f"**{row['item']}**")
+            state.markdown(f"상태: **{row['status']}**")
+            notes = []
+            if row["reason"]:
+                notes.append(f"사유·메모: {row['reason']}")
+            if row["applied_at"]:
+                notes.append(f"실제 신청 완료 기록: {row['applied_at'][:16].replace('T', ' ')}")
+            if row["updated_by"]:
+                notes.append(f"최근 변경: {row['updated_by']} · {row['updated_at'][:16].replace('T', ' ')}")
+            if notes:
+                st.caption(" · ".join(notes))
+            a, b = st.columns([2, 3])
+            new_status = a.selectbox("변경할 상태", STATUSES, index=STATUSES.index(row["status"]),
+                                     key=f"ck_status_{aid}_{index}")
+            reason = b.text_input("사유·메모 ('해당 없음'이면 필수)", value=row["reason"],
+                                  key=f"ck_reason_{aid}_{index}")
+            actual = False
+            if new_status == "완료":
+                actual = st.checkbox("사내 시스템에서 실제 신청·예약을 마쳤습니다.",
+                                     key=f"ck_actual_{aid}_{index}")
+            left, right = st.columns(2)
+            if left.button("변경 내용 확인", key=f"ck_preview_{aid}_{index}"):
+                from pmo.checklist import validate_change
+                try:
+                    validate_change(row["item"], new_status, reason, actual)
+                    changed = not (new_status == row["status"] and reason.strip() == row["reason"])
+                except ValidationError as exc:
+                    st.error(str(exc))
+                    changed = None
+                if changed is False:
+                    st.info("바뀐 내용이 없습니다.")
+                elif changed:
+                    st.session_state["ck_pending"] = dict(
+                        aid=aid, index=index, item=row["item"], before=row["status"],
+                        status=new_status, reason=reason, actual=actual,
+                        version=row["version"], token=str(uuid4()), actor=actor.strip())
+            if right.button("신청 초안 만들기", key=f"ck_draft_{aid}_{index}"):
+                try:
+                    service.create_checklist_draft(aid, row["item"], actor=actor)
+                    st.session_state["saved_message"] = (f"{row['item']} 신청 초안을 만들었습니다. "
+                                                         "상태는 바뀌지 않았습니다.")
+                    st.rerun()
+                except ValidationError as exc:
+                    st.error(str(exc))
+                except sqlite3.Error:
+                    st.error("초안을 저장하지 못했습니다. 다시 시도하세요.")
+            if row["draft"]:
+                with st.expander(f"신청 초안 · {row['drafted_at'][:16].replace('T', ' ')} 작성"):
+                    st.code(row["draft"], language=None)
+                    st.caption("초안만으로는 신청되지 않습니다. 사내 시스템에 붙여 넣어 직접 신청하세요.")
+            pending = st.session_state.get("ck_pending")
+            if pending and pending["aid"] == aid and pending["index"] == index:
+                st.warning(f"{pending['item']}: {pending['before']} → {pending['status']}"
+                           + (f" (사유: {pending['reason'].strip()})" if pending["reason"].strip() else ""))
+                ok, cancel = st.columns(2)
+                if ok.button("확인 후 저장", type="primary", key=f"ck_confirm_{aid}_{index}"):
+                    try:
+                        service.update_checklist_item(
+                            aid, pending["item"], pending["status"], pending["reason"],
+                            actual_done=pending["actual"], token=pending["token"],
+                            actor=pending["actor"], expected_version=pending["version"])
+                        st.session_state.pop("ck_pending", None)
+                        st.session_state["saved_message"] = f"{pending['item']} 상태를 {pending['status']}(으)로 저장했습니다."
+                        st.rerun()
+                    except (ValidationError, ConflictError) as exc:
+                        st.error(str(exc))
+                    except sqlite3.Error:
+                        st.error("저장하지 못했습니다. 입력은 유지됩니다. 다시 시도하세요.")
+                if cancel.button("취소", key=f"ck_cancel_{aid}_{index}"):
+                    st.session_state.pop("ck_pending", None)
+                    st.rerun()
 
 elif page == "구매계약 관리":
     def contract_rows(rows: list[dict]) -> list[dict]:

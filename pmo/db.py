@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS checklist (
     assignment_id TEXT NOT NULL REFERENCES assignments(id),
     item TEXT NOT NULL, status TEXT NOT NULL DEFAULT '미진행',
     reason TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 1, draft TEXT, drafted_at TEXT,
+    applied_at TEXT, updated_at TEXT, updated_by TEXT,
     PRIMARY KEY(assignment_id, item)
 );
 CREATE TABLE IF NOT EXISTS audit (
@@ -65,9 +67,12 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE TABLE IF NOT EXISTS requests (
     token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
 );
-""" + V4_TABLES + "PRAGMA user_version = 4;"
+""" + V4_TABLES + "PRAGMA user_version = 5;"
 
-LATEST_VERSION = 4
+LATEST_VERSION = 5
+# v5: 체크리스트 상태 변경 지원 (버전 검사, 신청 초안, 실제 신청 완료 시각, 처리자)
+V5_CHECKLIST_COLUMNS = ("version INTEGER NOT NULL DEFAULT 1", "draft TEXT", "drafted_at TEXT",
+                        "applied_at TEXT", "updated_at TEXT", "updated_by TEXT")
 
 
 @contextmanager
@@ -96,6 +101,9 @@ def initialize(path: Path) -> None:
             version = 3
         if version == 3:
             migrate_v3(con, path)
+            version = 4
+        if version == 4:
+            migrate_v4(con, path)
             return
         tables = con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -179,6 +187,25 @@ def migrate_v3(con: sqlite3.Connection, path: Path) -> None:
             if statement.strip():
                 con.execute(statement)
         con.execute("PRAGMA user_version = 4")
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+
+
+def migrate_v4(con: sqlite3.Connection, path: Path) -> None:
+    """체크리스트에 상태 변경용 칸을 추가한다. 기존 항목·상태·사유는 그대로 둔다."""
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("PRAGMA user_version").fetchone()[0] >= 5:
+            con.commit()
+            return
+        backup = path.with_name(path.name + ".backup-v4-" + uuid4().hex[:8] + ".db")
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
+            source.backup(destination)
+        for column in V5_CHECKLIST_COLUMNS:
+            con.execute(f"ALTER TABLE checklist ADD COLUMN {column}")
+        con.execute("PRAGMA user_version = 5")
         con.commit()
     except Exception:
         con.rollback()
