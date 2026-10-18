@@ -46,6 +46,30 @@ def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> d
     return args
 
 
+# 사용자가 직접 말해야 하는 값. 도구 결과로 알 수 없어서 모델이 지어내기 쉬운 값만 둔다.
+GROUNDED_FIELDS = {
+    "prepare_account_id": {"account_id": "계정 ID"},
+    "prepare_contract_save": {"contract_no": "계약번호"},
+}
+
+
+def _ungrounded(service: Service, tool: str, args: dict, texts: list[str]) -> str | None:
+    """사용자가 말하지 않은 값을 넣었으면 되물을 문장을 돌려준다.
+
+    작은 로컬 모델이 맡은 도구로 할 수 없는 요청(예: 인력관리 Agent에 계약 삭제)을 받으면 비슷한 저장 도구를
+    대신 부르고 값을 지어내는 일이 있다. 이런 값은 사용자 문장(이번 질문·최근 사용자 메시지)에 그대로 있어야 한다.
+    """
+    names = {p["name"] for p in service.people()}
+    for field, label in GROUNDED_FIELDS.get(tool, {}).items():
+        value = str(args.get(field) or "").strip()
+        if not value:
+            continue
+        if value in names or not any(value.casefold() in t.casefold() for t in texts):
+            return (f"{label} '{value}'은(는) 사용자가 말한 값이 아닙니다. 값을 지어내지 마세요. "
+                    "사용자가 요청한 작업이 이 도구로 할 일이 맞는지 다시 보고, 맞으면 값을 물어보세요.")
+    return None
+
+
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
         history: list[dict] | None = None, agent: AgentSpec | str | None = None) -> dict:
@@ -79,9 +103,12 @@ def ask(service: Service, question: str, client: ChatClient,
             texts = [question] + [m["content"] for m in reversed(history or []) if m.get("role") == "user"]
             for call in reply["tool_calls"]:
                 call["arguments"] = _fill_person(service, call["name"], call["arguments"] or {}, texts)
+                problem = _ungrounded(service, call["name"], call["arguments"], texts)
                 if allowed is not None and call["name"] not in allowed:
                     result = {"ok": False, "tool": call["name"],
                               "error": f"{spec.label} Agent가 쓸 수 없는 도구입니다. 맡은 업무 밖이면 다른 카테고리를 안내하세요."}
+                elif problem:
+                    result = {"ok": False, "tool": call["name"], "error": problem}
                 else:
                     result = call_tool(service, call["name"], call["arguments"])
                 calls.append({"tool": call["name"], "arguments": call["arguments"], "ok": result["ok"],

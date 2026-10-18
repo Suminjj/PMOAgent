@@ -129,3 +129,29 @@ def test_category_routing_in_eval_harness():
     assert any("[업무 지침: inspection-amount]" in p for p, _ in client.prompts)
     with pytest.raises(ValueError):
         AgentPlanner(client, "router")
+
+
+def test_request_outside_category_is_not_turned_into_another_change(service):
+    """인력관리 Agent에 계약 삭제를 요청하자 모델이 계정 ID 입력으로 대신 처리하던 문제 (PC 확인 10/18)."""
+    client = ScriptedClient([tool_call("prepare_account_id", person_id="박가상", account_id="park.fake"),
+                             text("구매계약 카테고리에서 요청해 주세요.")])
+    result = ask(service, "박가상 계약 삭제해줘", client, agent="staff")
+    call = result["calls"][0]
+    assert not call["ok"] and "사용자가 말한 값이 아닙니다" in call["error"] and not call["data"]
+    assert "할 수 없는 요청을 비슷한 다른 도구로 대신 처리하지 않는다" in client.seen[0][0][0]["content"]
+    assert not [r for r in service.run_log() if r["operation"] == "tool:prepare_account_id"]
+
+
+def test_name_is_not_accepted_as_account_id(service):
+    client = ScriptedClient([tool_call("prepare_account_id", person_id="박가상", account_id="박가상"), text("?")])
+    assert not ask(service, "박가상 계약 삭제해줘", client, agent="staff")["calls"][0]["ok"]
+
+
+def test_values_the_user_said_still_make_a_card(service):
+    client = ScriptedClient([tool_call("prepare_account_id", person_id="이가상", account_id="Lee.Fake"),
+                             text("확인 카드에서 '확인 후 저장'을 눌러 주세요.")])
+    call = ask(service, "이가상 계정 ID lee.fake로 넣어줘", client, agent="staff")["calls"][0]
+    assert call["ok"] and call["data"]["plan"]["action"] == "account_id"
+    earlier = [{"role": "user", "content": "이가상 계정 ID는 lee.fake야"}, {"role": "assistant", "content": "네"}]
+    client = ScriptedClient([tool_call("prepare_account_id", person_id="이가상", account_id="lee.fake"), text("확인")])
+    assert ask(service, "그걸로 넣어줘", client, agent="staff", history=earlier)["calls"][0]["ok"]

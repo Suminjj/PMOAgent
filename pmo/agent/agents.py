@@ -99,7 +99,8 @@ def system_prompt(agent: AgentSpec, today: str) -> str:
     others = ", ".join(a.label for a in AGENTS.values() if a.key not in (AUTO, agent.key))
     parts = [base, agent.role,
              f"맡은 업무 밖의 요청이면 도구를 부르지 말고, 홈 화면에서 다른 카테고리({others} 또는 자동(전체))를 "
-             "골라 다시 요청해 달라고 안내한다."]
+             "골라 다시 요청해 달라고 안내한다. 할 수 없는 요청을 비슷한 다른 도구로 대신 처리하지 않는다"
+             "(예: 계약 삭제 요청에 계정 ID 입력 도구를 쓰지 않는다)."]
     parts += [f"[업무 지침: {name}]\n{skill_text(name, set(agent.tools))}" for name in agent.skills]
     return "\n\n".join(parts)
 
