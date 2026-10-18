@@ -123,10 +123,26 @@ def test_agent_planner_in_eval_harness():
 class FakeOllama(BaseHTTPRequestHandler):
     received = []
     reply = {}
+    reject_think = False          # 추론 모드가 없는 모델 흉내
+    models = ["qwen3:8b"]
+
+    def _send(self, status, obj):
+        data = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        self._send(200, {"models": [{"name": m, "model": m} for m in FakeOllama.models]})
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeOllama.received.append((self.path, body))
+        if FakeOllama.reject_think and "think" in body:
+            self._send(400, {"error": '"m" does not support thinking'})
+            return
         data = json.dumps(FakeOllama.reply, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -144,6 +160,7 @@ def fake_ollama():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     FakeOllama.received.clear()
+    FakeOllama.reject_think = False
     yield f"http://127.0.0.1:{server.server_port}"
     server.shutdown()
 
@@ -159,6 +176,7 @@ def test_ollama_client_request_and_tool_call_parsing(fake_ollama):
     assert reply == {"content": "", "tool_calls": [{"name": "find_people", "arguments": {"name": "김가상"}}]}
     path, body = FakeOllama.received[0]
     assert path == "/api/chat" and body["model"] == "qwen3:8b" and body["stream"] is False
+    assert body["think"] is False  # 평가 결과로 정한 기본값: 추론 모드 끔
     assert body["options"]["num_ctx"] == 8192  # Ollama 기본 4096이면 지시문·도구 설명이 잘릴 수 있다
     assert body["tools"][0]["function"]["parameters"]["properties"]["name"]["type"] == "string"
 
@@ -170,3 +188,26 @@ def test_ollama_client_string_arguments_and_unreachable_server(fake_ollama):
     assert reply["tool_calls"][0]["arguments"] == {"year": 2026, "month": 10}
     with pytest.raises(LLMError, match="연결할 수 없습니다"):
         OllamaClient(model="m", base_url="http://127.0.0.1:9", timeout=2).chat([], [])
+
+
+def test_think_setting_and_retry_for_models_without_reasoning(fake_ollama, monkeypatch):
+    FakeOllama.reply = {"message": {"content": "답"}}
+    monkeypatch.setenv("PMO_OLLAMA_THINK", "true")
+    OllamaClient(model="m", base_url=fake_ollama).chat([], [])
+    assert FakeOllama.received[-1][1]["think"] is True
+    monkeypatch.setenv("PMO_OLLAMA_THINK", "model")      # 모델 기본값에 맡김
+    OllamaClient(model="m", base_url=fake_ollama).chat([], [])
+    assert "think" not in FakeOllama.received[-1][1]
+    monkeypatch.delenv("PMO_OLLAMA_THINK")
+    FakeOllama.reject_think = True
+    reply = OllamaClient(model="m", base_url=fake_ollama).chat([], [])
+    assert reply["content"] == "답"
+    assert "think" in FakeOllama.received[-2][1] and "think" not in FakeOllama.received[-1][1]
+
+
+def test_check_reports_missing_server_and_model(fake_ollama):
+    OllamaClient(model="qwen3:8b", base_url=fake_ollama).check()
+    with pytest.raises(LLMError, match="ollama pull gemma4:12b"):
+        OllamaClient(model="gemma4:12b", base_url=fake_ollama).check()
+    with pytest.raises(LLMError, match="ollama serve"):
+        OllamaClient(model="qwen3:8b", base_url="http://127.0.0.1:9").check()

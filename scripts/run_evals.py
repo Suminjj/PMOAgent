@@ -8,6 +8,7 @@
 결과는 evals/results/ 에 JSON으로 저장된다(Git 추적 제외).
 """
 import argparse
+import os
 import sys
 
 from pmo.harness import AgentPlanner, OraclePlanner, run
@@ -39,7 +40,17 @@ def main() -> int:
         planners = [OraclePlanner()]
     else:
         from pmo.agent.llm import OllamaClient
-        planners = [AgentPlanner(OllamaClient(model=m.strip())) for m in args.model.split(",") if m.strip()]
+        from pmo.agent.llm import LLMError
+        clients = [OllamaClient(model=m.strip()) for m in args.model.split(",") if m.strip()]
+        try:
+            for client in clients:
+                client.check()  # 서버·모델이 없으면 질문을 돌리기 전에 바로 멈춘다
+        except LLMError as exc:
+            print(f"시작할 수 없습니다: {exc}")
+            return 2
+        planners = [AgentPlanner(c) for c in clients]
+        print("설정: 문맥 " + str(clients[0].num_ctx) + "토큰, 추론 모드 "
+              + os.environ.get("PMO_OLLAMA_THINK", "false"), flush=True)
     results = []
     for planner in planners:
         print(f"\n=== {planner.name} === (질문 하나가 끝날 때마다 표시됩니다)", flush=True)

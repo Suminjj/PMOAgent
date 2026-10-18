@@ -14,6 +14,10 @@ class LLMError(RuntimeError):
 class ChatClient(Protocol):
     name: str
 
+    def check(self) -> None:
+        """서버와 모델을 쓸 수 있는지 확인한다. 문제가 있으면 LLMError."""
+        ...
+
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
         """대화와 도구 목록을 보내고 {"content": str, "tool_calls": [{"name", "arguments"}]}를 돌려준다."""
         ...
@@ -45,6 +49,35 @@ class OllamaClient:
         self.num_ctx = int(os.environ.get("PMO_OLLAMA_NUM_CTX", "8192"))
         self.name = f"ollama:{self.model}"
 
+    def check(self) -> None:
+        """서버가 켜져 있고 모델을 받아 두었는지 확인한다. 문제가 있으면 LLMError."""
+        try:
+            with urllib.request.urlopen(f"{self.base_url}/api/tags", timeout=10) as response:
+                tags = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise LLMError(f"Ollama 서버에 연결할 수 없습니다({self.base_url}). "
+                           "Ollama 앱을 실행하거나 'ollama serve'로 서버를 켜세요.") from exc
+        names = {m.get("name") for m in tags.get("models", [])} | {m.get("model") for m in tags.get("models", [])}
+        wanted = {self.model, f"{self.model}:latest"}
+        if not names & wanted:
+            raise LLMError(f"모델 {self.model}이(가) 없습니다. 'ollama pull {self.model}'로 받으세요.")
+
+    def _post(self, payload: dict) -> dict:
+        request = urllib.request.Request(
+            f"{self.base_url}/api/chat", data=json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            if exc.code == 400 and "think" in detail.lower() and "think" in payload:
+                raise _ThinkUnsupported(detail) from exc
+            raise LLMError(f"Ollama 오류({exc.code}): {detail}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise LLMError(f"Ollama 서버에 연결할 수 없습니다({self.base_url}). "
+                           "Ollama가 실행 중인지, 모델을 받았는지 확인하세요.") from exc
+
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
         payload = {
             "model": self.model, "messages": messages, "stream": False,
@@ -54,21 +87,16 @@ class OllamaClient:
                 "name": t["name"], "description": t["description"], "parameters": t["input_schema"],
             }} for t in tools],
         }
-        think = os.environ.get("PMO_OLLAMA_THINK")
+        # 추론 모드: 평가 결과(qwen3:8b, 질문 7개) 끈 상태에서도 정답률 7/7, 응답은 약 4배 빠름 → 기본 끔.
+        think = os.environ.get("PMO_OLLAMA_THINK", "false").strip().lower()
         if think in ("true", "false"):
             payload["think"] = think == "true"
-        request = urllib.request.Request(
-            f"{self.base_url}/api/chat", data=json.dumps(payload, ensure_ascii=False).encode(),
-            headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                body = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:300]
-            raise LLMError(f"Ollama 오류({exc.code}): {detail}") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise LLMError(f"Ollama 서버에 연결할 수 없습니다({self.base_url}). "
-                           "Ollama가 실행 중인지, 모델을 받았는지 확인하세요.") from exc
+            body = self._post(payload)
+        except _ThinkUnsupported:
+            # 추론 모드가 없는 모델은 think 값을 받지 않으므로 빼고 다시 보낸다.
+            payload.pop("think", None)
+            body = self._post(payload)
         message = body.get("message") or {}
         return {
             "content": _THINK.sub("", message.get("content") or "").strip(),
@@ -76,6 +104,10 @@ class OllamaClient:
                             "arguments": _arguments((c.get("function") or {}).get("arguments"))}
                            for c in message.get("tool_calls") or []],
         }
+
+
+class _ThinkUnsupported(Exception):
+    pass
 
 
 def client_from_env() -> ChatClient:

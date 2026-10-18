@@ -125,7 +125,8 @@ Agent는 조회 도구만 사용하며 등록·수정은 하지 않습니다. �
 
 평가는 질문이 끝날 때마다 결과를 출력합니다. 그래픽카드 메모리가 작아 `ollama ps`의 PROCESSOR가
 CPU/GPU로 나뉘면 질문당 1분 이상 걸릴 수 있습니다. 이때는 모델을 하나씩 돌리고,
-qwen3처럼 추론 모드가 있는 모델은 `$env:PMO_OLLAMA_THINK = "false"`로 꺼서 속도를 비교해 보세요.
+추론 모드는 기본으로 꺼져 있습니다. 켜서 비교하려면 `$env:PMO_OLLAMA_THINK = "true"`로 설정하세요.
+평가 시작 전에 Ollama 서버와 모델을 먼저 확인하므로, 서버가 꺼져 있거나 모델이 없으면 바로 안내하고 멈춥니다.
 
 ## 설정
 
@@ -136,7 +137,7 @@ qwen3처럼 추론 모드가 있는 모델은 `$env:PMO_OLLAMA_THINK = "false"`�
 | PMO_EXTRA_HOLIDAYS | 빈 값 | 추가 제외할 회사 휴일·임시공휴일(YYYY-MM-DD, 쉼표 구분) |
 | PMO_OLLAMA_MODEL | qwen3:8b | 자연어 조회에 쓸 Ollama 모델 |
 | PMO_OLLAMA_URL | http://localhost:11434 | Ollama 서버 주소 |
-| PMO_OLLAMA_THINK | 빈 값 | `true`/`false`로 추론 모드 지정(지원 모델만). 비우면 모델 기본값 |
+| PMO_OLLAMA_THINK | false | 추론 모드. 기본 끔(평가에서 정답률은 같고 약 4배 빠름). `true`로 켜고, `model`이면 모델 기본값 |
 | PMO_OLLAMA_NUM_CTX | 8192 | 모델이 한 번에 읽는 길이(토큰). Ollama 기본 4096은 지시문·도구 설명이 잘릴 수 있어 늘려 둠 |
 
 Windows PowerShell 예:
