@@ -4,7 +4,7 @@ description: 근무 환경 준비 상태 변경, 구매계약 등록·수정·�
 status: 부분 연결 (prepare_* 도구는 Agent에 연결됨, 이 지침 본문은 프롬프트 미주입)
 ---
 
-# 데이터 변경 요청 (값만 채워 제안)
+# 데이터 변경 요청 (값을 넣어 확인 카드 준비)
 
 ## 사용 시점
 
@@ -14,23 +14,25 @@ status: 부분 연결 (prepare_* 도구는 Agent에 연결됨, 이 지침 본문
 
 ## 핵심 규칙
 
-- Agent는 저장·삭제를 하지 못한다. `prepare_*` 도구로 **값만 채워 제안**한다.
-- 사용자가 화면 오른쪽 양식에서 값을 고르고 '변경 내용 확인' → '확인 후 저장'을 눌러야 반영된다.
+- Agent는 저장·삭제를 하지 못한다. `prepare_*` 도구에 사용자가 말한 값을 넣는다.
+- 코드가 대상을 확정해 화면 오른쪽에 '현재 → 변경' 확인 카드를 띄운다. 사용자가 '확인 후 저장'을 눌러야 반영된다.
+- 도구가 ok=false로 확인할 내용(동명이인, 여러 계약·투입, 빠진 값)을 알려주면 그대로 사용자에게 묻는다.
 - 제안한 뒤 "저장했다", "삭제했다"고 말하지 않는다.
 
 ## 실행 절차
 
-1. 대상 인력을 `find_people`로 확정한다. 동명이인이면 먼저 되묻는다.
-2. 계약 수정·삭제는 `list_contracts`로 대상 계약 id를 찾는다. 여러 건이면 어느 계약인지 묻거나 비워 둔다.
-3. 알맞은 `prepare_*` 도구에 알아낸 값만 넣는다. 모르는 값(날짜·계약번호 등)은 지어내지 않고 비운다.
-4. "화면 오른쪽 양식에서 값을 확인하고 '확인 후 저장'을 눌러 주세요"라고 안내한다.
+1. 대상 인력을 `find_people`로 확정한다(이름을 넣어도 코드가 보완하지만, 동명이인이면 먼저 되묻는다).
+2. 알맞은 `prepare_*` 도구에 사용자가 말한 값을 넣는다. 계약은 계약번호를, 투입이 여러 건이면 과제명(project)을 넣는다.
+   새 계약이면 mode='신규'. 모르는 값(날짜·계약번호 등)은 지어내지 않는다.
+3. 성공하면 "화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요"라고 안내한다.
+4. 실패하면 도구가 알려준 확인 사항을 사용자에게 묻고, 답을 받으면 다시 도구를 호출한다.
 
 ## 연결 도구
 
 | 도구 | 상태 | 채우는 값 |
 | --- | --- | --- |
-| `prepare_checklist_update` | 구현 | person_id, item, status, reason |
-| `prepare_contract_save` | 구현 | person_id, contract_id(수정 시), company, contract_no, start_date, end_date, status |
+| `prepare_checklist_update` | 구현 | person_id, item, status, reason, project |
+| `prepare_contract_save` | 구현 | person_id, mode(신규/수정), contract_id(또는 계약번호), company, contract_no, start_date, end_date, status |
 | `prepare_contract_delete` | 구현 | person_id, contract_id |
 | `prepare_account_id` | 구현 | person_id, account_id |
 | `prepare_alert_ack` | 구현 | person_id |
@@ -45,5 +47,5 @@ status: 부분 연결 (prepare_* 도구는 Agent에 연결됨, 이 지침 본문
 
 ## 성공 기준
 
-- 제안만 하고 저장했다고 말하지 않는다. 지어낸 값을 채우지 않는다.
+- 확인 카드만 띄우고 저장했다고 말하지 않는다. 지어낸 값을 넣지 않는다.
 - 평가 질문 `evals/questions.json`의 Q9 정답 도구 순서를 따른다.

@@ -18,11 +18,11 @@ TOOL_LABELS = {
     "monthly_purchase_needs": "월별 구매 필요 인력 (구현 예정)",
     "inspection_amount_by_revenue_project": "매출귀속 프로젝트별 검수 금액 (구현 예정)",
     "query_database": "자유 조회 (Text-to-SQL, 읽기 전용)",
-    "prepare_checklist_update": "근무 환경 준비 상태 변경 제안",
-    "prepare_contract_save": "구매계약 등록·수정 제안",
-    "prepare_contract_delete": "구매계약 삭제 제안",
-    "prepare_account_id": "계정 ID 입력 제안",
-    "prepare_alert_ack": "계약 종료 알림 확인 제안",
+    "prepare_checklist_update": "근무 환경 준비 상태 변경",
+    "prepare_contract_save": "구매계약 등록·수정",
+    "prepare_contract_delete": "구매계약 삭제",
+    "prepare_account_id": "계정 ID 입력",
+    "prepare_alert_ack": "계약 종료 알림 확인",
 }
 
 COLUMNS = {
@@ -90,9 +90,9 @@ def _render_data(tool: str, data) -> None:
 def render_turn_results(turn: dict, service=None, actor: str = "", turn_index: int = 0) -> None:
     """질문 한 번에 Agent가 사용한 도구와 결과를 차례로 보여준다.
 
-    prepare_* 도구 결과(저장 제안)는 값이 채워진 양식으로 보여주고, 사용자 확인 후에만 저장한다.
+    prepare_* 도구 결과(변경 계획)는 '현재 → 변경' 확인 카드로 보여주고, 사용자 확인 후에만 저장한다.
     """
-    from ui.agent_actions import render_proposal
+    from ui.agent_actions import render_plan
     st.caption(f"질문: {turn['question']}")
     if not turn["calls"]:
         if turn["ok"]:
@@ -106,9 +106,10 @@ def render_turn_results(turn: dict, service=None, actor: str = "", turn_index: i
             st.markdown(f"**{number}. {TOOL_LABELS.get(call['tool'], call['tool'])}**")
             st.caption(f"{call['tool']}({args})")
             if call["ok"] and call["tool"].startswith("prepare_") and service is not None:
-                render_proposal(service, call["data"]["proposal"], f"act{turn_index}_{number}",
-                                actor, turn, number)
+                render_plan(service, call["data"]["plan"], f"act{turn_index}_{number}", actor, turn, number)
             elif call["ok"]:
                 _render_data(call["tool"], call.get("data"))
+            elif call["tool"].startswith("prepare_"):
+                st.info(f"확인 카드를 만들지 않았습니다: {call.get('error')}")
             else:
                 st.warning(call.get("error") or "도구 실행에 실패했습니다.")

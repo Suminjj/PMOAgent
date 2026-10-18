@@ -26,7 +26,7 @@
 ```
 app.py                     Streamlit 화면 (홈: AI Agent 챗봇·수행 결과 / 메뉴별 입력·조회 화면)
 ui/agent_view.py           홈 화면 오른쪽 수행 결과 패널
-ui/agent_actions.py        Agent 제안 → 값 선택 양식 → 확인 후 저장
+ui/agent_actions.py        Agent 변경 계획 → '현재 → 변경' 확인 카드 → 확인 후 저장
 pmo/
   config.py                DB 경로, 등급, 기준일(Asia/Seoul), 알림 일수
   db.py                    SQLite 연결·스키마·마이그레이션(v1→v4, 백업)
@@ -36,7 +36,7 @@ pmo/
   mm.py                    Full time MM 계산
   checklist.py             근무 환경 준비 항목·상태 규칙, 신청 초안
   tools.py                 Agent 도구 계층 (입력 스키마·결과 형식)
-  agent/                   LLM 연결(llm.py), 프롬프트(prompts.py), 실행 루프(runner.py),
+  agent/                   LLM 연결(llm.py), 프롬프트(prompts.py), 실행 루프(runner.py), 변경 계획(actions.py),
                            Text-to-SQL(text_to_sql.py, LlamaIndex·읽기 전용)
   harness.py               평가 하네스 (Planner, 질문별 결과 기록)
   demo.py                  가상 데이터

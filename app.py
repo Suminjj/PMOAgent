@@ -214,12 +214,12 @@ if page == "홈":
     with chat_col:
         st.subheader("AI Agent")
         st.caption(f"로컬 LLM({client.name})이 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
-                   "등록·수정·삭제는 Agent가 값을 채운 양식을 오른쪽에 보여주고, 확인 후 저장해야 반영됩니다.")
+                   "등록·수정·삭제는 오른쪽에 '현재 → 변경' 확인 카드가 뜨고, '확인 후 저장'을 눌러야 반영됩니다.")
         with st.container(height=480, border=True):
             if not turns:
                 with st.chat_message("assistant"):
                     st.markdown("무엇을 도와드릴까요? 인력·투입·구매계약·근무 환경 준비를 묻거나, "
-                                "상태 변경·계약 등록·수정·삭제를 요청하세요. 저장은 오른쪽 양식에서 확인 후 진행됩니다.")
+                                "상태 변경·계약 등록·수정·삭제를 요청하세요. 저장은 오른쪽 확인 카드에서 확인 후 진행됩니다.")
             for turn in turns:
                 with st.chat_message("user"):
                     st.markdown(turn["question"])

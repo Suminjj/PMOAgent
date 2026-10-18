@@ -46,7 +46,7 @@ description: PMOAgent(CoE 인력관리 Agent)의 기능을 구현·수정·검�
 - 실제 신청·예약·구매시스템 승인 여부와 앱 내부 초안·확정 상태를 구분한다.
 - LLM 기능을 요청받은 경우 입력·출력이 정의된 도구를 연결하고 기존 업무 함수를 호출한다.
 - LLM이 만든 SQL은 `pmo/agent/text_to_sql.py`의 `run_select`(SELECT 검사 + 읽기 전용 연결 + 권한 검사)로만 실행한다. 쓰기 SQL을 실행하는 경로를 만들지 않는다.
-- Agent의 저장·삭제는 `prepare_*` 도구로 값만 제안하고, `ui/agent_actions.py` 양식에서 사용자 확인 후 정해진 업무 함수로 저장한다.
+- Agent의 저장·삭제는 `prepare_*` 도구 → `pmo/agent/actions.py`의 변경 계획 → `ui/agent_actions.py` 확인 카드 → 사용자 확인 후 정해진 업무 함수로 저장한다.
 - API 미설정·오류 상태에서도 수동 화면과 기본 업무 기능이 동작하게 한다.
 - 회사의 데이터 전송 기준이 미확정이면 가상 데이터로 LLM 연동을 검증한다.
 

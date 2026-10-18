@@ -3,8 +3,9 @@
 - 도구는 화면과 같은 업무 함수(Service)를 호출한다. 계산·저장 로직을 여기 새로 만들지 않는다.
 - 입력은 스키마로 검증하고, 결과는 항상 {"ok", "tool", "data" | "error", "duration_ms"} 형식이다.
 - 조회: 정해진 조회 도구 + 그 밖의 조회는 query_database(LlamaIndex Text-to-SQL, SELECT만·읽기 전용).
-- 등록·수정·삭제: prepare_* 도구는 LLM이 알아낸 값을 '제안'으로 돌려줄 뿐 저장하지 않는다.
-  화면이 그 값으로 양식을 채우고, 사용자가 값을 고르고 확인해야 정해진 업무 함수가 저장한다.
+- 등록·수정·삭제: prepare_* 도구는 LLM이 알아낸 값으로 변경 계획(현재 → 변경)을 만들 뿐 저장하지 않는다.
+  대상이 애매하면 계획 대신 되물을 내용을 돌려준다. 화면이 계획을 확인 카드로 보여주고,
+  사용자가 확인해야 정해진 업무 함수가 저장한다.
 - LLM 제공자·모델·프롬프트와 무관하다. 어떤 LLM이든 `tool_specs()`로 도구 목록을 받고
   `call_tool()`로 실행하면 된다.
 """
@@ -13,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Callable
 
+from pmo.agent.actions import build_plan
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
 from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES as CHECKLIST_STATUSES
@@ -47,64 +49,14 @@ def _enum(values) -> dict:
     return {"type": "string", "enum": list(values)}
 
 
-PROPOSAL_NOTE = ("저장하지 않았습니다. 화면 오른쪽 양식에 값을 채워 두었으니, "
-                 "사용자가 값을 확인·선택하고 '확인 후 저장'을 눌러야 반영됩니다.")
+PROPOSAL_NOTE = ("저장하지 않았습니다. 화면 오른쪽에 '현재 → 변경' 확인 카드를 띄웠습니다. "
+                 "사용자가 '확인 후 저장'을 눌러야 반영됩니다.")
 
 
-def resolve_person(service: Service, value: str | None) -> tuple[str | None, list[dict]]:
-    """관리번호가 아니라 이름이 들어와도 사람을 찾는다. (확정 id 또는 None, 후보 목록)
-
-    작은 로컬 모델은 find_people을 건너뛰고 person_id에 이름을 넣는 일이 있어 코드에서 보완한다.
-    """
-    value = str(value or "").strip()
-    if not value:
-        return None, []
-    people = service.people()
-    if any(p["id"] == value for p in people):
-        return value, []
-    for title in ("차장", "과장", "대리", "부장", "사원", "주임", "책임", "선임", "수석", "님", "씨"):
-        value = value.removesuffix(title).strip()
-    exact = [p for p in people if p["name"] == value]
-    candidates = exact or (service.find_people(value) if value else [])
-    if len(candidates) == 1:
-        return candidates[0]["id"], []
-    return None, [{k: c[k] for k in ("id", "name", "company", "category")} for c in candidates]
-
-
-def resolve_contract(service: Service, person_id: str | None, value: str | None) -> str | None:
-    """contract_id 자리에 계약번호가 들어와도 그 인력의 계약에서 찾는다."""
-    value = str(value or "").strip()
-    if not value or not person_id:
-        return value or None
-    contracts = service.contracts(person_id)
-    if any(c["id"] == value for c in contracts):
-        return value
-    matches = [c["id"] for c in contracts if c["contract_no"] == value]
-    return matches[0] if len(matches) == 1 else None
-
-
-def _proposal(action: str):
+def _plan(action: str):
+    """LLM이 넣은 값으로 변경 계획(현재 → 변경)을 만든다. 저장하지 않는다(pmo/agent/actions.py)."""
     def handler(service: Service, args: dict) -> dict:
-        values = {k: v for k, v in args.items() if v not in (None, "")}
-        result = {"proposal": {"action": action, "values": values}, "message": PROPOSAL_NOTE}
-        if "person_id" in values:
-            person_id, candidates = resolve_person(service, values["person_id"])
-            if person_id:
-                values["person_id"] = person_id
-            elif candidates:
-                given = values.pop("person_id")
-                result["candidates"] = candidates
-                result["message"] = (f"'{given}'에 해당하는 인력이 {len(candidates)}명입니다. "
-                                     "어느 분인지 사용자에게 확인하세요. 화면 양식에서도 직접 고를 수 있습니다.")
-            else:
-                raise ValidationError(f"'{values['person_id']}'에 해당하는 인력이 없습니다. 이름을 확인하세요.")
-        if "contract_id" in values:
-            contract_id = resolve_contract(service, values.get("person_id"), values["contract_id"])
-            if contract_id:
-                values["contract_id"] = contract_id
-            else:
-                values.pop("contract_id")
-        return result
+        return {"plan": build_plan(service, action, args), "message": PROPOSAL_NOTE}
     return handler
 INT = {"type": "integer"}
 
@@ -135,21 +87,21 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          _obj({"question": STR}, ("question",)),
          handler=lambda s, a: query_database(s.path, s.clock(), a["question"])),
     # --- 등록·수정·삭제 제안: 값만 채우고 저장하지 않는다 ---
-    Tool("prepare_checklist_update", "근무 환경 준비 항목의 상태 변경을 제안한다(저장 안 함). "
-         "알아낸 값만 넣고 모르는 값은 비운다. 사용자가 화면에서 확인한 뒤 저장한다.",
+    Tool("prepare_checklist_update", "근무 환경 준비 항목의 상태 변경을 준비한다(저장 안 함). "
+         "투입이 여러 건이면 project에 과제명을 넣는다. 사용자가 화면에서 확인해야 저장된다.",
          _obj({"person_id": PERSON, "item": _enum(CHECKLIST_ITEMS), "status": _enum(CHECKLIST_STATUSES),
-               "reason": STR}), handler=_proposal("checklist_update")),
-    Tool("prepare_contract_save", "구매계약 신규 등록 또는 수정(기간 변경·연장·계약번호 입력 등)을 제안한다(저장 안 함). "
-         "수정이면 list_contracts로 찾은 contract_id를 넣는다.",
-         _obj({"person_id": PERSON, "contract_id": STR, "company": STR, "contract_no": STR,
-               "start_date": DATE, "end_date": DATE, "status": _enum(CONTRACT_STATUSES)}),
-         handler=_proposal("contract_save")),
-    Tool("prepare_contract_delete", "구매계약 삭제를 제안한다(삭제 안 함). 사용자가 화면에서 대상을 확인해야 삭제된다.",
-         _obj({"person_id": PERSON, "contract_id": STR}), handler=_proposal("contract_delete")),
-    Tool("prepare_account_id", "발급된 회사 계정 ID를 인력 정보에 입력하도록 제안한다(저장 안 함).",
-         _obj({"person_id": PERSON, "account_id": STR}), handler=_proposal("account_id")),
-    Tool("prepare_alert_ack", "계약 종료 알림 확인 처리를 제안한다(저장 안 함). 알림 확인은 계약 갱신 완료가 아니다.",
-         _obj({"person_id": PERSON}), handler=_proposal("alert_ack")),
+               "reason": STR, "project": STR}), handler=_plan("checklist_update")),
+    Tool("prepare_contract_save", "구매계약 신규 등록 또는 수정(기간 변경·연장·계약번호 입력 등)을 준비한다(저장 안 함). "
+         "수정이면 contract_id에 계약 id나 계약번호를 넣고, 새 계약이면 mode='신규'로 한다. 바꿀 값만 넣는다.",
+         _obj({"person_id": PERSON, "mode": _enum(("신규", "수정")), "contract_id": STR, "company": STR,
+               "contract_no": STR, "start_date": DATE, "end_date": DATE, "status": _enum(CONTRACT_STATUSES)}),
+         handler=_plan("contract_save")),
+    Tool("prepare_contract_delete", "구매계약 삭제를 준비한다(삭제 안 함). 사용자가 화면에서 확인해야 삭제된다.",
+         _obj({"person_id": PERSON, "contract_id": STR}), handler=_plan("contract_delete")),
+    Tool("prepare_account_id", "발급된 회사 계정 ID 입력을 준비한다(저장 안 함).",
+         _obj({"person_id": PERSON, "account_id": STR}), handler=_plan("account_id")),
+    Tool("prepare_alert_ack", "계약 종료 알림 확인 처리를 준비한다(저장 안 함). 알림 확인은 계약 갱신 완료가 아니다.",
+         _obj({"person_id": PERSON}), handler=_plan("alert_ack")),
     # --- 구현 예정: 규칙 미확정 ---
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
          "구매 필요 판정 기준 미확정(TODO).",
