@@ -31,8 +31,8 @@ try:
 except sqlite3.Error:
     pending_alerts = []
     st.sidebar.error("계약 만료 알림을 확인하지 못했습니다.")
-page = st.sidebar.radio("메뉴", ["인력 관리", "투입 관리", "근무 환경 준비", "구매계약 관리",
-                                "계약 종료 알림", "자연어 조회", "변경 이력"])
+page = st.sidebar.radio("메뉴", ["홈", "인력 관리", "투입 관리", "근무 환경 준비", "구매계약 관리",
+                                "계약 종료 알림", "변경 이력"])
 if pending_alerts:
     st.sidebar.warning(f"미확인 계약 종료 알림 {len(pending_alerts)}건")
 if pending_alerts and page != "계약 종료 알림":
@@ -197,7 +197,71 @@ def confirm() -> None:
         st.rerun()
 
 
-if page == "인력 관리":
+if page == "홈":
+    from pmo.agent.llm import OllamaClient
+    from pmo.agent.runner import ask
+    from ui.agent_view import EXAMPLES, render_turn_results
+
+    client = OllamaClient()
+    turns = st.session_state.setdefault("chat_turns", [])
+    chat_col, result_col = st.columns(2, gap="large")
+
+    with chat_col:
+        st.subheader("AI Agent")
+        st.caption(f"로컬 LLM({client.name})이 조회 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
+                   "등록·수정은 아직 왼쪽 메뉴의 각 화면에서 하세요.")
+        with st.container(height=480, border=True):
+            if not turns:
+                with st.chat_message("assistant"):
+                    st.markdown("무엇을 도와드릴까요? 인력의 투입 과제, 구매계약 기간, "
+                                "계약 종료 예정, 근무 환경 준비 상황을 물어보세요.")
+            for turn in turns:
+                with st.chat_message("user"):
+                    st.markdown(turn["question"])
+                with st.chat_message("assistant"):
+                    if turn["ok"]:
+                        st.markdown(turn["answer"])
+                    else:
+                        st.error(turn["error"])
+                        st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
+                    st.caption(f"도구 {len(turn['calls'])}개 사용 · {turn['duration_ms'] / 1000:.1f}초")
+        asked = None
+        if not turns:
+            st.caption("예시 질문")
+            for i, example in enumerate(EXAMPLES):
+                if st.button(example, key=f"home_example_{i}"):
+                    asked = example
+        typed = st.chat_input("질문을 입력하세요", key="home_chat")
+        asked = (typed or "").strip() or asked
+        if asked:
+            history = []
+            for turn in turns:
+                if turn["ok"]:
+                    history += [{"role": "user", "content": turn["question"]},
+                                {"role": "assistant", "content": turn["answer"]}]
+            with st.spinner(f"'{asked}' — 도구를 고르고 조회하는 중입니다…"):
+                result = ask(service, asked, client, history=history)
+            turns.append(dict(result, question=asked))
+            st.rerun()
+        if turns and st.button("대화 지우기", key="home_clear"):
+            turns.clear()
+            st.rerun()
+
+    with result_col:
+        st.subheader("수행 결과")
+        if not turns:
+            st.info("질문하면 Agent가 사용한 도구와 조회 결과가 여기에 표시됩니다.")
+        else:
+            selected = len(turns) - 1
+            if len(turns) > 1:
+                # 새 질문이 생기면 위젯을 새로 만들어 가장 최근 결과를 기본으로 보여준다.
+                selected = st.selectbox(
+                    "결과를 볼 질문", list(range(len(turns))), index=selected,
+                    key=f"home_pick_{len(turns)}",
+                    format_func=lambda i: f"{i + 1}. {turns[i]['question'][:40]}")
+            render_turn_results(turns[selected])
+
+elif page == "인력 관리":
     st.subheader("인력 목록")
     people = service.people()
     query = st.text_input("이름·업체·계정 ID·관리번호 검색", key="person_search").strip().casefold()
@@ -543,35 +607,6 @@ elif page == "계약 종료 알림":
                     st.error(str(exc))
                 except sqlite3.Error:
                     st.error("확인 처리를 저장하지 못했습니다. 다시 시도하세요.")
-
-elif page == "자연어 조회":
-    from pmo.agent.llm import OllamaClient
-    from pmo.agent.runner import ask
-
-    st.subheader("자연어 조회 (베타)")
-    client = OllamaClient()
-    st.caption(f"로컬 LLM({client.name})이 조회 도구를 골라 답합니다. 데이터는 PC 밖으로 나가지 않으며, "
-               "등록·수정은 하지 않습니다. 결과는 각 메뉴의 화면에서 다시 확인하세요.")
-    question = st.text_input("질문", placeholder="예: 베타컨설팅 10월 계약 종료 예정 인력 알려줘",
-                             key="nl_question")
-    if st.button("질문하기", key="nl_ask", type="primary"):
-        if not question.strip():
-            st.error("질문을 입력하세요.")
-        else:
-            with st.spinner("도구를 고르고 조회하는 중입니다…"):
-                st.session_state["nl_result"] = dict(ask(service, question.strip(), client),
-                                                     question=question.strip())
-    result = st.session_state.get("nl_result")
-    if result:
-        st.markdown(f"**질문:** {result['question']}")
-        if result["ok"]:
-            st.markdown(result["answer"])
-        else:
-            st.error(result["error"])
-            st.info("LLM 없이도 각 메뉴 화면에서 같은 정보를 조회할 수 있습니다.")
-        with st.expander(f"사용한 도구 {len(result['calls'])}개 · {result['duration_ms']}ms"):
-            for call in result["calls"]:
-                st.write(f"{'✅' if call['ok'] else '⚠️'} {call['tool']} {call['arguments']}")
 
 else:
     st.subheader("변경 이력")

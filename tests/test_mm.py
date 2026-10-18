@@ -9,7 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 from pmo.mm import calculate_full_time
 from pmo.service import Service, ValidationError
-from tests.test_app import APP, find, preview_person
+from tests.test_app import APP, find, open_app, preview_person
 from tests.test_intake import intake
 
 
@@ -78,7 +78,7 @@ def test_manual_mm_and_full_time_recomputed_on_date_change(tmp_path):
 def test_ui_live_mm_manual_switch_and_preview_invalidated(monkeypatch, tmp_path):
     path = tmp_path / "ui-mm.db"
     monkeypatch.setenv("PMO_DB_PATH", str(path))
-    app = AppTest.from_file(str(APP), default_timeout=30).run()
+    app = open_app()
     preview_person(app)
     find(app.date_input, "투입 종료일").set_value(date(2026, 10, 10)).run()
     assert "0.250000" in [m.value for m in app.metric]
