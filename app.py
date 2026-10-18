@@ -25,6 +25,11 @@ except (OSError, sqlite3.Error, RuntimeError) as exc:
 
 actor = st.sidebar.text_input("변경 주체", value="로컬 담당자")
 st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가 아닙니다.")
+# 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
+_people_count = len(service.people())
+st.sidebar.caption(f"연결된 DB: {service.path.name} · 인력 {_people_count}명")
+if _people_count == 0:
+    st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 # 앱 실행(재실행) 시마다 미처리 계약 만료 대상을 다시 확인한다.
 try:
     pending_alerts = service.pending_alerts()

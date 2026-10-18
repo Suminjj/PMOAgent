@@ -42,7 +42,8 @@ def _index(options: list, value, default: int | None = 0) -> int | None:
 def _person(service, key: str, values: dict, categories=None):
     people = [p for p in service.people() if not categories or p["category"] in categories]
     if not people:
-        st.info("선택할 수 있는 인력이 없습니다.")
+        st.info(f"선택할 수 있는 인력이 없습니다. 지금 연결된 DB({service.path.name})에 "
+                + ("구매계약 대상(협력·컨설팅) 인력이 없습니다." if categories else "등록된 인력이 없습니다."))
         return None
     by_id = {p["id"]: p for p in people}
     preset = values.get("person_id")
