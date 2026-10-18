@@ -52,7 +52,7 @@ def test_demo_seed_refuses_non_empty_db(service):
 
 def test_oracle_eval_all_pass():
     report = run(OraclePlanner(), save=False)
-    assert report["passed"] == report["total"] == 8, report["results"]
+    assert report["passed"] == report["total"] == 9, report["results"]
 
 
 def test_eval_detects_wrong_tool_choice():

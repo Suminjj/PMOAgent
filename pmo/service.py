@@ -562,3 +562,34 @@ class Service:
                         (draft, now, assignment_id, item))
             self._audit(con, "checklist", f"{assignment_id}:{item}", before, after, actor)
             return draft
+
+    # ------------------------------------------------------------------
+    # 구매계약 삭제 (정해진 업무 함수로만 삭제한다)
+    # ------------------------------------------------------------------
+    @logged("delete_contract")
+    def delete_contract(self, contract_id: str, *, token: str, actor: str, expected_version: int) -> str:
+        """계약 한 건과 그 알림을 삭제한다. 연장(후속) 계약이 가리키는 계약은 삭제하지 않는다.
+
+        삭제 전 값은 변경 이력(audit)에 남긴다.
+        """
+        contract_id = required(contract_id, "계약 관리번호")
+        token, actor = required(token, "저장 요청 ID"), required(actor, "변경 주체")
+        fingerprint = self._fingerprint(["delete_contract", contract_id, actor, expected_version])
+        with connection(self.path) as con:
+            con.execute("BEGIN IMMEDIATE")
+            previous = self._previous_request(con, token, fingerprint)
+            if previous is not None:
+                return previous
+            before = con.execute("SELECT * FROM contracts WHERE id=?", (contract_id,)).fetchone()
+            if not before:
+                raise ConflictError("이미 삭제됐거나 없는 계약입니다. 목록을 새로 확인하세요.")
+            if before["version"] != expected_version:
+                raise ConflictError("계약이 변경되었습니다. 최신 내용을 다시 조회하고 확인하세요.")
+            if con.execute("SELECT 1 FROM contracts WHERE previous_contract_id=?", (contract_id,)).fetchone():
+                raise ValidationError("이 계약을 이전 계약으로 지정한 연장 계약이 있어 삭제할 수 없습니다. "
+                                      "연장 계약을 먼저 정리하세요.")
+            con.execute("DELETE FROM contract_alerts WHERE contract_id=?", (contract_id,))
+            con.execute("DELETE FROM contracts WHERE id=?", (contract_id,))
+            self._audit(con, "contracts", contract_id, dict(before), {"deleted": True}, actor)
+            con.execute("INSERT INTO requests VALUES (?,?,?)", (token, fingerprint, contract_id))
+            return contract_id

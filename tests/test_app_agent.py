@@ -1,5 +1,6 @@
 """홈 화면(AI Agent 챗봇 + 수행 결과) 테스트 (Streamlit AppTest + 가짜 Ollama 서버, 가상 데이터)."""
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -85,3 +86,19 @@ def test_example_button_and_llm_unavailable(app, monkeypatch):
     app.button(key="home_example_0").click().run()
     assert not app.exception
     assert any("연결할 수 없습니다" in e.value for e in app.error)
+
+
+def test_agent_proposal_fills_form_and_saves_only_after_confirm(app):
+    REPLIES[:] = [tool("prepare_checklist_update", person_id="DEMO-002", item="ID카드 신청", status="진행 중"),
+                  say("화면 오른쪽 양식에서 값을 확인하고 '확인 후 저장'을 눌러 주세요.")]
+    app.chat_input[0].set_value("이가상 ID카드 신청 진행 중으로 바꿔줘").run()
+    assert not app.exception
+    service = Service(Path(os.environ["PMO_DB_PATH"]))
+    aid = service.assignments("DEMO-002")[0]["id"]
+    assert service.checklist(aid)[1]["status"] == "미진행"          # 제안만으로는 저장 안 됨
+    assert app.selectbox(key="act0_1_person").value == "DEMO-002"   # Agent 값으로 양식이 채워짐
+    app.button(key="act0_1_preview").click().run()
+    assert service.checklist(aid)[1]["status"] == "미진행"          # 미리보기만으로도 저장 안 됨
+    app.button(key="act0_1_confirm").click().run()
+    assert not app.exception
+    assert service.checklist(aid)[1]["status"] == "진행 중"

@@ -208,13 +208,13 @@ if page == "홈":
 
     with chat_col:
         st.subheader("AI Agent")
-        st.caption(f"로컬 LLM({client.name})이 조회 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
-                   "등록·수정은 아직 왼쪽 메뉴의 각 화면에서 하세요.")
+        st.caption(f"로컬 LLM({client.name})이 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
+                   "등록·수정·삭제는 Agent가 값을 채운 양식을 오른쪽에 보여주고, 확인 후 저장해야 반영됩니다.")
         with st.container(height=480, border=True):
             if not turns:
                 with st.chat_message("assistant"):
-                    st.markdown("무엇을 도와드릴까요? 인력의 투입 과제, 구매계약 기간, "
-                                "계약 종료 예정, 근무 환경 준비 상황을 물어보세요.")
+                    st.markdown("무엇을 도와드릴까요? 인력·투입·구매계약·근무 환경 준비를 묻거나, "
+                                "상태 변경·계약 등록·수정·삭제를 요청하세요. 저장은 오른쪽 양식에서 확인 후 진행됩니다.")
             for turn in turns:
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
@@ -224,6 +224,8 @@ if page == "홈":
                     else:
                         st.error(turn["error"])
                         st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
+                    for message in turn.get("done", {}).values():
+                        st.success(message)
                     st.caption(f"도구 {len(turn['calls'])}개 사용 · {turn['duration_ms'] / 1000:.1f}초")
         asked = None
         if not turns:
@@ -259,7 +261,7 @@ if page == "홈":
                     "결과를 볼 질문", list(range(len(turns))), index=selected,
                     key=f"home_pick_{len(turns)}",
                     format_func=lambda i: f"{i + 1}. {turns[i]['question'][:40]}")
-            render_turn_results(turns[selected])
+            render_turn_results(turns[selected], service, actor, selected)
 
 elif page == "인력 관리":
     st.subheader("인력 목록")

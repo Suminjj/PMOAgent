@@ -104,3 +104,15 @@
 - 신청 초안(draft, drafted_at)은 상태와 별개다. 초안을 만들어도 상태와 version은 바뀌지 않는다.
 - 상태 변경은 version 검사와 요청 토큰으로 오래된 화면의 덮어쓰기·중복 저장을 막고, 전후 값을 audit에 남긴다.
 - 예전 데이터에 빠진 항목은 화면에 미진행으로 보여주고 처음 저장할 때 만든다. 마이그레이션에서 임의로 채우지 않는다.
+
+## 구매계약 삭제
+
+- 정해진 업무 함수 `delete_contract`로만 삭제한다(Agent·Text-to-SQL로는 삭제할 수 없음).
+- 연장 계약이 이 계약을 이전 계약으로 가리키면 삭제하지 않는다.
+- 계약의 알림(contract_alerts)도 함께 지우고, 삭제 전 계약 값을 audit에 남긴다(after_json = {"deleted": true}).
+- version 검사와 요청 토큰으로 오래된 화면·재실행에 따른 오삭제를 막는다.
+
+## Text-to-SQL 조회 범위
+
+- 읽을 수 있는 테이블: people, assignments, contracts, contract_alerts, checklist
+- 읽을 수 없는 테이블: requests(저장 토큰), run_log(실행 기록), audit(변경 이력 원문), SQLite 내부 테이블
