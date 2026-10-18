@@ -32,8 +32,8 @@ class FakeOllama(BaseHTTPRequestHandler):
         pass
 
 
-def tool(name, **args):
-    return {"message": {"content": "", "tool_calls": [{"function": {"name": name, "arguments": args}}]}}
+def tool(tool_name, **args):
+    return {"message": {"content": "", "tool_calls": [{"function": {"name": tool_name, "arguments": args}}]}}
 
 
 def say(text):
