@@ -50,6 +50,10 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
          handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
+    Tool("checklist_status", "근무 환경 준비(좌석 배정·ID카드 신청·OA기기 신청·방문예약) 진행 상황을 조회한다. "
+         "person_id를 주면 그 인력의 투입별 항목 상태, 없으면 준비가 남은 투입 목록을 돌려준다.",
+         _obj({"person_id": STR}),
+         handler=lambda s, a: _checklist_status(s, a.get("person_id"))),
     Tool("pending_contract_alerts", "계약 종료 14일 전부터 표시되는 미확인 만료 알림 목록을 조회한다.",
          _obj({}),
          handler=lambda s, a: s.pending_alerts()),
@@ -63,6 +67,17 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("prepare_contract_change", "계약 등록·변경 미리보기를 만든다. 저장은 사용자가 화면에서 확인해야 한다.",
          _obj({"person_id": STR, "changes": {"type": "object"}}, ("person_id", "changes")), status=PLANNED),
 ]}
+
+
+def _checklist_status(service: Service, person_id: str | None) -> list[dict]:
+    if not person_id:
+        return [{k: r[k] for k in ("id", "name", "company", "project", "start_date", "done", "total",
+                                   "open_items")} for r in service.checklist_overview()]
+    return [{"assignment_id": a["id"], "project": a["project"], "start_date": a["start_date"],
+             "end_date": a["end_date"],
+             "items": [{k: c[k] for k in ("item", "status", "reason", "drafted_at", "applied_at")}
+                       for c in service.checklist(a["id"])]}
+            for a in service.assignments(person_id)]
 
 
 def tool_specs(include_planned: bool = False) -> list[dict]:
