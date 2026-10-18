@@ -1,10 +1,11 @@
 {
-  "about": "자연어 조회 평가 질문. 가상 데이터(pmo/demo.py)를 기준일 today에 넣은 뒤 실행한다. steps는 정답 도구 호출 순서, expect는 결과 검증 조건이다.",
+  "about": "자연어 조회 평가 질문. 가상 데이터(pmo/demo.py)를 기준일 today에 넣은 뒤 실행한다. steps는 정답 도구 호출 순서, expect는 결과 검증 조건이다. agent는 홈 화면에서 고를 카테고리(pmo/agent/agents.py의 키)로, --routing category 평가에서 이 Agent에 묻는다.",
   "today": "2026-10-17",
   "questions": [
     {
       "id": "Q1",
       "question": "이가상 지금 무슨 과제에 투입되어 있어?",
+      "agent": "staff",
       "template": "A 차장 지금 무슨 과제에 투입되어 있어?",
       "steps": [
         {
@@ -34,6 +35,7 @@
     {
       "id": "Q2",
       "question": "김가상의 CoE 전체 투입 과제와 기간을 알려줘.",
+      "agent": "staff",
       "template": "A 차장의 CoE 전체 투입 과제와 기간을 알려줘.",
       "note": "동명이인 2명. Agent는 바로 답하지 말고 대상 확인을 요청해야 한다.",
       "steps": [
@@ -52,6 +54,7 @@
     {
       "id": "Q3",
       "question": "박가상 구매계약 언제까지야?",
+      "agent": "contract",
       "template": "A 차장 구매계약 언제까지야?",
       "steps": [
         {
@@ -81,6 +84,7 @@
     {
       "id": "Q4",
       "question": "베타컨설팅의 10월 계약 종료 예정 인력 알려줘.",
+      "agent": "contract",
       "template": "B 업체의 10월 계약 종료 예정 인력 알려줘.",
       "steps": [
         {
@@ -102,6 +106,7 @@
     {
       "id": "Q5",
       "question": "처리 안 한 계약 만료 알림 있어?",
+      "agent": "contract",
       "steps": [
         {
           "tool": "pending_contract_alerts",
@@ -119,6 +124,7 @@
     {
       "id": "Q6",
       "question": "11월 구매계약이 필요한 인력 리스트 뽑아줘.",
+      "agent": "contract",
       "template": "11월 구매계약이 필요한 인력 리스트 뽑아줘.",
       "note": "구매 필요 판정 기준 미확정. 구현 예정 도구라 실패해야 정상이다.",
       "steps": [
@@ -137,6 +143,7 @@
     {
       "id": "Q7",
       "question": "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
+      "agent": "inspection",
       "template": "B 업체의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
       "note": "검수 금액 규칙 미확정. 구현 예정 도구라 실패해야 정상이다.",
       "steps": [
@@ -156,6 +163,7 @@
     {
       "id": "Q8",
       "question": "이가상 근무 환경 준비 어디까지 됐어?",
+      "agent": "environment",
       "template": "A 차장 근무 환경 준비 어디까지 됐어?",
       "steps": [
         {
@@ -183,6 +191,7 @@
     {
       "id": "Q9",
       "question": "이가상 ID카드 신청 진행 중으로 바꿔줘",
+      "agent": "environment",
       "template": "A 차장 ID카드 신청 진행 중으로 바꿔줘",
       "note": "저장은 하지 않고 값을 채운 제안만 해야 한다.",
       "steps": [

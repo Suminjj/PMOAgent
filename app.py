@@ -203,9 +203,10 @@ def confirm() -> None:
 
 
 if page == "홈":
+    from pmo.agent.agents import AGENTS, AUTO
     from pmo.agent.llm import OllamaClient
     from pmo.agent.runner import ask
-    from ui.agent_view import EXAMPLES, render_turn_results
+    from ui.agent_view import render_turn_results
 
     client = OllamaClient()
     turns = st.session_state.setdefault("chat_turns", [])
@@ -215,6 +216,12 @@ if page == "홈":
         st.subheader("AI Agent")
         st.caption(f"로컬 LLM({client.name})이 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
                    "등록·수정·삭제는 오른쪽에 '현재 → 변경' 확인 카드가 뜨고, '확인 후 저장'을 눌러야 반영됩니다.")
+        agent_key = st.radio(
+            "업무 카테고리", list(AGENTS), horizontal=True, key="home_agent",
+            format_func=lambda k: AGENTS[k].label,
+            help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 가지고 답합니다. "
+                 "자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
+        agent = AGENTS[agent_key]
         with st.container(height=480, border=True):
             if not turns:
                 with st.chat_message("assistant"):
@@ -224,6 +231,7 @@ if page == "홈":
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
                 with st.chat_message("assistant"):
+                    st.caption(f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent")
                     if turn["ok"]:
                         st.markdown(turn["answer"])
                     else:
@@ -234,8 +242,8 @@ if page == "홈":
                     st.caption(f"도구 {len(turn['calls'])}개 사용 · {turn['duration_ms'] / 1000:.1f}초")
         asked = None
         if not turns:
-            st.caption("예시 질문")
-            for i, example in enumerate(EXAMPLES):
+            st.caption(f"예시 질문 · {agent.label}")
+            for i, example in enumerate(agent.examples):
                 if st.button(example, key=f"home_example_{i}"):
                     asked = example
         typed = st.chat_input("질문을 입력하세요", key="home_chat")
@@ -246,8 +254,8 @@ if page == "홈":
                 if turn["ok"]:
                     history += [{"role": "user", "content": turn["question"]},
                                 {"role": "assistant", "content": turn["answer"]}]
-            with st.spinner(f"'{asked}' — 도구를 고르고 조회하는 중입니다…"):
-                result = ask(service, asked, client, history=history)
+            with st.spinner(f"{agent.label} Agent — '{asked}' 도구를 고르고 조회하는 중입니다…"):
+                result = ask(service, asked, client, history=history, agent=agent)
             turns.append(dict(result, question=asked))
             st.rerun()
         if turns and st.button("대화 지우기", key="home_clear"):
@@ -265,7 +273,8 @@ if page == "홈":
                 selected = st.selectbox(
                     "결과를 볼 질문", list(range(len(turns))), index=selected,
                     key=f"home_pick_{len(turns)}",
-                    format_func=lambda i: f"{i + 1}. {turns[i]['question'][:40]}")
+                    format_func=lambda i: f"{i + 1}. [{turns[i].get('agent_label', '자동(전체)')}] "
+                                          f"{turns[i]['question'][:40]}")
             render_turn_results(turns[selected], service, actor, selected)
 
 elif page == "인력 관리":

@@ -112,3 +112,25 @@ def test_cancel_does_not_save(app):
     service = Service(Path(os.environ["PMO_DB_PATH"]))
     assert next(p for p in service.people() if p["id"] == "DEMO-002")["account_id"] is None
     assert any("취소했습니다" in i.value for i in app.info)
+
+
+def test_category_selector_limits_agent_tools(app):
+    assert app.radio(key="home_agent").value == "auto"
+    assert [o for o in app.radio(key="home_agent").options] == [
+        "자동(전체)", "인력관리", "근무 환경 준비", "구매계약", "검수"]
+    app.radio(key="home_agent").set_value("contract").run()
+    assert any("구매계약" in c.value for c in app.caption)               # 예시 질문 · 구매계약
+    REPLIES[:] = [tool("pending_contract_alerts"), say("미확인 알림은 2건입니다.")]
+    app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
+    assert not app.exception
+    sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
+    assert "pending_contract_alerts" in sent and "checklist_status" not in sent
+    assert "[업무 지침: contract-expiry]" in RECEIVED[0]["messages"][0]["content"]
+    assert any(c.value == "구매계약 Agent" for c in app.caption)
+
+
+def test_auto_category_keeps_all_tools(app):
+    REPLIES[:] = [say("안녕하세요.")]
+    app.chat_input[0].set_value("안녕").run()
+    assert len(RECEIVED[0]["tools"]) == 14
+    assert any(c.value == "자동(전체) Agent" for c in app.caption)

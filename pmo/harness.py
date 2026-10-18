@@ -34,18 +34,29 @@ class OraclePlanner:
         return [(s["tool"], s["args"]) for s in question["steps"]]
 
 
-class AgentPlanner:
-    """LLM Agent에 질문을 그대로 묻고, Agent가 호출한 도구를 돌려준다."""
+ROUTINGS = ("auto", "category")
 
-    def __init__(self, client):
+
+class AgentPlanner:
+    """LLM Agent에 질문을 그대로 묻고, Agent가 호출한 도구를 돌려준다.
+
+    routing="auto": 자동(전체) 단일 Agent(모든 도구, 업무 지침 미주입)
+    routing="category": 질문의 agent 태그에 맞는 전문 Agent(도구 제한 + 업무 지침 주입)
+    """
+
+    def __init__(self, client, routing: str = "auto"):
         from pmo.agent.runner import ask  # LLM 없이 oracle만 쓸 때 불필요한 import를 피한다
+        if routing not in ROUTINGS:
+            raise ValueError(f"routing은 {', '.join(ROUTINGS)} 중 하나여야 합니다.")
         self._ask = ask
         self.client = client
-        self.name = client.name.replace(":", "-").replace("/", "-")
+        self.routing = routing
+        self.name = client.name.replace(":", "-").replace("/", "-") + ("" if routing == "auto" else "-category")
         self.last: dict = {}
 
     def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]:
-        self.last = self._ask(service, question["question"], self.client)
+        agent = question.get("agent") if self.routing == "category" else None
+        self.last = self._ask(service, question["question"], self.client, agent=agent)
         return [(c["tool"], c["arguments"]) for c in self.last["calls"]]
 
 
@@ -90,13 +101,14 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                 problems.append(f"도구 순서 {[c[0] for c in calls]} (기대 {[e[0] for e in expected]})")
             for (name, args), step in zip(calls, q["steps"]):
                 problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
-            row = {"id": q["id"], "question": q["question"], "tools": [c[0] for c in calls],
+            row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"),
+                   "tools": [c[0] for c in calls],
                    "success": not problems, "problems": problems,
                    "duration_ms": round((time.perf_counter() - t0) * 1000)}
             last = getattr(planner, "last", None)
             if last:
                 row.update(answer=last["answer"], agent_error=last["error"],
-                           agent_ms=last["duration_ms"])
+                           agent_ms=last["duration_ms"], agent_used=last.get("agent"))
                 if last["error"]:
                     row["success"] = False
                     row["problems"].append(f"Agent 오류: {last['error']}")
