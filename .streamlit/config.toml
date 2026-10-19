@@ -1,0 +1,25 @@
+# 화면 테마: 시안 A '네이비 콘솔' (2026-10-19)
+# 색·글꼴은 ui/theme.py 의 CSS와 함께 맞춘다. 글꼴은 Google Fonts에서 받고, 받을 수 없으면 기본 글꼴로 보인다.
+# (글꼴 파일만 내려받으며 인력·계약 데이터는 PC 밖으로 나가지 않는다.)
+
+[theme]
+base = "light"
+primaryColor = "#1D4ED8"
+backgroundColor = "#F3F5F9"
+secondaryBackgroundColor = "#EEF2F8"
+textColor = "#172033"
+linkColor = "#1D4ED8"
+borderColor = "#E1E6EF"
+showWidgetBorder = true
+baseRadius = "medium"
+buttonRadius = "medium"
+dataframeHeaderBackgroundColor = "#F1F4F9"
+font = "IBM Plex Sans KR:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap, sans-serif"
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+
+[theme.sidebar]
+backgroundColor = "#0F1B33"
+secondaryBackgroundColor = "#1E2E52"
+textColor = "#C7D0E0"
+primaryColor = "#3B82F6"
+borderColor = "#24365C"

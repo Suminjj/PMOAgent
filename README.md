@@ -198,6 +198,7 @@ Streamlit AppTest로 미리보기·취소·저장·수정·재실행 흐름을 �
 ## 구성 및 데이터
 
 - `app.py`: Streamlit 입력·조회·미리보기·확인 화면
+- `ui/theme.py`, `.streamlit/config.toml`: 화면 테마(네이비 콘솔). 글꼴(IBM Plex Sans KR)은 Google Fonts에서 받으며, 받을 수 없으면 기본 글꼴로 보입니다
 - `pmo/config.py`: DB 경로, 허용 등급, 기준일(Asia/Seoul) 설정
 - `pmo/db.py`: 연결, 스키마와 마이그레이션
 - `pmo/service.py`: 유효성 검증, 등록·수정·이력 저장, 계약·알림·투입 이력 조회, 실행 기록
