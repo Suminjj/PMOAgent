@@ -80,7 +80,9 @@ def mm_fields(start, end, current, key):
         if start and end:
             try:
                 detail = calculate_full_time(start, end)
-                st.metric("자동 계산 투입 MM", f"{Decimal(detail['mm']):.6f}")
+                st.metric("자동 계산 투입 MM", detail["mm"])
+                st.caption(f"구매시스템 방식: 월별 근무일 비율 합계 {Decimal(detail['mm_exact']):.6f}를 "
+                           "소수 셋째 자리에서 반올림")
                 st.table([{"월": r["month"], "투입 근무일": r["assigned_days"],
                            "월 전체 근무일": r["working_days"],
                            "MM": f"{r['assigned_days']} ÷ {r['working_days']} = {Decimal(r['mm']):.6f}"}
@@ -88,7 +90,8 @@ def mm_fields(start, end, current, key):
                 with st.expander("계산에서 제외한 공휴일 확인"):
                     excluded = [d for r in detail["months"] for d in r["excluded_holidays"]]
                     st.write(excluded or "해당 월에 평일 공휴일이 없습니다.")
-                st.caption("시작·종료일 포함 · 토·일요일 및 대한민국 공휴일(대체공휴일 포함) 제외")
+                st.caption("시작·종료일 포함 · 토·일요일 및 대한민국 공휴일(대체공휴일 포함) 제외 · "
+                           "노동절·제헌절·지방선거일은 구매시스템과 같이 근무일로 셈")
             except ValueError as exc:
                 st.error(str(exc))
         else:
