@@ -639,6 +639,10 @@ elif page == "계약 종료 알림":
                 except sqlite3.Error:
                     st.error("확인 처리를 저장하지 못했습니다. 다시 시도하세요.")
 
+elif page == "데이터 가져오기·내보내기":
+    from ui.data_io import render as render_data_io
+    render_data_io(service, actor)
+
 else:
     st.subheader("변경 이력")
     for row in service.history():

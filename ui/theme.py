@@ -15,6 +15,7 @@ NAV_ICONS = {
     "홈": ":material/forum:", "인력 관리": ":material/person:", "투입 관리": ":material/work:",
     "근무 환경 준비": ":material/task_alt:", "구매계약 관리": ":material/description:",
     "계약 종료 알림": ":material/notifications:", "변경 이력": ":material/history:",
+    "데이터 가져오기·내보내기": ":material/upload_file:",
 }
 NAV_LABELS = {"홈": "홈 · AI Agent"}
 PAGES = list(NAV_ICONS)
