@@ -17,7 +17,8 @@ def test_config_sets_navy_console_theme():
 
 
 def test_nav_label_keeps_page_value_and_shows_alert_badge():
-    assert theme.nav_label("홈") == ":material/forum: 홈 · AI Agent"
+    assert theme.nav_label("홈") == "홈 · AI Agent"
+    assert theme.PAGES[0] == "홈" and len(theme.PAGES) == 7
     assert theme.nav_label("계약 종료 알림", 2).endswith(":orange-badge[2]")
     assert "badge" not in theme.nav_label("계약 종료 알림", 0)
 

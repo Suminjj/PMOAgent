@@ -33,9 +33,7 @@ except sqlite3.Error:
     pending_alerts = []
     st.sidebar.error("계약 만료 알림을 확인하지 못했습니다.")
 theme.sidebar_brand()
-page = st.sidebar.radio("메뉴", ["홈", "인력 관리", "투입 관리", "근무 환경 준비", "구매계약 관리",
-                                "계약 종료 알림", "변경 이력"], label_visibility="collapsed",
-                        format_func=lambda p: theme.nav_label(p, len(pending_alerts)))
+page = theme.sidebar_nav(len(pending_alerts))
 actor = st.sidebar.text_input("변경 주체", value="로컬 담당자")
 st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가 아닙니다.")
 # 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.

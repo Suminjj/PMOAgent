@@ -17,6 +17,7 @@ NAV_ICONS = {
     "계약 종료 알림": ":material/notifications:", "변경 이력": ":material/history:",
 }
 NAV_LABELS = {"홈": "홈 · AI Agent"}
+PAGES = list(NAV_ICONS)
 
 _CSS = """
 <style>
@@ -24,16 +25,22 @@ _CSS = """
 header[data-testid="stHeader"] { background: transparent; }
 [data-testid="stMainBlockContainer"] { padding-top: 2.2rem; }
 
-/* ---- 사이드바: 네이비 메뉴 ---- */
-[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] { gap: 2px; }
-[data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] {
-  width: 100%; margin: 0; padding: 9px 12px; border-radius: 8px; color: #C7D0E0;
+/* ---- 사이드바: 네이비 메뉴 (버튼 nav_0~nav_6) ---- */
+[data-testid="stSidebar"] [class*="st-key-nav_"] { margin-bottom: -10px; }
+[data-testid="stSidebar"] [class*="st-key-nav_"] button {
+  justify-content: flex-start; gap: 10px; min-height: 46px; padding: 10px 14px;
+  background: transparent; border: none; border-radius: 8px; color: #C7D0E0; box-shadow: none;
 }
-[data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"] > div:first-child { display: none; }
-[data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"]:hover { background: #17264A; }
-[data-testid="stSidebar"] [data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) {
+[data-testid="stSidebar"] [class*="st-key-nav_"] button > div { justify-content: flex-start; }
+[data-testid="stSidebar"] [class*="st-key-nav_"] button p,
+[data-testid="stSidebar"] [class*="st-key-nav_"] button span { font-size: 16px; }
+[data-testid="stSidebar"] [class*="st-key-nav_"] button:hover { background: #17264A; color: #FFFFFF; }
+[data-testid="stSidebar"] [class*="st-key-nav_"] button:focus:not(:focus-visible) { box-shadow: none; }
+[data-testid="stSidebar"] [class*="st-key-nav_"] button[kind="primary"],
+[data-testid="stSidebar"] [class*="st-key-nav_"] button[data-testid="stBaseButton-primary"] {
   background: #1E2E52; color: #FFFFFF; font-weight: 600;
 }
+[data-testid="stSidebar"] [class*="st-key-nav_"] button[data-testid="stBaseButton-primary"] p { font-weight: 600; }
 .pmo-brand { display: flex; align-items: center; gap: 10px; padding: 4px 4px 14px; }
 .pmo-brand-mark { width: 34px; height: 34px; border-radius: 8px; background: #3B82F6;
   display: flex; align-items: center; justify-content: center; flex: none; }
@@ -92,10 +99,25 @@ def apply() -> None:
 
 
 def nav_label(page: str, alerts: int = 0) -> str:
-    label = f"{NAV_ICONS.get(page, '')} {NAV_LABELS.get(page, page)}".strip()
+    """메뉴 버튼 글자(아이콘은 버튼의 icon으로 따로 넣는다)."""
+    label = NAV_LABELS.get(page, page)
     if page == "계약 종료 알림" and alerts:
         label += f" :orange-badge[{alerts}]"
     return label
+
+
+def _go(page: str) -> None:
+    st.session_state["nav_page"] = page
+
+
+def sidebar_nav(alerts: int = 0) -> str:
+    """시안 A의 왼쪽 메뉴: 라디오 대신 메뉴 버튼(key nav_0~nav_6). 지금 화면은 primary 버튼으로 강조한다."""
+    current = st.session_state.setdefault("nav_page", PAGES[0])
+    for i, page in enumerate(PAGES):
+        st.sidebar.button(nav_label(page, alerts), key=f"nav_{i}", icon=NAV_ICONS[page],
+                          type="primary" if page == current else "secondary", width="stretch",
+                          on_click=_go, args=(page,))
+    return st.session_state["nav_page"]
 
 
 def sidebar_brand() -> None:

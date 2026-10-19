@@ -23,7 +23,8 @@ def demo_app(monkeypatch, tmp_path):
 
 
 def go(app, page):
-    app.sidebar.radio[0].set_value(page).run()
+    from ui.theme import PAGES
+    app.button(key=f"nav_{PAGES.index(page)}").click().run()
     assert not app.exception
 
 
