@@ -15,20 +15,20 @@ from tests.test_intake import intake
 
 def test_october_user_examples_and_holidays():
     partial = calculate_full_time(date(2026, 10, 1), date(2026, 10, 10))
-    assert partial["mm"] == "0.25"
+    assert partial["mm"] == "0.250"
     assert partial["months"][0]["assigned_days"] == 5
     assert partial["months"][0]["working_days"] == 20
     assert [d["date"] for d in partial["months"][0]["excluded_holidays"]] == [
         "2026-10-05", "2026-10-09"
     ]
-    assert calculate_full_time(date(2026, 10, 1), date(2026, 10, 31))["mm"] == "1"
-    assert calculate_full_time(date(2026, 10, 3), date(2026, 10, 5))["mm"] == "0"
+    assert calculate_full_time(date(2026, 10, 1), date(2026, 10, 31))["mm"] == "1.000"
+    assert calculate_full_time(date(2026, 10, 3), date(2026, 10, 5))["mm"] == "0.000"
 
 
 def test_cross_month_year_and_leap_year():
-    assert calculate_full_time(date(2026, 10, 1), date(2026, 11, 30))["mm"] == "2"
-    assert calculate_full_time(date(2026, 12, 1), date(2027, 1, 31))["mm"] == "2"
-    assert calculate_full_time(date(2024, 2, 1), date(2024, 2, 29))["mm"] == "1"
+    assert calculate_full_time(date(2026, 10, 1), date(2026, 11, 30))["mm"] == "2.000"
+    assert calculate_full_time(date(2026, 12, 1), date(2027, 1, 31))["mm"] == "2.000"
+    assert calculate_full_time(date(2024, 2, 1), date(2024, 2, 29))["mm"] == "1.000"
     parts = calculate_full_time(date(2026, 10, 30), date(2026, 11, 2))
     assert [(r["assigned_days"], r["working_days"]) for r in parts["months"]] == [(1, 20), (1, 21)]
     assert parts["exact_fraction"] == "41/420"
@@ -69,7 +69,7 @@ def test_manual_mm_and_full_time_recomputed_on_date_change(tmp_path):
                                  end_date="2026-10-10", mm="999"),
                             assignment_id=saved["id"], expected_version=1, token="full", actor="테스트")
     changed = service.assignments()[0]
-    assert changed["mm"] == "0.25"  # Never trust a supplied automatic result.
+    assert changed["mm"] == "0.250"  # Never trust a supplied automatic result.
     detail = json.loads(changed["mm_details"])
     assert detail["exact_fraction"] == "1/4" and detail["inclusive_dates"]
     assert json.loads(service.history()[0]["before_json"])["mm"] == "0.123456789"
@@ -81,11 +81,11 @@ def test_ui_live_mm_manual_switch_and_preview_invalidated(monkeypatch, tmp_path)
     app = open_app()
     preview_person(app)
     find(app.date_input, "투입 종료일").set_value(date(2026, 10, 10)).run()
-    assert "0.250000" in [m.value for m in app.metric]
+    assert "0.250" in [m.value for m in app.metric]
     assert not any(b.key == "confirm" for b in app.button)
     app.button(key="preview_person").click().run()
     app.button(key="confirm").click().run()
-    assert Service(path).assignments()[0]["mm"] == "0.25"
+    assert Service(path).assignments()[0]["mm"] == "0.250"
     find(app.selectbox, "투입 Type").set_value("Part time").run()
     assert not app.metric
     find(app.text_input, "투입 MM (수동)").set_value("0.4")
