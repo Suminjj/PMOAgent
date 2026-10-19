@@ -1,4 +1,5 @@
 """Run with: python -m streamlit run app.py"""
+import os
 import sqlite3
 import json
 from datetime import date
@@ -14,32 +15,32 @@ from pmo.service import (
     validate_assignment, validate_contract, validate_intake, validate_person,
 )
 
-st.set_page_config(page_title="CoE 인력관리", page_icon="👥", layout="wide")
-st.title("CoE 인력관리")
-st.caption("인력·투입·구매계약 정보를 등록하고 계약 종료 예정 대상을 확인하세요.")
+from ui import theme
+
+st.set_page_config(page_title="CoE 인력관리", page_icon=":material/groups:", layout="wide")
+theme.apply()
 try:
     service = Service(db_path())
 except (OSError, sqlite3.Error, RuntimeError) as exc:
     st.error(f"DB를 열 수 없습니다: {exc}")
     st.stop()
 
-actor = st.sidebar.text_input("변경 주체", value="로컬 담당자")
-st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가 아닙니다.")
-# 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
 _people_count = len(service.people())
-st.sidebar.caption(f"연결된 DB: {service.path.name} · 인력 {_people_count}명")
-if _people_count == 0:
-    st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 # 앱 실행(재실행) 시마다 미처리 계약 만료 대상을 다시 확인한다.
 try:
     pending_alerts = service.pending_alerts()
 except sqlite3.Error:
     pending_alerts = []
     st.sidebar.error("계약 만료 알림을 확인하지 못했습니다.")
-page = st.sidebar.radio("메뉴", ["홈", "인력 관리", "투입 관리", "근무 환경 준비", "구매계약 관리",
-                                "계약 종료 알림", "변경 이력"])
-if pending_alerts:
-    st.sidebar.warning(f"미확인 계약 종료 알림 {len(pending_alerts)}건")
+theme.sidebar_brand()
+page = theme.sidebar_nav(len(pending_alerts))
+actor = st.sidebar.text_input("변경 주체", value="로컬 담당자")
+st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가 아닙니다.")
+# 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
+if _people_count == 0:
+    st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
+theme.sidebar_footer(service.path.name, _people_count, os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"))
+theme.page_header(service.clock(), "무엇을 도와드릴까요?" if page == "홈" else page)
 if pending_alerts and page != "계약 종료 알림":
     st.warning(f"계약 종료 검토 대상이 {len(pending_alerts)}건 있습니다. "
                "왼쪽 메뉴의 '계약 종료 알림'에서 확인하세요.")
@@ -210,12 +211,21 @@ if page == "홈":
 
     client = OllamaClient()
     turns = st.session_state.setdefault("chat_turns", [])
+    day = service.clock()
+    try:
+        ending, preparing = service.contracts_ending(day.year, day.month), service.checklist_overview()
+    except sqlite3.Error:
+        ending, preparing = [], []
+    theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
+                   (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
+                   ("근무 환경 준비 남은 투입", len(preparing), "건", False),
+                   ("등록 인력", _people_count, "명", False)])
     chat_col, result_col = st.columns(2, gap="large")
 
-    with chat_col:
+    with chat_col, st.container(key="home_chat_panel"):
         st.subheader("AI Agent")
-        st.caption(f"로컬 LLM({client.name})이 도구로 확인해 답합니다. 데이터는 PC 밖으로 나가지 않습니다. "
-                   "등록·수정·삭제는 오른쪽에 '현재 → 변경' 확인 카드가 뜨고, '확인 후 저장'을 눌러야 반영됩니다.")
+        st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
+                   "등록·수정·삭제는 오른쪽 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
         agent_key = st.radio(
             "업무 카테고리", list(AGENTS), horizontal=True, key="home_agent",
             format_func=lambda k: AGENTS[k].label,
@@ -262,7 +272,7 @@ if page == "홈":
             turns.clear()
             st.rerun()
 
-    with result_col:
+    with result_col, st.container(key="home_result_panel"):
         st.subheader("수행 결과")
         if not turns:
             st.info("질문하면 Agent가 사용한 도구와 조회 결과가 여기에 표시됩니다.")

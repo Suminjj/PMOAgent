@@ -19,7 +19,7 @@ def ready(monkeypatch, tmp_path):
     seed_demo(Service(path), today())
     monkeypatch.setenv("PMO_DB_PATH", str(path))
     app = AppTest.from_file(str(APP), default_timeout=30).run()
-    app.sidebar.radio[0].set_value("근무 환경 준비").run()
+    app.button(key="nav_3").click().run()          # 왼쪽 메뉴 '근무 환경 준비'
     assert not app.exception
     aid = Service(path).checklist_overview()[0]["id"]
     return path, app, aid

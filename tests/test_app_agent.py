@@ -56,7 +56,9 @@ def app(monkeypatch, tmp_path):
 
 
 def test_home_is_first_page_with_chat_and_results(app):
-    assert app.sidebar.radio[0].value == "홈"
+    assert app.session_state["nav_page"] == "홈"
+    assert not app.sidebar.radio                                         # 메뉴는 라디오가 아니라 버튼
+    assert [b.key for b in app.sidebar.button][:7] == [f"nav_{i}" for i in range(7)]
     assert [s.value for s in app.subheader][:2] == ["AI Agent", "수행 결과"]
     assert app.chat_input
 

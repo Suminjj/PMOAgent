@@ -16,9 +16,15 @@ from pmo.errors import ConflictError, ValidationError
 
 
 def render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_index: int) -> None:
-    """변경 계획 하나를 확인 카드로 보여준다."""
+    """변경 계획 하나를 확인 카드로 보여준다. 카드 모양은 ui/theme.py (st-key-…_card)."""
+    with st.container(key=f"{key}_card"):
+        _render_plan(service, plan, key, actor, turn, call_index)
+
+
+def _render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_index: int) -> None:
     done = turn.setdefault("done", {})
-    st.markdown(f"**{plan['title']}** — 아래 내용으로 바꿀까요?")
+    verb = "삭제" if plan["action"] == "contract_delete" else "저장"
+    st.markdown(f"**확인 후 {verb} · {plan['title']}**  \n아래 내용으로 바꿀까요? 아직 {verb}되지 않았습니다.")
     st.table(plan["rows"])
     if call_index in done:
         (st.info if done[call_index].startswith("취소") else st.success)(done[call_index])

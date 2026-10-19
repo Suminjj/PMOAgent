@@ -11,8 +11,14 @@ APP = Path(__file__).resolve().parents[1] / "app.py"
 def open_app(page="인력 관리"):
     """앱을 열고 메뉴를 고른다. 첫 화면은 홈(AI Agent)이다."""
     app = AppTest.from_file(str(APP), default_timeout=30).run()
-    find(app.radio, "메뉴").set_value(page).run()
+    go(app, page)
     return app
+
+
+def go(app, page):
+    """왼쪽 메뉴 버튼(nav_0~nav_6)을 누른다."""
+    from ui.theme import PAGES
+    app.button(key=f"nav_{PAGES.index(page)}").click().run()
 
 
 def find(elements, label):
@@ -69,7 +75,7 @@ def test_assignment_preview_validation_save_and_edit(monkeypatch, tmp_path):
     service.save_person(dict(id="FAKE-UI-001", name="가상 인력", company="", category="정"),
                         token="fake-person-request", actor="테스트")
     app = open_app()
-    find(app.radio, "메뉴").set_value("투입 관리").run()
+    go(app, "투입 관리")
     app.button(key="preview_assignment").click().run()
     assert app.error and not service.assignments()
     find(app.text_input, "과제명 (선택)").set_value("가상 화면 과제")
@@ -91,5 +97,5 @@ def test_assignment_preview_validation_save_and_edit(monkeypatch, tmp_path):
     app.button(key="confirm").click().run()
     assert not app.exception
     assert service.assignments()[0]["project"] == "수정된 가상 과제"
-    find(app.radio, "메뉴").set_value("변경 이력").run()
+    go(app, "변경 이력")
     assert len(app.expander) == 3
