@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
+import pandas as pd
 import streamlit as st
 
 from pmo.config import db_path, grades
@@ -140,15 +141,21 @@ def render_monthly_mm() -> None:
     def number(value):
         return float(value) if value not in (None, "") else None
 
-    table = [{"이름": r["name"], "업체명": r["company"], "투입 과제": r["project"] or "미입력",
-              "투입 시작일": r["start_date"], "투입 종료일": r["end_date"], "투입 Type": r["assignment_type"],
-              "투입 MM": number(r["mm"]),
-              **{month_label[m]: number(r["months"][m]) for m in months}} for r in rows]
+    # 열 순서(10/20 담당자): 이름, 업체명, 4월~3월, 투입 MM, 투입 Type, 투입 시작일, 투입 종료일
+    table = [{"이름": r["name"], "업체명": r["company"],
+              **{month_label[m]: number(r["months"][m]) for m in months},
+              "투입 MM": number(r["mm"]), "투입 Type": r["assignment_type"],
+              "투입 시작일": r["start_date"], "투입 종료일": r["end_date"]} for r in rows]
     totals = {m: sum((Decimal(r["months"][m]) for r in rows if r["months"][m]), Decimal("0")) for m in months}
     table.append({"이름": "월 합계 (Full time)", **{month_label[m]: float(totals[m]) for m in months}})
-    mm_format = st.column_config.NumberColumn(format="%.3f")
-    st.dataframe(table, hide_index=True, use_container_width=True,
-                 column_config={"투입 MM": mm_format, **{month_label[m]: mm_format for m in months}})
+    numbers = [month_label[m] for m in months] + ["투입 MM"]
+    frame = pd.DataFrame(table, columns=list(table[0]))
+    # 값이 없는 칸(투입 없는 달, Part time 월별 값)은 'None' 대신 빈 칸으로 보여준다
+    styled = (frame.style.format(precision=3, na_rep="", subset=numbers)
+              .format(na_rep="", subset=[c for c in frame.columns if c not in numbers])
+              .apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
+                     if row["이름"] == "월 합계 (Full time)" else [""] * len(row), axis=1))
+    st.dataframe(styled, hide_index=True, use_container_width=True)
     st.caption(f"{fy}년 4월 ~ {fy + 1}년 3월 · 월별 MM은 구매시스템 방식(그 달 투입 근무일 ÷ 그 달 전체 근무일)을 "
                "달마다 소수 셋째 자리로 반올림한 값입니다. '투입 MM'은 합계를 한 번 반올림하므로 월별 값의 합과 "
                "0.001 차이가 날 수 있습니다. Part time은 기간 전체 MM만 입력하므로 월별 칸이 비어 있습니다.")
@@ -467,13 +474,20 @@ elif page == "투입 관리":
     confirm()
 
 elif page == "근무 환경 준비":
-    from pmo.checklist import STATUSES
+    from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES
 
     st.subheader("준비가 남은 투입")
-    st.caption("좌석 배정·ID카드 신청·OA기기 신청·방문예약 진행 상황입니다. "
+    st.caption("방문예약·계정 신청·ID카드 신청·OA기기 신청 진행 상황입니다. "
                "'완료'는 사내 시스템에서 실제 신청·예약을 마친 경우에만 선택하세요.")
     include_closed = st.checkbox("준비를 마친 투입도 보기", key="ck_include_closed")
     overview = service.checklist_overview(include_closed=include_closed)
+
+    STATUS_STYLE = {   # 준비 항목 상태 색 (10/20 담당자: 시각적으로 잘 보이게)
+        "완료": "background-color: #E5F4E4; color: #1E6B35; font-weight: 600",
+        "진행 중": "background-color: #E7F1FB; color: #1D4ED8; font-weight: 600",
+        "미진행": "background-color: #F9ECE7; color: #B4441E",
+        "해당 없음": "background-color: #F0EFEC; color: #6B7280",
+    }
 
     def start_label(days: int) -> str:
         return "투입 중" if days < 0 else ("오늘 시작" if days == 0 else f"시작 D-{days}")
@@ -481,12 +495,14 @@ elif page == "근무 환경 준비":
     if not overview:
         st.success("준비가 남은 투입이 없습니다.")
         st.stop()
-    # 항목마다 상태를 한 칸씩 보여준다. '진행'은 완료·해당 없음으로 끝난 항목 수다.
-    st.dataframe([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
-                   "시작일": r["start_date"], "시작까지": start_label(r["days_to_start"]),
-                   "끝난 항목": f"{r['done']}/{r['total']}", **r["statuses"]} for r in overview],
+    # 항목마다 상태를 한 칸씩, 상태별 색으로 보여준다 (항목 순서: 방문예약·계정 신청·ID카드 신청·OA기기 신청)
+    frame = pd.DataFrame([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
+                           "시작일": r["start_date"], "투입 현황": start_label(r["days_to_start"]),
+                           **r["statuses"]} for r in overview])
+    st.dataframe(frame.style.map(lambda v: STATUS_STYLE.get(v, ""), subset=list(CHECKLIST_ITEMS)),
                  use_container_width=True, hide_index=True)
-    st.caption("'끝난 항목'은 완료·해당 없음 처리한 항목 수입니다. 진행 중인 항목은 아직 끝나지 않은 것으로 셉니다.")
+    st.markdown(" ".join(f'<span style="{style}; padding: 2px 10px; border-radius: 10px; font-size: 13px">'
+                         f'{name}</span>' for name, style in STATUS_STYLE.items()), unsafe_allow_html=True)
     by_assignment = {r["id"]: r for r in overview}
     aid = st.selectbox(
         "확인할 투입", list(by_assignment), key="ck_assignment",

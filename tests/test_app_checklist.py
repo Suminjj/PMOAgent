@@ -61,12 +61,13 @@ def test_draft_keeps_status(ready):
 def test_overview_table_shows_each_item_status(ready):
     path, app, aid = ready
     service = Service(path)
-    item = service.checklist(aid)[1]
+    item = service.checklist(aid)[2]
     service.update_checklist_item(aid, item["item"], "진행 중", token="ui-overview", actor="담당자",
                                   expected_version=item["version"])
     app.run()
     table = app.dataframe[0].value
     assert "투입 관리번호" not in table.columns                         # 내부 관리번호는 화면에 없음
     row = table.iloc[0]                                               # aid = 준비 현황 첫 줄
-    assert row["ID카드 신청"] == "진행 중" and row["좌석 배정"] == "미진행"
-    assert "남은 항목" not in table.columns
+    assert row["ID카드 신청"] == "진행 중" and row["방문예약"] == "미진행"
+    assert list(table.columns) == ["이름", "업체명", "과제명", "시작일", "투입 현황",
+                                   "방문예약", "계정 신청", "ID카드 신청", "OA기기 신청"]

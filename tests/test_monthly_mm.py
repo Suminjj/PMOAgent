@@ -67,7 +67,6 @@ def test_assignment_page_shows_monthly_columns(monkeypatch, tmp_path):
     assert not app.exception
     table = app.dataframe[0].value
     months = ["4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월", "1월", "2월", "3월"]
-    assert list(table.columns[:7]) == ["이름", "업체명", "투입 과제", "투입 시작일", "투입 종료일", "투입 Type", "투입 MM"]
-    assert list(table.columns[7:]) == months
+    assert list(table.columns) == ["이름", "업체명", *months, "투입 MM", "투입 Type", "투입 시작일", "투입 종료일"]
     assert "관리번호" not in " ".join(table.columns)
     assert table.iloc[-1]["이름"] == "월 합계 (Full time)"

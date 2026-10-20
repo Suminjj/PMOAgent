@@ -76,7 +76,7 @@ def test_name_and_title_are_resolved_to_person(service):
 
 def test_ambiguous_or_missing_targets_ask_instead_of_planning(service):
     with pytest.raises(ValidationError, match="2명.*DEMO-001.*DEMO-005"):
-        build_plan(service, "checklist_update", {"person_id": "김가상", "item": "좌석 배정", "status": "진행 중"})
+        build_plan(service, "checklist_update", {"person_id": "김가상", "item": "계정 신청", "status": "진행 중"})
     with pytest.raises(ValidationError, match="없습니다"):
         build_plan(service, "account_id", {"person_id": "홍길동", "account_id": "x"})
     with pytest.raises(ValidationError, match="누구"):
@@ -97,7 +97,7 @@ def test_missing_or_no_op_values_are_reported(service):
     with pytest.raises(ValidationError, match="사유"):
         build_plan(service, "checklist_update", {"person_id": "DEMO-002", "item": "방문예약", "status": "해당 없음"})
     with pytest.raises(ValidationError, match="이미 '미진행'"):
-        build_plan(service, "checklist_update", {"person_id": "DEMO-002", "item": "좌석 배정", "status": "미진행"})
+        build_plan(service, "checklist_update", {"person_id": "DEMO-002", "item": "계정 신청", "status": "미진행"})
     with pytest.raises(ValidationError, match="시작일과 종료일"):
         build_plan(service, "contract_save", {"person_id": "DEMO-002", "mode": "신규"})
 

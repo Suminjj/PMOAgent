@@ -48,7 +48,7 @@ def test_four_items_in_order_and_created_once(service):
 
 def test_status_change_with_audit_and_persistence(service):
     aid = setup_assignment(service)
-    update(service, aid, "좌석 배정", "진행 중")
+    update(service, aid, "방문예약", "진행 중")
     row = Service(service.path, clock=lambda: TODAY).checklist(aid)[0]
     assert row["status"] == "진행 중" and row["version"] == 2 and row["updated_by"] == "담당자"
     audit = next(h for h in service.history() if h["entity"] == "checklist")
@@ -61,7 +61,7 @@ def test_not_applicable_requires_reason(service):
     with pytest.raises(ValidationError, match="사유"):
         update(service, aid, "방문예약", "해당 없음", "  ")
     update(service, aid, "방문예약", "해당 없음", "기존 출입증 보유")
-    row = service.checklist(aid)[3]
+    row = service.checklist(aid)[0]
     assert row["status"] == "해당 없음" and row["reason"] == "기존 출입증 보유"
 
 
@@ -69,19 +69,19 @@ def test_done_requires_actual_application(service):
     aid = setup_assignment(service)
     with pytest.raises(ValidationError, match="실제 신청"):
         update(service, aid, "ID카드 신청", "완료")
-    assert service.checklist(aid)[1]["status"] == "미진행"
+    assert service.checklist(aid)[2]["status"] == "미진행"
     update(service, aid, "ID카드 신청", "완료", actual_done=True)
-    row = service.checklist(aid)[1]
+    row = service.checklist(aid)[2]
     assert row["status"] == "완료" and row["applied_at"]
     update(service, aid, "ID카드 신청", "진행 중")          # 되돌리면 신청 완료 시각도 지운다
-    assert service.checklist(aid)[1]["applied_at"] is None
+    assert service.checklist(aid)[2]["applied_at"] is None
 
 
 def test_draft_does_not_mark_done(service):
     aid = setup_assignment(service)
     draft = service.create_checklist_draft(aid, "OA기기 신청", actor="담당자")
     assert "가상 인력" in draft and "2026-10-26" in draft and "실제 신청은 사내 시스템" in draft
-    row = service.checklist(aid)[2]
+    row = service.checklist(aid)[3]
     assert row["status"] == "미진행" and row["draft"] == draft and row["drafted_at"]
     assert row["version"] == 1  # 초안은 상태 변경 미리보기를 깨지 않는다
     update(service, aid, "OA기기 신청", "진행 중")
@@ -90,19 +90,19 @@ def test_draft_does_not_mark_done(service):
 def test_stale_version_same_token_and_invalid_input(service):
     aid = setup_assignment(service)
     t = token()
-    first = service.update_checklist_item(aid, "좌석 배정", "진행 중", token=t, actor="담당자",
+    first = service.update_checklist_item(aid, "계정 신청", "진행 중", token=t, actor="담당자",
                                           expected_version=1)
-    assert service.update_checklist_item(aid, "좌석 배정", "진행 중", token=t, actor="담당자",
+    assert service.update_checklist_item(aid, "계정 신청", "진행 중", token=t, actor="담당자",
                                          expected_version=1) == first
-    assert service.checklist(aid)[0]["version"] == 2
+    assert service.checklist(aid)[1]["version"] == 2
     with pytest.raises(ConflictError):
-        update(service, aid, "좌석 배정", "미진행", expected_version=1)
-    for item, status in (("주차 등록", "진행 중"), ("좌석 배정", "보류")):
+        update(service, aid, "계정 신청", "미진행", expected_version=1)
+    for item, status in (("주차 등록", "진행 중"), ("계정 신청", "보류")):
         with pytest.raises(ValidationError):
             service.update_checklist_item(aid, item, status, token=token(), actor="담당자",
                                           expected_version=2)
     with pytest.raises(ValidationError, match="투입 건"):
-        service.update_checklist_item("없는-투입", "좌석 배정", "진행 중", token=token(),
+        service.update_checklist_item("없는-투입", "계정 신청", "진행 중", token=token(),
                                       actor="담당자", expected_version=0)
 
 
@@ -123,17 +123,17 @@ def test_overview_shows_status_of_items_in_progress(service):
     update(service, aid, "ID카드 신청", "진행 중")
     row = service.checklist_overview()[0]
     assert row["statuses"]["ID카드 신청"] == "진행 중" and row["done"] == 0   # 진행 중은 아직 끝나지 않음
-    assert row["open_labels"] == ["좌석 배정", "ID카드 신청(진행 중)", "OA기기 신청", "방문예약"]
+    assert row["open_labels"] == ["방문예약", "계정 신청", "ID카드 신청(진행 중)", "OA기기 신청"]
 
 
 def test_missing_items_from_old_data_are_shown_and_created_on_save(service):
     aid = setup_assignment(service)
     with connection(service.path) as con:
         con.execute("DELETE FROM checklist WHERE assignment_id=? AND item='방문예약'", (aid,))
-    row = service.checklist(aid)[3]
+    row = service.checklist(aid)[0]
     assert row["exists"] is False and row["status"] == "미진행" and row["version"] == 0
     update(service, aid, "방문예약", "진행 중")
-    assert service.checklist(aid)[3]["exists"] is True
+    assert service.checklist(aid)[0]["exists"] is True
 
 
 def test_v4_database_migrates_checklist_with_backup(tmp_path):
@@ -148,11 +148,31 @@ def test_v4_database_migrates_checklist_with_backup(tmp_path):
             INSERT INTO people (id,name,company,category) VALUES ('OLD','기존','업체','협력');
             INSERT INTO assignments (id,person_id,start_date,end_date,grade)
                 VALUES ('A-OLD','OLD','2026-10-01','2026-12-31','L6');
-            INSERT INTO checklist VALUES ('A-OLD','좌석 배정','해당 없음','기존 좌석');
+            INSERT INTO checklist VALUES ('A-OLD','방문예약','해당 없음','기존 출입증');
             PRAGMA user_version = 4;
         """)
     service = Service(path, clock=lambda: TODAY)
     row = service.checklist("A-OLD")[0]
-    assert row["status"] == "해당 없음" and row["reason"] == "기존 좌석" and row["version"] == 1
+    assert row["status"] == "해당 없음" and row["reason"] == "기존 출입증" and row["version"] == 1
     assert len(list(tmp_path.glob("v4.db.backup-v4-*.db"))) == 1
-    update(service, "A-OLD", "좌석 배정", "미진행")
+    update(service, "A-OLD", "방문예약", "미진행")
+
+
+def test_seat_item_replaced_by_account_request_keeps_old_records(service):
+    """10/20: 좌석 배정 → 계정 신청. 예전 좌석 배정 기록은 DB에 남기고 화면·현황에서 뺀다."""
+    aid = setup_assignment(service)
+    with connection(service.path) as con:
+        con.execute("DELETE FROM checklist WHERE assignment_id=? AND item='계정 신청'", (aid,))
+        con.execute("INSERT INTO checklist(assignment_id,item,status) VALUES (?,'좌석 배정','완료')", (aid,))
+    assert [r["item"] for r in service.checklist(aid)] == ["방문예약", "계정 신청", "ID카드 신청", "OA기기 신청"]
+    account = service.checklist(aid)[1]
+    assert account["exists"] is False and account["status"] == "미진행"
+    assert "좌석 배정" not in service.checklist_overview()[0]["statuses"]
+    with pytest.raises(ValidationError):
+        service.update_checklist_item(aid, "좌석 배정", "진행 중", token=token(), actor="담당자",
+                                      expected_version=1)
+    update(service, aid, "계정 신청", "진행 중")
+    assert service.checklist(aid)[1]["status"] == "진행 중"
+    with connection(service.path) as con:
+        assert con.execute("SELECT status FROM checklist WHERE assignment_id=? AND item='좌석 배정'",
+                           (aid,)).fetchone()[0] == "완료"
