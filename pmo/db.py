@@ -35,20 +35,25 @@ CREATE TABLE IF NOT EXISTS run_log (
 );
 """
 
+# v6: 컨설팅 인력은 등급 없이 저장(grade NULL 허용), 매출귀속팀(revenue_team) 추가, 인력 직무(people.job_role) 추가
+ASSIGNMENTS_V6 = """CREATE TABLE IF NOT EXISTS {name} (
+    id TEXT PRIMARY KEY, person_id TEXT NOT NULL REFERENCES people(id),
+    project TEXT, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+    grade TEXT, sales_rate TEXT, purchase_rate TEXT,
+    rate_unit TEXT, version INTEGER NOT NULL DEFAULT 1,
+    assignment_type TEXT, mm TEXT, mm_details TEXT, revenue_project TEXT, revenue_team TEXT,
+    CHECK(end_date >= start_date)
+)"""
+ASSIGNMENT_V5_COLUMNS = ("id, person_id, project, start_date, end_date, grade, sales_rate, purchase_rate, "
+                         "rate_unit, version, assignment_type, mm, mm_details, revenue_project")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS people (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT NOT NULL,
     category TEXT NOT NULL CHECK(category IN ('정','협력','컨설팅')),
-    version INTEGER NOT NULL DEFAULT 1, account_id TEXT
+    version INTEGER NOT NULL DEFAULT 1, account_id TEXT, job_role TEXT
 );
-CREATE TABLE IF NOT EXISTS assignments (
-    id TEXT PRIMARY KEY, person_id TEXT NOT NULL REFERENCES people(id),
-    project TEXT, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
-    grade TEXT NOT NULL, sales_rate TEXT, purchase_rate TEXT,
-    rate_unit TEXT, version INTEGER NOT NULL DEFAULT 1,
-    assignment_type TEXT, mm TEXT, mm_details TEXT, revenue_project TEXT,
-    CHECK(end_date >= start_date)
-);
+{ASSIGNMENTS};
 CREATE INDEX IF NOT EXISTS assignments_person ON assignments(person_id);
 CREATE TABLE IF NOT EXISTS checklist (
     assignment_id TEXT NOT NULL REFERENCES assignments(id),
@@ -67,9 +72,9 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE TABLE IF NOT EXISTS requests (
     token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
 );
-""" + V4_TABLES + "PRAGMA user_version = 5;"
+""".replace("{ASSIGNMENTS}", ASSIGNMENTS_V6.format(name="assignments")) + V4_TABLES + "PRAGMA user_version = 6;"
 
-LATEST_VERSION = 5
+LATEST_VERSION = 6
 # v5: 체크리스트 상태 변경 지원 (버전 검사, 신청 초안, 실제 신청 완료 시각, 처리자)
 V5_CHECKLIST_COLUMNS = ("version INTEGER NOT NULL DEFAULT 1", "draft TEXT", "drafted_at TEXT",
                         "applied_at TEXT", "updated_at TEXT", "updated_by TEXT")
@@ -104,6 +109,9 @@ def initialize(path: Path) -> None:
             version = 4
         if version == 4:
             migrate_v4(con, path)
+            version = 5
+        if version == 5:
+            migrate_v5(con, path)
             return
         tables = con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -210,3 +218,38 @@ def migrate_v4(con: sqlite3.Connection, path: Path) -> None:
     except Exception:
         con.rollback()
         raise
+
+
+def migrate_v5(con: sqlite3.Connection, path: Path) -> None:
+    """등급을 비울 수 있게 투입 표를 다시 만들고(SQLite는 NOT NULL을 바꿀 수 없음), 매출귀속팀·직무 칸을 더한다.
+
+    모든 행·관리번호·연결(체크리스트·계약)을 그대로 옮긴다. 시작 전에 백업한다.
+    """
+    con.execute("PRAGMA foreign_keys = OFF")
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("PRAGMA user_version").fetchone()[0] >= 6:
+            con.commit()
+            return
+        backup = path.with_name(path.name + ".backup-v5-" + uuid4().hex[:8] + ".db")
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
+            source.backup(destination)
+        if "job_role" not in {r[1] for r in con.execute("PRAGMA table_info(people)")}:
+            con.execute("ALTER TABLE people ADD COLUMN job_role TEXT")
+        columns = {r[1]: r for r in con.execute("PRAGMA table_info(assignments)")}
+        if "revenue_team" not in columns or columns["grade"][3]:      # [3] = NOT NULL 여부
+            con.execute(ASSIGNMENTS_V6.format(name="assignments_v6"))
+            con.execute(f"INSERT INTO assignments_v6 ({ASSIGNMENT_V5_COLUMNS}) "
+                        f"SELECT {ASSIGNMENT_V5_COLUMNS} FROM assignments")
+            con.execute("DROP TABLE assignments")
+            con.execute("ALTER TABLE assignments_v6 RENAME TO assignments")
+            con.execute("CREATE INDEX IF NOT EXISTS assignments_person ON assignments(person_id)")
+        if con.execute("PRAGMA foreign_key_check").fetchall():
+            raise RuntimeError("DB 연결 관계 검증에 실패했습니다. 기존 DB와 백업을 확인하세요.")
+        con.execute("PRAGMA user_version = 6")
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.execute("PRAGMA foreign_keys = ON")

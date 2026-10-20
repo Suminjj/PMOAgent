@@ -10,3 +10,7 @@ data/
 *.db-*
 *.sqlite*
 evals/results/
+# 실제 인력·계약 데이터가 든 엑셀은 올리지 않는다
+*.xlsx
+*.xls
+*.csv

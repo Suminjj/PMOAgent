@@ -28,9 +28,10 @@ TIME_LIMIT_SECONDS = 5.0
 
 TABLE_CONTEXT = {
     "people": "인력. id=내부 관리번호, name=이름, company=업체명, category=분류(정/협력/컨설팅), "
-              "account_id=회사 계정 ID(발급 전이면 NULL).",
+              "account_id=회사 계정 ID(발급 전이면 NULL), job_role=직무.",
     "assignments": "투입. person_id=people.id, project=투입 과제, revenue_project=매출귀속 프로젝트, "
-                   "start_date/end_date=투입 기간(YYYY-MM-DD, 양 끝 포함), grade=등급, "
+                   "revenue_team=매출귀속팀, start_date/end_date=투입 기간(YYYY-MM-DD, 양 끝 포함), "
+                   "grade=등급(컨설팅은 NULL일 수 있음), "
                    "assignment_type=Full time/Part time, mm=투입 MM(문자열 숫자), "
                    "sales_rate/purchase_rate=매출·매입단가(문자열 숫자), rate_unit=단가 단위.",
     "contracts": "구매계약. person_id=people.id, assignment_id=assignments.id, company=업체명, "

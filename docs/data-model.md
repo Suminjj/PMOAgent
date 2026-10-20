@@ -4,8 +4,8 @@
 
 | 테이블 | 주요 필드 | 역할 |
 | --- | --- | --- |
-| people | id, account_id, name, company, category, version | 내부 관리번호, 발급 후 계정 ID와 기본 정보 |
-| assignments | id, person_id, project, start_date, end_date, grade, assignment_type, mm, mm_details, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보와 MM 산정 근거 |
+| people | id, account_id, name, company, category, job_role(직무, v6), version | 내부 관리번호, 발급 후 계정 ID와 기본 정보 |
+| assignments | id, person_id, project, revenue_project, revenue_team(매출귀속팀, v6), start_date, end_date, grade(컨설팅은 NULL 허용, v6), assignment_type, mm, mm_details, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보와 MM 산정 근거 |
 | checklist | assignment_id, item, status, reason, version, draft, drafted_at, applied_at, updated_at, updated_by | 신규 투입과 함께 생성되는 준비 항목과 처리 상태 |
 | audit | entity, entity_id, before_json, after_json, changed_at, actor | 등록·수정 전후 값과 주체 |
 | requests | token, payload_hash, result_id | 동일 저장 요청 재실행 방지 |

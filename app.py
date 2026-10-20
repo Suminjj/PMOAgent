@@ -58,6 +58,7 @@ LABELS = {
     "grade": "등급", "sales_rate": "매출단가", "purchase_rate": "매입단가",
     "rate_unit": "단가 기준 단위", "version": "버전",
     "assignment_type": "투입 Type", "mm": "투입 MM", "revenue_project": "매출귀속 프로젝트",
+    "revenue_team": "매출귀속팀", "job_role": "직무",
     "assignment_id": "연결 투입", "contract_no": "계약번호", "status": "계약 상태",
     "previous_contract_id": "이전(연장 전) 계약", "note": "메모",
     "label": "만료 상태", "has_successor": "연장 계약 등록", "notify_from": "알림 시작일",
@@ -299,7 +300,8 @@ elif page == "인력 관리":
                 " ".join(str(r.get(k) or "") for k in ("id", "name", "company", "account_id")).casefold()]
     overview = [dict(r, **{k: latest.get(r["id"], {}).get(k)
                           for k in ("grade", "start_date", "end_date", "assignment_type", "mm")}) for r in filtered]
-    show_table(overview, ["name", "company", "category", "account_id", "grade", "start_date", "end_date", "assignment_type", "mm", "id"])
+    show_table(overview, ["name", "company", "category", "job_role", "account_id", "grade", "start_date", "end_date",
+                          "assignment_type", "mm", "id"])
     st.caption("등급·기간은 시작일이 가장 최근인 투입 건을 표시합니다. 전체 투입은 투입 관리에서 확인하세요.")
     options = [None] + [r["id"] for r in people]
     by_id = {r["id"]: r for r in people}
@@ -325,18 +327,21 @@ elif page == "인력 관리":
         categories = ["정", "협력", "컨설팅"]
         category = st.selectbox("분류", categories,
                                 index=categories.index(current["category"]) if current else None)
+        job_role = st.text_input("직무 (선택)", value=(current.get("job_role") or "") if current else "",
+                                 key=f"job_{target}")
         account_id = st.text_input("계정 ID (발급 후 입력 / 선택)",
                                     value=(current["account_id"] or "") if current else "",
                                     key=f"account_{target}")
         if not current:
-            grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade")
+            grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade",
+                                 placeholder="선택 (컨설팅은 비워 둘 수 있음)")
             a, b = st.columns(2)
             start = a.date_input("투입 시작일", value=None, key="intake_start",
                                  min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
             end = b.date_input("투입 종료일", value=None, key="intake_end",
                                min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
             mode, manual_mm = mm_fields(start, end, None, "intake")
-        person_data = dict(name=name, company=company, category=category, account_id=account_id)
+        person_data = dict(name=name, company=company, category=category, account_id=account_id, job_role=job_role)
         kind = "person" if current else "intake"
         input_data = dict(person_data, id=current["id"]) if current else dict(
             person=person_data, assignment=dict(grade=grade, start_date=start, end_date=end,
@@ -359,7 +364,7 @@ elif page == "투입 관리":
         st.stop()
     rows = service.assignments(person_id)
     timeline = service.assignment_timeline(person_id)
-    columns = ["project", "revenue_project", "start_date", "end_date", "grade",
+    columns = ["project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
                "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit", "id"]
     for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입 이력", "past")):
         st.markdown(f"**{title}** ({len(timeline[key])}건)")
@@ -385,15 +390,17 @@ elif page == "투입 관리":
             "매출귀속 프로젝트 (선택)", value=(current.get("revenue_project") or "") if current else "",
             key=f"revenue_{person_id}_{target}",
             help="투입 과제와 매출이 귀속되는 프로젝트가 다를 때 입력합니다. 금액 배분 규칙은 미확정입니다.")
+        revenue_team = st.text_input("매출귀속팀 (선택)", value=(current.get("revenue_team") or "") if current else "",
+                                     key=f"team_{person_id}_{target}")
         a, b = st.columns(2)
         start = a.date_input("시작일", value=date.fromisoformat(current["start_date"]) if current else None,
                              min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
         end = b.date_input("종료일", value=date.fromisoformat(current["end_date"]) if current else None,
                            min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
         allowed = list(grades())
-        if current and current["grade"] not in allowed:
+        if current and current["grade"] and current["grade"] not in allowed:
             st.warning("기존 등급이 현재 허용 목록에 없습니다. 새 등급을 선택하세요.")
-        grade = st.selectbox("등급", allowed,
+        grade = st.selectbox("등급", allowed, placeholder="선택 (컨설팅은 비워 둘 수 있음)",
                              index=allowed.index(current["grade"]) if current and current["grade"] in allowed else None)
         mode, manual_mm = mm_fields(start, end, current, f"{person_id}_{target}")
         sales = st.text_input("매출단가 (선택)", value=(current["sales_rate"] or "") if current else "",
@@ -404,6 +411,7 @@ elif page == "투입 관리":
                              value=(current["rate_unit"] or "") if current else "",
                              key=f"unit_{person_id}_{target}")
         input_data = dict(person_id=person_id, project=project, revenue_project=revenue_project,
+                          revenue_team=revenue_team,
                           start_date=start,
                           end_date=end, grade=grade, sales_rate=sales,
                           purchase_rate=purchase, rate_unit=unit, assignment_type=mode, mm=manual_mm)
