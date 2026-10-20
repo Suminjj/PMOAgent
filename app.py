@@ -3,7 +3,7 @@ import os
 import sqlite3
 import json
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
 import pandas as pd
@@ -138,24 +138,33 @@ def render_monthly_mm() -> None:
     months = Service.fiscal_months(fy)
     month_label = {m: f"{int(m[5:])}월" for m in months}
 
-    def number(value):
-        return float(value) if value not in (None, "") else None
+    def number(value) -> str:
+        """MM 칸 글자. 값이 없으면(투입 없는 달, Part time 월별 값) 빈 문자열로 둬서 'None'이 보이지 않게 한다.
+
+        Streamlit 표는 빈 값(None/NaN)을 회색 'None'으로 그리므로 숫자 대신 '0.750' 같은 글자로 넣는다.
+        """
+        if value in (None, ""):
+            return ""
+        return format(Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP), "f")
 
     # 열 순서(10/20 담당자): 이름, 업체명, 4월~3월, 투입 MM, 투입 Type, 투입 시작일, 투입 종료일
     table = [{"이름": r["name"], "업체명": r["company"],
               **{month_label[m]: number(r["months"][m]) for m in months},
               "투입 MM": number(r["mm"]), "투입 Type": r["assignment_type"],
               "투입 시작일": r["start_date"], "투입 종료일": r["end_date"]} for r in rows]
-    totals = {m: sum((Decimal(r["months"][m]) for r in rows if r["months"][m]), Decimal("0")) for m in months}
-    table.append({"이름": "월 합계 (Full time)", **{month_label[m]: float(totals[m]) for m in months}})
+    # 월 합계도 그 달 투입이 없으면 0.000 대신 빈 칸
+    totals = {m: sum(Decimal(r["months"][m]) for r in rows if r["months"][m])
+              if any(r["months"][m] for r in rows) else None for m in months}
+    table.append({"이름": "월 합계 (Full time)", **{month_label[m]: number(totals[m]) for m in months}})
     numbers = [month_label[m] for m in months] + ["투입 MM"]
-    frame = pd.DataFrame(table, columns=list(table[0]))
-    # 값이 없는 칸(투입 없는 달, Part time 월별 값)은 'None' 대신 빈 칸으로 보여준다
-    styled = (frame.style.format(precision=3, na_rep="", subset=numbers)
-              .format(na_rep="", subset=[c for c in frame.columns if c not in numbers])
-              .apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
-                     if row["이름"] == "월 합계 (Full time)" else [""] * len(row), axis=1))
-    st.dataframe(styled, hide_index=True, use_container_width=True)
+    frame = pd.DataFrame(table, columns=list(table[0])).fillna("")   # 합계 줄의 빈 칸도 빈 문자열
+    styled = frame.style.apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
+                               if row["이름"] == "월 합계 (Full time)" else [""] * len(row), axis=1)
+    try:   # 숫자 글자는 오른쪽 정렬 (alignment를 모르는 Streamlit 버전이면 기본 정렬)
+        config = {c: st.column_config.TextColumn(alignment="right") for c in numbers}
+    except TypeError:
+        config = None
+    st.dataframe(styled, hide_index=True, use_container_width=True, column_config=config)
     st.caption(f"{fy}년 4월 ~ {fy + 1}년 3월 · 월별 MM은 구매시스템 방식(그 달 투입 근무일 ÷ 그 달 전체 근무일)을 "
                "달마다 소수 셋째 자리로 반올림한 값입니다. '투입 MM'은 합계를 한 번 반올림하므로 월별 값의 합과 "
                "0.001 차이가 날 수 있습니다. Part time은 기간 전체 MM만 입력하므로 월별 칸이 비어 있습니다.")
@@ -284,8 +293,10 @@ if page == "홈":
         agent_key = st.session_state.setdefault("home_category", AUTO)
         st.markdown("**업무 카테고리**", help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 "
                     "가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
-        with st.container(key="home_agent"):
-            for column, key in zip(st.columns(len(AGENTS)), AGENTS):
+        with st.container(key="home_agent"):   # 3개 · 2개 두 줄 (10/20 담당자)
+            keys = list(AGENTS)
+            columns = list(st.columns(3)) + list(st.columns(2))
+            for column, key in zip(columns, keys):
                 column.button(theme.agent_label(key, AGENTS[key].label), key=f"home_agent_{key}",
                               type="primary" if key == agent_key else "secondary", width="stretch",
                               on_click=st.session_state.__setitem__, args=("home_category", key))
