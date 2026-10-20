@@ -48,15 +48,14 @@ def validate_person(data: dict) -> dict:
         result["id"] = required(data["id"], "내부 관리번호")
     result["company"] = str(data.get("company") or "").strip()
     result["account_id"] = str(data.get("account_id") or "").strip() or None
+    result["job_role"] = str(data.get("job_role") or "").strip() or None
     if result["category"] not in ("정", "협력", "컨설팅"):
         raise ValidationError("분류는 정·협력·컨설팅 중 선택하세요.")
     return result
 
 
 def validate_assignment(data: dict) -> dict:
-    result = {k: required(data.get(k), label) for k, label in (
-        ("person_id", "내부 관리번호"), ("grade", "등급"),
-    )}
+    result = {"person_id": required(data.get("person_id"), "내부 관리번호")}
     for key, label in (("start_date", "시작일"), ("end_date", "종료일")):
         try:
             result[key] = date.fromisoformat(str(data.get(key))).isoformat()
@@ -64,11 +63,14 @@ def validate_assignment(data: dict) -> dict:
             raise ValidationError(f"{label}을(를) 올바르게 입력하세요.") from exc
     if result["end_date"] < result["start_date"]:
         raise ValidationError("종료일은 시작일보다 빠를 수 없습니다.")
-    if result["grade"] not in grades():
+    # 등급은 분류에 따라 필수(정·협력) 또는 선택(컨설팅). 분류 검사는 저장 시 check_grade가 한다.
+    result["grade"] = str(data.get("grade") or "").strip() or None
+    if result["grade"] is not None and result["grade"] not in grades():
         raise ValidationError("허용된 등급을 선택하세요.")
     result["project"] = str(data.get("project") or "").strip() or None
     # 투입 과제와 매출귀속 프로젝트는 다를 수 있다. 배분 규칙은 TODO.
     result["revenue_project"] = str(data.get("revenue_project") or "").strip() or None
+    result["revenue_team"] = str(data.get("revenue_team") or "").strip() or None
     result["rate_unit"] = str(data.get("rate_unit") or "").strip() or None
     for key, label in (("sales_rate", "매출단가"), ("purchase_rate", "매입단가")):
         value = data.get(key)
@@ -93,6 +95,14 @@ def validate_assignment(data: dict) -> dict:
     return result
 
 
+GRADE_OPTIONAL = ("컨설팅",)   # 등급 체계(L7·L6·L5)가 없는 분류 (10/20 담당자 확인)
+
+
+def check_grade(category: str | None, grade: str | None) -> None:
+    if grade is None and category not in GRADE_OPTIONAL:
+        raise ValidationError("등급을 입력하세요. 등급은 컨설팅 인력만 비워 둘 수 있습니다.")
+
+
 def validate_intake(data: dict) -> dict:
     """Validate the information known before a company account is issued."""
     person = validate_person(data["person"])
@@ -100,6 +110,7 @@ def validate_intake(data: dict) -> dict:
     person["company"] = required(person["company"], "업체명")
     assignment = validate_assignment(dict(data["assignment"], person_id="new-person"))
     assignment.pop("person_id")
+    check_grade(person["category"], assignment["grade"])
     return {"person": person, "assignment": assignment}
 
 
@@ -276,8 +287,10 @@ class Service:
                 if previous is not None:
                     return previous
                 if table == "assignments":
-                    if not con.execute("SELECT 1 FROM people WHERE id=?", (data["person_id"],)).fetchone():
+                    person = con.execute("SELECT category FROM people WHERE id=?", (data["person_id"],)).fetchone()
+                    if not person:
                         raise ValidationError("등록된 인력을 선택하세요.")
+                    check_grade(person["category"], data.get("grade"))
                     if self._overlaps(con, data, data.get("id")) and not overlap_reviewed:
                         raise ValidationError("투입 기간 중복을 검토한 뒤 저장하세요.")
                 if table == "contracts":

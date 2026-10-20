@@ -18,25 +18,39 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from pmo.config import grades
 from pmo.contracts import CONTRACT_CATEGORIES, CONTRACT_STATUSES, validate_contract
 from pmo.errors import ValidationError
-from pmo.service import Service, validate_assignment, validate_person
+from pmo.service import Service, check_grade, money, validate_assignment, validate_person
 
 CATEGORIES = ("정", "협력", "컨설팅")
 TYPES = ("Full time", "Part time")
 
-# (열 이름, 필수, 데이터 키) — 시트 순서·열 순서가 곧 양식이다.
+# (열 이름, 필수, 데이터 키, 빈 양식에 넣는지, 같은 뜻으로 받는 다른 열 이름)
+# 10/20 담당자가 실제로 채운 양식 모양에 맞췄다: 인력 시트에 직무·등급·단가, 투입 시트에 매출귀속팀,
+# 구매계약 시트에 상태 열 없음. 양식에 없는 열(등급·단가 등)도 있으면 읽는다.
 SHEETS = {
-    "인력": [("인력키", True, "key"), ("이름", True, "name"), ("업체명", True, "company"),
-           ("분류", True, "category"), ("계정 ID", False, "account_id")],
-    "투입": [("인력키", True, "key"), ("투입 과제", False, "project"), ("매출귀속 프로젝트", False, "revenue_project"),
-           ("시작일", True, "start_date"), ("종료일", True, "end_date"), ("등급", True, "grade"),
-           ("투입 Type", True, "assignment_type"), ("투입 MM", False, "mm"),
-           ("구매시스템 MM", False, "purchase_mm"), ("매출단가", False, "sales_rate"),
-           ("매입단가", False, "purchase_rate"), ("단가 기준 단위", False, "rate_unit")],
-    "구매계약": [("인력키", True, "key"), ("업체명", True, "company"), ("계약번호", False, "contract_no"),
-             ("계약 시작일", True, "start_date"), ("계약 종료일", True, "end_date"), ("상태", True, "status"),
-             ("연결 투입 과제", False, "assignment_project"), ("이전 계약번호", False, "previous_no")],
+    "인력": [("인력키", True, "key", True, ()), ("이름", True, "name", True, ()),
+           ("업체명", True, "company", True, ()), ("분류", True, "category", True, ()),
+           ("직무", False, "job_role", True, ()), ("등급", False, "grade", True, ()),
+           ("단가", False, "rate", True, ()), ("계정 ID", False, "account_id", True, ())],
+    "투입": [("인력키", True, "key", True, ()), ("투입 과제", False, "project", True, ()),
+           ("매출귀속 프로젝트", False, "revenue_project", True, ()),
+           ("매출귀속팀", False, "revenue_team", True, ()),
+           ("투입시작일", True, "start_date", True, ("시작일", "투입 시작일")),
+           ("투입종료일", True, "end_date", True, ("종료일", "투입 종료일")),
+           ("투입 Type", True, "assignment_type", True, ()), ("투입 MM", False, "mm", True, ()),
+           ("등급", False, "grade", False, ()), ("구매시스템 MM", False, "purchase_mm", False, ()),
+           ("매출단가", False, "sales_rate", False, ()), ("매입단가", False, "purchase_rate", False, ()),
+           ("단가 기준 단위", False, "rate_unit", False, ())],
+    "구매계약": [("인력키", True, "key", True, ()), ("업체명", True, "company", True, ()),
+             ("계약번호", False, "contract_no", True, ()),
+             ("계약 시작일", True, "start_date", True, ("계약시작일",)),
+             ("계약 종료일", True, "end_date", True, ("계약종료일",)),
+             ("상태", False, "status", False, ()), ("연결 투입 과제", False, "assignment_project", False, ()),
+             ("이전 계약번호", False, "previous_no", False, ())],
 }
+# 인력 시트의 단가는 그 사람 투입의 매입단가(원/MM) 기본값으로 쓴다. [제안] 10/20 담당자 미지정 → 기본안 적용
+PERSON_RATE_FIELD, PERSON_RATE_UNIT = "purchase_rate", "원/MM"
 DATE_KEYS = {"start_date", "end_date"}
+NUMBER_KEYS = {"rate", "sales_rate", "purchase_rate", "mm", "purchase_mm"}
 GUIDE = [
     "CoE 인력관리 데이터 가져오기 양식",
     "",
@@ -65,7 +79,8 @@ def _header(name: str, required: bool) -> str:
     return f"{name} *" if required else name
 
 
-def _new_workbook() -> Workbook:
+def _new_workbook(full: bool = False) -> Workbook:
+    """full=False: 빈 양식(담당자 양식 열만), True: 내보내기(양식에 없는 열까지)."""
     wb = Workbook()
     guide = wb.active
     guide.title = "안내"
@@ -75,7 +90,8 @@ def _new_workbook() -> Workbook:
     guide.column_dimensions["A"].width = 120
     for sheet, columns in SHEETS.items():
         ws = wb.create_sheet(sheet)
-        for col, (name, required, key) in enumerate(columns, 1):
+        columns = [c for c in columns if full or c[3]]
+        for col, (name, required, key, _, _) in enumerate(columns, 1):
             cell = ws.cell(row=1, column=col, value=_header(name, required))
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = _REQ_FILL if required else _HEAD_FILL
@@ -84,7 +100,7 @@ def _new_workbook() -> Workbook:
         ws.freeze_panes = "A2"
         lists = {"category": CATEGORIES, "grade": grades(), "assignment_type": TYPES,
                  "status": CONTRACT_STATUSES}
-        for col, (_, _, key) in enumerate(columns, 1):
+        for col, (_, _, key, _, _) in enumerate(columns, 1):
             if key in lists:
                 letter = ws.cell(row=1, column=col).column_letter
                 rule = DataValidation(type="list", formula1='"' + ",".join(lists[key]) + '"', allow_blank=True)
@@ -117,6 +133,8 @@ def _cell(value, key: str) -> str | None:
     if isinstance(value, float):
         value = format(Decimal(repr(value)).normalize(), "f")
     text = str(value).strip()
+    if key in NUMBER_KEYS:
+        text = text.replace(",", "")          # "9,200,000"처럼 쉼표가 있어도 숫자로 읽는다
     if key in DATE_KEYS and len(text) >= 10 and text[4] in "-./":
         text = text[:10].replace(".", "-").replace("/", "-")
     return text or None
@@ -134,12 +152,15 @@ def read_workbook(data: bytes) -> tuple[dict[str, list[dict]], list[dict]]:
         if sheet not in wb.sheetnames:
             errors.append({"시트": sheet, "행": "-", "내용": "시트가 없습니다. 양식을 내려받아 사용하세요."})
             continue
-        rows = wb[sheet].iter_rows(values_only=True)
-        header = [str(h or "").replace("*", "").strip() for h in next(rows, ())]
+        rows = list(wb[sheet].iter_rows(values_only=True))
+        header = [str(h or "").replace("*", "").strip() for h in (rows[0] if rows else ())]
+        rows = rows[1:]
         index = {}
-        for name, required, key in columns:
-            if name in header:
-                index[key] = header.index(name)
+        for name, required, key, _, aliases in columns:
+            found = [header.index(n) for n in (name, *aliases) if n in header]
+            if found:
+                # 같은 뜻의 열이 둘 이상이면 값이 더 많이 채워진 열을 쓴다
+                index[key] = max(found, key=lambda i: sum(i < len(r) and r[i] is not None for r in rows))
             elif required:
                 errors.append({"시트": sheet, "행": 1, "내용": f"'{name}' 열이 없습니다."})
         for number, values in enumerate(rows, 2):
@@ -168,6 +189,8 @@ def build_import(service: Service, data: bytes) -> dict:
 
     # --- 인력 ---
     people, categories = [], {pid: p["category"] for pid, p in db_people.items()}
+    companies = {pid: p["company"] for pid, p in db_people.items()}
+    defaults = {}          # 인력 시트의 등급·단가 → 그 사람 투입의 기본값
     for row in sheets.get("인력", []):
         key = row.get("key")
         if key in db_people:
@@ -178,9 +201,14 @@ def build_import(service: Service, data: bytes) -> dict:
                 raise ValidationError("인력키를 입력하세요.")
             if key in categories:
                 raise ValidationError(f"인력키 '{key}'가 파일 안에서 중복됩니다.")
-            person = validate_person({k: row.get(k) for k in ("name", "company", "category", "account_id")})
+            person = validate_person({k: row.get(k) for k in ("name", "company", "category", "account_id",
+                                                              "job_role")})
             if not person["company"]:
                 raise ValidationError("업체명을 입력하세요.")
+            grade = row.get("grade")
+            if grade and grade not in grades():
+                raise ValidationError(f"등급 '{grade}'는 허용 목록({', '.join(grades())})에 없습니다.")
+            rate = money(row["rate"], "단가") if row.get("rate") else None
             same = [p for p in db_people.values() if p["name"] == person["name"] and p["company"] == person["company"]]
             if same:
                 raise ValidationError(f"이미 등록된 인력과 이름·업체가 같습니다({same[0]['id']}). 같은 사람이면 "
@@ -188,7 +216,8 @@ def build_import(service: Service, data: bytes) -> dict:
         except ValidationError as exc:
             err("인력", row["row"], str(exc))
             continue
-        categories[key] = person["category"]
+        categories[key], companies[key] = person["category"], person["company"]
+        defaults[key] = {"grade": grade, "rate": rate, "row": row["row"]}
         people.append({"row": row["row"], "key": key, "data": person})
     new_keys = {p["key"] for p in people}
 
@@ -205,14 +234,21 @@ def build_import(service: Service, data: bytes) -> dict:
         if not known("투입", row):
             continue
         try:
-            fields = {k: row.get(k) for k in ("project", "revenue_project", "start_date", "end_date", "grade",
-                                              "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit")}
+            fields = {k: row.get(k) for k in ("project", "revenue_project", "revenue_team", "start_date", "end_date",
+                                              "grade", "assignment_type", "mm", "sales_rate", "purchase_rate",
+                                              "rate_unit")}
             if fields["assignment_type"] == "Full time":
                 fields["mm"] = None                      # Full time은 앱이 계산한다
+            base = defaults.get(row["key"], {})
+            fields["grade"] = fields["grade"] or base.get("grade")
+            if base.get("rate") and not fields[PERSON_RATE_FIELD]:
+                fields[PERSON_RATE_FIELD] = base["rate"]
+                fields["rate_unit"] = fields["rate_unit"] or PERSON_RATE_UNIT
             value = validate_assignment(dict(fields, person_id=row["key"]))
             value.pop("person_id")
+            check_grade(categories.get(row["key"]), value["grade"])
         except ValidationError as exc:
-            err("투입", row["row"], str(exc))
+            err("투입", row["row"], _with_dates(exc, row))
             continue
         same = [a for a in db_assignments if a["person_id"] == row["key"] and a["start_date"] == value["start_date"]
                 and a["end_date"] == value["end_date"] and (a["project"] or None) == value["project"]]
@@ -243,14 +279,19 @@ def build_import(service: Service, data: bytes) -> dict:
         try:
             if categories.get(key) not in CONTRACT_CATEGORIES:
                 raise ValidationError("구매계약은 분류가 협력·컨설팅인 인력만 등록합니다.")
-            value = validate_contract({k: row.get(k) for k in ("company", "contract_no", "start_date", "end_date",
-                                                                "status")} | {"person_id": key})
+            status = row.get("status") or ("확정" if row.get("contract_no") else "준비")   # 상태 열이 없으면
+            value = validate_contract({k: row.get(k) for k in ("company", "contract_no", "start_date", "end_date")}
+                                      | {"person_id": key, "status": status})
             value.pop("person_id")
             assignment_ref = _find_assignment(key, row.get("assignment_project"), assignments, db_assignments)
             previous_ref = _find_previous(key, row.get("previous_no"), contracts, db_contracts)
         except ValidationError as exc:
-            err("구매계약", row["row"], str(exc))
+            err("구매계약", row["row"], _with_dates(exc, row))
             continue
+        if companies.get(key) and value["company"] != companies[key]:
+            warnings.append({"시트": "구매계약", "행": row["row"],
+                             "내용": f"계약 업체({value['company']})가 {key}의 업체({companies[key]})와 다릅니다. "
+                                     "인력키가 맞는지 확인하세요."})
         same = [c for c in db_contracts if c["person_id"] == key and c["start_date"] == value["start_date"]
                 and c["end_date"] == value["end_date"] and (c["contract_no"] or None) == value["contract_no"]]
         if same:
@@ -259,12 +300,24 @@ def build_import(service: Service, data: bytes) -> dict:
         contracts.append({"row": row["row"], "key": key, "data": value,
                           "assignment": assignment_ref, "previous": previous_ref})
 
+    with_assignment = {a["key"] for a in assignments} | {a["person_id"] for a in db_assignments}
+    for key, base in defaults.items():
+        if key not in with_assignment and (base["grade"] or base["rate"]):
+            warnings.append({"시트": "인력", "행": base["row"],
+                             "내용": f"{key}는 투입 줄이 없어 등급·단가가 저장되지 않습니다(투입에 함께 저장됨)."})
     return {
         "file_hash": hashlib.sha256(data).hexdigest(),
         "people": people, "assignments": assignments, "contracts": contracts,
         "errors": errors, "warnings": warnings, "skipped": skipped, "mm_check": mm_check,
         "summary": {"인력": len(people), "투입": len(assignments), "구매계약": len(contracts)},
     }
+
+
+def _with_dates(exc: Exception, row: dict) -> str:
+    text = str(exc)
+    if "빠를 수 없습니다" in text:
+        text += f" (입력: {row.get('start_date')} ~ {row.get('end_date')})"
+    return text
 
 
 def _find_assignment(key, project, new_rows, db_rows):
@@ -298,7 +351,7 @@ def _find_previous(key, number, new_rows, db_rows):
 
 def export_bytes(service: Service) -> bytes:
     """현재 DB를 가져오기 양식과 같은 모양으로 내려받는다(인력키 = 내부 관리번호)."""
-    wb = _new_workbook()
+    wb = _new_workbook(full=True)
     wb["안내"].cell(row=len(GUIDE) + 2, column=1,
                   value=f"내보낸 시각: {datetime.now().isoformat(timespec='seconds')} · DB: {service.path.name}")
     assignments = service.assignments()
@@ -316,7 +369,7 @@ def export_bytes(service: Service) -> bytes:
     for sheet, columns in SHEETS.items():
         ws = wb[sheet]
         for r, item in enumerate(rows[sheet], 2):
-            for c, (_, _, key) in enumerate(columns, 1):
+            for c, (_, _, key, _, _) in enumerate(columns, 1):
                 value = item.get(key)
                 cell = ws.cell(row=r, column=c, value=date.fromisoformat(value) if key in DATE_KEYS and value else value)
                 if key in DATE_KEYS and value:

@@ -18,11 +18,15 @@ def service(tmp_path):
 
 
 def workbook(**sheets) -> bytes:
-    """양식에 시트별 행(dict: 열 이름 → 값)을 채운 파일."""
+    """시트별 행(dict: 열 이름 → 값)을 채운 파일. 머리글은 행에 쓴 열 이름 그대로(다른 이름도 시험)."""
     wb = load_workbook(io.BytesIO(template_bytes()))
     for sheet, rows in sheets.items():
         ws = wb[sheet]
-        names = [name for name, _, _ in SHEETS[sheet]]
+        names = [c.value.replace("*", "").strip() for c in ws[1]]
+        for name in (n for row in rows for n in row):
+            if name not in names:
+                names.append(name)
+                ws.cell(row=1, column=len(names), value=name)
         for r, row in enumerate(rows, 2):
             for name, value in row.items():
                 ws.cell(row=r, column=names.index(name) + 1, value=value)
@@ -48,7 +52,11 @@ GOOD = dict(
 def test_template_has_sheets_required_marks_and_dropdowns():
     wb = load_workbook(io.BytesIO(template_bytes()))
     assert wb.sheetnames == ["안내", "인력", "투입", "구매계약"]
-    assert [c.value for c in wb["인력"][1]] == ["인력키 *", "이름 *", "업체명 *", "분류 *", "계정 ID"]
+    assert [c.value for c in wb["인력"][1]] == ["인력키 *", "이름 *", "업체명 *", "분류 *", "직무", "등급", "단가",
+                                                "계정 ID"]
+    assert [c.value for c in wb["투입"][1]] == ["인력키 *", "투입 과제", "매출귀속 프로젝트", "매출귀속팀", "투입시작일 *",
+                                                "투입종료일 *", "투입 Type *", "투입 MM"]
+    assert [c.value for c in wb["구매계약"][1]] == ["인력키 *", "업체명 *", "계약번호", "계약 시작일 *", "계약 종료일 *"]
     assert any("정,협력,컨설팅" in v.formula1 for v in wb["인력"].data_validations.dataValidation)
     assert wb["투입"].max_row == 1                                   # 빈 양식(예시 데이터 없음)
 
@@ -87,7 +95,8 @@ def test_errors_block_import_and_nothing_is_saved(service):
     )
     plan = build_import(service, workbook(**bad))
     messages = " / ".join(f"{e['시트']}{e['행']}:{e['내용']}" for e in plan["errors"])
-    for expected in ("인력3:인력키 'P01'가 파일 안에서 중복", "인력4:분류는", "투입2:종료일은", "투입3:인력키 'X9'",
+    for expected in ("인력3:인력키 'P01'가 파일 안에서 중복", "인력4:분류는", "투입2:종료일은 시작일보다 빠를 수 없습니다. "
+                     "(입력: 2026-11-30 ~ 2026-11-01)", "투입3:인력키 'X9'",
                      "투입4:허용된 등급", "구매계약2:구매계약은 분류가", "구매계약3:확정 계약은 계약번호"):
         assert expected in messages, messages
     with pytest.raises(ValidationError, match="오류가 있는 파일"):
@@ -168,3 +177,57 @@ def test_command_line_stops_on_errors(tmp_path, monkeypatch, capsys):
     assert import_excel.main() == 1
     assert "오류가 있어 저장하지 않았습니다" in capsys.readouterr().out
     assert not Service(db).people()
+
+
+
+# --- 10/20 담당자가 실제로 채운 양식 모양 (값은 가상) ----------------------------------------
+
+REAL_SHAPE = dict(
+    인력=[{"인력키": "P001", "이름": "가상정", "업체명": "본사", "분류": "정", "직무": "IT프로젝트관리", "등급": "L7"},
+        {"인력키": "P002", "이름": "가상협", "업체명": "협력사A", "분류": "협력", "직무": "응용SW개발자", "등급": "L6",
+         "단가": 9200000},
+        {"인력키": "P003", "이름": "가상컨", "업체명": "컨설팅B", "분류": "컨설팅", "직무": "컨설턴트", "단가": "26,333,334"},
+        {"인력키": "P004", "이름": "가상무", "업체명": "협력사C", "분류": "협력", "등급": "L7", "단가": 9800000}],
+    투입=[{"인력키": "P001", "투입 과제": "공통", "매출귀속 프로젝트": "D000", "매출귀속팀": "가상팀",
+         "투입시작일": date(2026, 4, 13), "투입종료일": date(2026, 11, 30), "투입 Type": "Full time"},
+        {"인력키": "P002", "투입 과제": "공통", "매출귀속 프로젝트": "D000", "매출귀속팀": "가상팀",
+         "투입시작일": date(2026, 8, 1), "투입종료일": date(2026, 8, 7), "투입 Type": "Full time"},
+        {"인력키": "P002", "투입 과제": "과제X", "매출귀속 프로젝트": "D000", "매출귀속팀": "가상팀",
+         "투입시작일": date(2026, 8, 8), "투입종료일": date(2026, 10, 31), "투입 Type": "Full time"},
+        {"인력키": "P003", "투입 과제": "과제Y", "매출귀속 프로젝트": "D000", "매출귀속팀": "가상팀",
+         "투입시작일": date(2026, 8, 20), "투입종료일": date(2026, 11, 19), "투입 Type": "Full time"}],
+    구매계약=[{"인력키": "P002", "업체명": "협력사A", "계약번호": 4500000001, "계약 시작일": date(2026, 8, 1),
+           "계약 종료일": date(2026, 10, 31)},
+          {"인력키": "P003", "업체명": "컨설팅B", "계약번호": 4500000002, "계약 시작일": date(2026, 8, 20),
+           "계약 종료일": date(2026, 11, 19)},
+          {"인력키": "P003", "업체명": "협력사A", "계약 시작일": date(2026, 11, 20), "계약 종료일": date(2027, 2, 19)}],
+)
+
+
+def test_real_sheet_shape_imports(service):
+    plan = build_import(service, workbook(**REAL_SHAPE))
+    assert not plan["errors"], plan["errors"]
+    assert plan["summary"] == {"인력": 4, "투입": 4, "구매계약": 3}
+    warnings = " / ".join(w["내용"] for w in plan["warnings"])
+    assert "계약 업체(협력사A)가 P003의 업체(컨설팅B)와 다릅니다" in warnings
+    assert "P004는 투입 줄이 없어 등급·단가가 저장되지 않습니다" in warnings
+    service.import_batch(plan, token="real-shape", actor="담당자")
+    people = {p["name"]: p for p in service.people()}
+    assert people["가상협"]["job_role"] == "응용SW개발자"
+    consultant = service.assignments(people["가상컨"]["id"])[0]
+    assert consultant["grade"] is None                                   # 컨설팅은 등급 없이 저장
+    assert (consultant["purchase_rate"], consultant["rate_unit"]) == ("26333334", "원/MM")   # 인력 시트 단가
+    assert consultant["revenue_team"] == "가상팀"
+    split = sorted(service.assignments(people["가상협"]["id"]), key=lambda a: a["start_date"])
+    assert [a["grade"] for a in split] == ["L6", "L6"] and [a["mm"] for a in split] == ["0.250", "2.750"]
+    contracts = sorted(service.contracts(people["가상컨"]["id"]), key=lambda c: c["start_date"])
+    assert [(c["contract_no"], c["status"]) for c in contracts] == [("4500000002", "확정"), (None, "준비")]
+
+
+def test_grade_required_except_consulting(service):
+    rows = dict(인력=[{"인력키": "P1", "이름": "가상협", "업체명": "협력사", "분류": "협력"}],
+               투입=[{"인력키": "P1", "투입시작일": "2026-11-02", "투입종료일": "2026-11-30", "투입 Type": "Full time"}])
+    plan = build_import(service, workbook(**rows))
+    assert any("등급을 입력하세요. 등급은 컨설팅 인력만" in e["내용"] for e in plan["errors"])
+    bad = dict(인력=[{"인력키": "P1", "이름": "가상", "업체명": "업체", "분류": "정", "등급": "L9"}])
+    assert any("등급 'L9'는 허용 목록" in e["내용"] for e in build_import(service, workbook(**bad))["errors"])
