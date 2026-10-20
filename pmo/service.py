@@ -380,6 +380,69 @@ class Service:
             result["id"] = contract_id
         return self._save("contracts", result, token, actor, expected_version)
 
+    def imported_before(self, file_hash: str) -> dict | None:
+        """같은 파일(내용 해시)을 이미 가져왔으면 그때 결과(건수)를 돌려준다. 가져오기 토큰은 import:<해시>."""
+        with connection(self.path) as con:
+            row = con.execute("SELECT result_id FROM requests WHERE token=?", (f"import:{file_hash}",)).fetchone()
+        return json.loads(row["result_id"]) if row else None
+
+    def import_batch(self, plan: dict, *, token: str, actor: str) -> dict:
+        """실행 기록에는 파일 내용 대신 건수만 남긴다(_import_batch 참고)."""
+        started, t0 = datetime.now(TIMEZONE).isoformat(), time.perf_counter()
+        summary = {"file_hash": plan.get("file_hash", "")[:12], **plan.get("summary", {}), "actor": actor}
+        try:
+            result = self._import_batch(plan, token=token, actor=actor)
+        except Exception as exc:
+            self.record_run("import_batch", (), summary, False, None, f"{type(exc).__name__}: {exc}", t0, started)
+            raise
+        self.record_run("import_batch", (), summary, True, _summary(result), None, t0, started)
+        return result
+
+    def _import_batch(self, plan: dict, *, token: str, actor: str) -> dict:
+        """엑셀 가져오기 계획(pmo/excel_io.build_import)을 한 트랜잭션으로 저장한다.
+
+        전부 저장되거나 하나도 저장되지 않는다. 같은 토큰으로 다시 실행해도 중복 저장하지 않는다.
+        계획에 오류가 있으면 저장하지 않는다. 투입 기간 중복은 미리보기에서 경고로 보여준 뒤 확인한 것으로 본다.
+        """
+        if plan.get("errors"):
+            raise ValidationError("오류가 있는 파일은 가져올 수 없습니다. 오류를 고친 뒤 다시 올리세요.")
+        token, actor = required(token, "저장 요청 ID"), required(actor, "변경 주체")
+        fingerprint = self._fingerprint(["import", plan["file_hash"], plan["summary"], actor])
+        try:
+            with connection(self.path) as con:
+                con.execute("BEGIN IMMEDIATE")
+                previous = self._previous_request(con, token, fingerprint)
+                if previous is not None:
+                    return json.loads(previous)
+                ids = {}
+                for item in plan["people"]:
+                    ids[item["key"]] = self._write(con, "people", dict(item["data"]), actor, None)
+                person = lambda key: ids.get(key, key)   # noqa: E731 - 새 인력은 새 관리번호, 기존은 그대로
+                new_assignments = [
+                    self._write(con, "assignments", dict(item["data"], person_id=person(item["key"])), actor, None)
+                    for item in plan["assignments"]]
+                new_contracts = []
+
+                def ref(value, created):
+                    if not value:
+                        return None
+                    kind, target = value
+                    return created[target] if kind == "new" else target
+
+                for item in plan["contracts"]:
+                    data = dict(item["data"], person_id=person(item["key"]),
+                                assignment_id=ref(item["assignment"], new_assignments),
+                                previous_contract_id=ref(item["previous"], new_contracts))
+                    self._check_contract_links(con, data)
+                    new_contracts.append(self._write(con, "contracts", data, actor, None))
+                self._sync_alerts(con, self.clock())
+                result = {"인력": len(ids), "투입": len(new_assignments), "구매계약": len(new_contracts)}
+                con.execute("INSERT INTO requests VALUES (?,?,?)",
+                            (token, fingerprint, json.dumps(result, ensure_ascii=False)))
+                return result
+        except sqlite3.IntegrityError as exc:
+            raise ValidationError("가져오기 저장에 실패했습니다. 중복이나 연결 관계를 확인하세요.") from exc
+
     @staticmethod
     def _check_contract_links(con, data: dict) -> None:
         person = con.execute("SELECT category FROM people WHERE id=?", (data["person_id"],)).fetchone()

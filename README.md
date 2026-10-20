@@ -248,6 +248,23 @@ MM 기능 업데이트 시 v2 DB도 백업 후 v3로 변경합니다.
 기존 투입 건의 Type과 MM는 임의 추정하지 않고 미입력으로 유지합니다.
 투입 관리에서 기존 건을 선택한 뒤 Type을 지정하여 보완하세요.
 
+## 엑셀 데이터 가져오기 (명령어)
+
+실제 데이터는 PC에서 엑셀 양식에 채운 뒤 아래 명령으로 넣습니다. 파일 내용은 PC 밖으로 나가지 않습니다.
+화면에서 올리고 내려받는 기능은 각 메뉴를 완성한 뒤 필요한 화면에 추가합니다.
+
+```powershell
+Remove-Item Env:PMO_DB_PATH -ErrorAction SilentlyContinue   # 시연 DB가 아닌 업무 DB(data\pmo.db)
+.venv\Scripts\python.exe -m scripts.import_excel --template 양식.xlsx        # 빈 양식
+.venv\Scripts\python.exe -m scripts.import_excel 채운파일.xlsx               # 미리보기 → y 입력 시 저장
+.venv\Scripts\python.exe -m scripts.import_excel --export 현재데이터.xlsx    # 현재 DB 내보내기
+```
+
+- 가져올 건수, 오류(시트·행·이유), 기간 중복 경고, 구매시스템 MM 비교, 건너뛸 줄을 먼저 보여줍니다.
+- 오류가 하나라도 있으면 저장하지 않습니다. 저장은 전부 되거나 하나도 되지 않으며, 저장 전 DB를 `data\backups\`에 복사합니다.
+- 같은 파일을 다시 실행하면 "이미 가져온 파일"로 멈춥니다. 이미 등록된 인력(관리번호)·투입·계약과 같은 줄은 건너뜁니다.
+- 인력키는 파일 안에서만 쓰는 연결용 값입니다(예: P001). 이미 등록된 사람에게 추가할 때는 그 사람의 내부 관리번호를 씁니다.
+
 ## 투입 MM
 
 - Full time은 구매시스템과 같은 방식으로 계산합니다(구매시스템 결과 11건과 일치 확인, `tests/test_purchase_mm.py`).
