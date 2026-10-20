@@ -90,6 +90,11 @@ def test_example_button_and_llm_unavailable(app, monkeypatch):
     assert any("연결할 수 없습니다" in e.value for e in app.error)
 
 
+def status_of(service, aid, item):
+    """항목 순서가 바뀌어도 되도록 이름으로 찾는다."""
+    return next(r for r in service.checklist(aid) if r["item"] == item)["status"]
+
+
 def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     REPLIES[:] = [tool("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중"),
                   say("화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요.")]
@@ -97,13 +102,13 @@ def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     assert not app.exception
     service = Service(Path(os.environ["PMO_DB_PATH"]))
     aid = service.assignments("DEMO-002")[0]["id"]
-    assert service.checklist(aid)[1]["status"] == "미진행"            # 카드만으로는 저장 안 됨
+    assert status_of(service, aid, "ID카드 신청") == "미진행"            # 카드만으로는 저장 안 됨
     rows = app.table[0].value
     assert list(rows["변경"])[3] == "진행 중"                          # 현재 → 변경 카드
     assert not [s for s in app.selectbox if s.key and s.key.startswith("act")]  # 값을 고르는 양식이 없음
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
-    assert service.checklist(aid)[1]["status"] == "진행 중"
+    assert status_of(service, aid, "ID카드 신청") == "진행 중"
 
 
 def test_cancel_does_not_save(app):
@@ -136,4 +141,4 @@ def test_auto_category_keeps_all_tools(app):
     REPLIES[:] = [say("안녕하세요.")]
     app.chat_input[0].set_value("안녕").run()
     assert len(RECEIVED[0]["tools"]) == 14
-    assert any(c.value == "자동(전체) Agent" for c in app.caption)
+    assert any(c.value == "🤖 자동(전체) Agent" for c in app.caption)
