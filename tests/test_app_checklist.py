@@ -66,6 +66,7 @@ def test_overview_table_shows_each_item_status(ready):
                                   expected_version=item["version"])
     app.run()
     table = app.dataframe[0].value
-    row = table[table["투입 관리번호"] == aid].iloc[0]
+    assert "투입 관리번호" not in table.columns                         # 내부 관리번호는 화면에 없음
+    row = table.iloc[0]                                               # aid = 준비 현황 첫 줄
     assert row["ID카드 신청"] == "진행 중" and row["좌석 배정"] == "미진행"
     assert "남은 항목" not in table.columns
