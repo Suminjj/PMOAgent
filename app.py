@@ -277,14 +277,18 @@ if page == "홈":
     chat_col, result_col = st.columns(2, gap="large")
 
     with chat_col, st.container(key="home_chat_panel"):
-        st.subheader("AI Agent")
+        st.subheader("🤖 PMO Agent")
         st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
                    "등록·수정·삭제는 오른쪽 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
-        agent_key = st.radio(
-            "업무 카테고리", list(AGENTS), horizontal=True, key="home_agent",
-            format_func=lambda k: AGENTS[k].label,
-            help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 가지고 답합니다. "
-                 "자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
+        # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
+        agent_key = st.session_state.setdefault("home_category", AUTO)
+        st.markdown("**업무 카테고리**", help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 "
+                    "가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
+        with st.container(key="home_agent"):
+            for column, key in zip(st.columns(len(AGENTS)), AGENTS):
+                column.button(theme.agent_label(key, AGENTS[key].label), key=f"home_agent_{key}",
+                              type="primary" if key == agent_key else "secondary", width="stretch",
+                              on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
         with st.container(height=480, border=True):
             if not turns:
@@ -295,7 +299,8 @@ if page == "홈":
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
                 with st.chat_message("assistant"):
-                    st.caption(f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent")
+                    st.caption(theme.agent_label(turn.get("agent", AUTO),
+                                                 f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
                     if turn["ok"]:
                         st.markdown(turn["answer"])
                     else:

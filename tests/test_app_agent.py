@@ -59,7 +59,7 @@ def test_home_is_first_page_with_chat_and_results(app):
     assert app.session_state["nav_page"] == "홈"
     assert not app.sidebar.radio                                         # 메뉴는 라디오가 아니라 버튼
     assert [b.key for b in app.sidebar.button][:7] == [f"nav_{i}" for i in range(7)]
-    assert [s.value for s in app.subheader][:2] == ["AI Agent", "수행 결과"]
+    assert [s.value for s in app.subheader][:2] == ["🤖 PMO Agent", "수행 결과"]
     assert app.chat_input
 
 
@@ -117,10 +117,11 @@ def test_cancel_does_not_save(app):
 
 
 def test_category_selector_limits_agent_tools(app):
-    assert app.radio(key="home_agent").value == "auto"
-    assert [o for o in app.radio(key="home_agent").options] == [
-        "자동(전체)", "인력관리", "근무 환경 준비", "구매계약", "검수"]
-    app.radio(key="home_agent").set_value("contract").run()
+    labels = [app.button(key=f"home_agent_{k}").label for k in ("auto", "staff", "environment", "contract", "inspection")]
+    assert labels == ["🤖 자동(전체)", "👤 인력관리", "💻 근무 환경 준비", "📄 구매계약", "💰 검수"]
+    assert app.session_state["home_category"] == "auto"
+    app.button(key="home_agent_contract").click().run()
+    assert app.session_state["home_category"] == "contract"
     assert any("구매계약" in c.value for c in app.caption)               # 예시 질문 · 구매계약
     REPLIES[:] = [tool("pending_contract_alerts"), say("미확인 알림은 2건입니다.")]
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
@@ -128,7 +129,7 @@ def test_category_selector_limits_agent_tools(app):
     sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
     assert "pending_contract_alerts" in sent and "checklist_status" not in sent
     assert "[업무 지침: contract-expiry]" in RECEIVED[0]["messages"][0]["content"]
-    assert any(c.value == "구매계약 Agent" for c in app.caption)
+    assert any(c.value == "📄 구매계약 Agent" for c in app.caption)
 
 
 def test_auto_category_keeps_all_tools(app):

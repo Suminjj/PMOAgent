@@ -190,6 +190,8 @@
 ### 5.6 업무 카테고리별 전문 Agent (멀티에이전트, 수동 선택)
 
 - [확정] 홈 화면 입력창 위에서 업무 카테고리를 고른다: 자동(전체), 인력관리, 근무 환경 준비, 구매계약, 검수 (총 4개 + 자동).
+- [확정] 10/20 담당자: 홈 챗봇 이름은 '🤖 PMO Agent'. 카테고리는 라디오 대신 이모티콘을 붙인 큰 버튼
+  (🤖 자동·👤 인력관리·💻 근무 환경 준비·📄 구매계약·💰 검수, `ui/theme.py` AGENT_ICONS). 고른 버튼은 파란색.
 - [제안] 각 전문 Agent는 맡은 업무의 도구만 받는다. 정의는 `pmo/agent/agents.py`의 `AGENTS`다.
   - 인력관리: find_people, get_assignment_timeline, query_database, prepare_account_id
   - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
