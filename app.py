@@ -3,9 +3,10 @@ import os
 import sqlite3
 import json
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
+import pandas as pd
 import streamlit as st
 
 from pmo.config import db_path, grades
@@ -114,6 +115,64 @@ def invalidate_preview(kind, data):
     st.session_state.pop("pending", None)
 
 
+def person_label(person: dict) -> str:
+    """선택 목록에 보여줄 인력 이름표. 내부 관리번호 대신 업체·직무·계정 ID로 구분한다."""
+    return " · ".join(str(person[k]) for k in ("name", "company", "job_role", "account_id") if person.get(k))
+
+
+def render_monthly_mm() -> None:
+    """전체 투입 · 월별 MM 표 (회계연도 4월~다음 해 3월, 10/20 담당자 요청)."""
+    st.subheader("전체 투입 · 월별 MM")
+    current_fy = Service.fiscal_year_of(service.clock())
+    years = {current_fy} | {Service.fiscal_year_of(date.fromisoformat(a[k]))
+                            for a in service.assignments() for k in ("start_date", "end_date")}
+    left, right = st.columns([1, 2])
+    fy = left.selectbox("회계연도", sorted(years), index=sorted(years).index(current_fy),
+                        format_func=lambda y: f"{y}년 4월 ~ {y + 1}년 3월", key="mm_fiscal_year")
+    keyword = right.text_input("이름·업체·과제 검색", key="mm_search").strip()
+    rows = [r for r in service.monthly_mm(fy)
+            if not keyword or any(keyword in (r[k] or "") for k in ("name", "company", "project"))]
+    if not rows:
+        st.info("이 회계연도에 걸친 투입이 없습니다.")
+        return
+    months = Service.fiscal_months(fy)
+    month_label = {m: f"{int(m[5:])}월" for m in months}
+
+    def number(value) -> str:
+        """MM 칸 글자. 값이 없으면(투입 없는 달, Part time 월별 값) 빈 문자열로 둬서 'None'이 보이지 않게 한다.
+
+        Streamlit 표는 빈 값(None/NaN)을 회색 'None'으로 그리므로 숫자 대신 '0.750' 같은 글자로 넣는다.
+        """
+        if value in (None, ""):
+            return ""
+        return format(Decimal(str(value)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP), "f")
+
+    # 열 순서(10/20 담당자): 이름, 업체명, 4월~3월, 투입 MM, 투입 Type, 투입 시작일, 투입 종료일
+    table = [{"이름": r["name"], "업체명": r["company"],
+              **{month_label[m]: number(r["months"][m]) for m in months},
+              "투입 MM": number(r["mm"]), "투입 Type": r["assignment_type"],
+              "투입 시작일": r["start_date"], "투입 종료일": r["end_date"]} for r in rows]
+    # 월 합계도 그 달 투입이 없으면 0.000 대신 빈 칸
+    totals = {m: sum(Decimal(r["months"][m]) for r in rows if r["months"][m])
+              if any(r["months"][m] for r in rows) else None for m in months}
+    table.append({"이름": "월 합계 (Full time)", **{month_label[m]: number(totals[m]) for m in months}})
+    numbers = [month_label[m] for m in months] + ["투입 MM"]
+    frame = pd.DataFrame(table, columns=list(table[0])).fillna("")   # 합계 줄의 빈 칸도 빈 문자열
+    styled = frame.style.apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
+                               if row["이름"] == "월 합계 (Full time)" else [""] * len(row), axis=1)
+    try:   # 숫자 글자는 오른쪽 정렬 (alignment를 모르는 Streamlit 버전이면 기본 정렬)
+        config = {c: st.column_config.TextColumn(alignment="right") for c in numbers}
+    except TypeError:
+        config = None
+    st.dataframe(styled, hide_index=True, use_container_width=True, column_config=config)
+    st.caption(f"{fy}년 4월 ~ {fy + 1}년 3월 · 월별 MM은 구매시스템 방식(그 달 투입 근무일 ÷ 그 달 전체 근무일)을 "
+               "달마다 소수 셋째 자리로 반올림한 값입니다. '투입 MM'은 합계를 한 번 반올림하므로 월별 값의 합과 "
+               "0.001 차이가 날 수 있습니다. Part time은 기간 전체 MM만 입력하므로 월별 칸이 비어 있습니다.")
+    for r in rows:
+        if r["note"].startswith("계산 실패"):
+            st.warning(f"{r['name']} · {r['project'] or '과제 미입력'}: {r['note']}")
+
+
 def show_table(rows: list[dict], fields: list[str]) -> None:
     if rows:
         st.dataframe(
@@ -162,18 +221,18 @@ def confirm() -> None:
         with st.expander("저장할 MM 산정 근거"):
             st.json(display_data["mm_details"])
     if pending["kind"] == "intake":
-        st.caption("내부 관리번호는 저장 시 자동 생성됩니다. 계정 ID와 과제·단가는 나중에 보완할 수 있습니다.")
+        st.caption("계정 ID와 과제·단가는 나중에 보완할 수 있습니다.")
         similar = [p for p in service.people() if p["name"] == data["person"]["name"]
                    and p["company"] == data["person"]["company"]]
         if similar:
             st.warning("같은 이름·업체의 인력이 이미 있습니다. 기존 인력의 추가 투입이라면 투입 관리에서 등록하세요.")
-            show_table(similar, ["id", "name", "company", "account_id"])
+            show_table(similar, ["name", "company", "job_role", "account_id"])
     reviewed = False
     if pending["kind"] == "assignment":
         overlaps = service.overlaps(data, current["id"] if current else None)
         if overlaps:
             st.warning("다른 투입 기간과 겹칩니다. 중복 허용 기준은 미확정이므로 검토가 필요합니다.")
-            show_table(overlaps, ["id", "project", "start_date", "end_date"])
+            show_table(overlaps, ["project", "start_date", "end_date"])
             reviewed = st.checkbox(
                 "중복 투입 내용을 검토했습니다.", key="review_" + pending["token"]
             )
@@ -196,7 +255,7 @@ def confirm() -> None:
                     overlap_reviewed=reviewed, **args
                 )
             st.session_state.pop("pending", None)
-            st.session_state["saved_message"] = f"저장했습니다. 관리번호: {result_id}"
+            st.session_state["saved_message"] = "저장했습니다."
             st.rerun()
         except (ValidationError, ConflictError) as exc:
             st.error(str(exc))
@@ -227,14 +286,20 @@ if page == "홈":
     chat_col, result_col = st.columns(2, gap="large")
 
     with chat_col, st.container(key="home_chat_panel"):
-        st.subheader("AI Agent")
+        st.subheader("🤖 PMO Agent")
         st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
                    "등록·수정·삭제는 오른쪽 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
-        agent_key = st.radio(
-            "업무 카테고리", list(AGENTS), horizontal=True, key="home_agent",
-            format_func=lambda k: AGENTS[k].label,
-            help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 가지고 답합니다. "
-                 "자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
+        # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
+        agent_key = st.session_state.setdefault("home_category", AUTO)
+        st.markdown("**업무 카테고리**", help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 "
+                    "가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
+        with st.container(key="home_agent"):   # 3개 · 2개 두 줄 (10/20 담당자)
+            keys = list(AGENTS)
+            columns = list(st.columns(3)) + list(st.columns(2))
+            for column, key in zip(columns, keys):
+                column.button(theme.agent_label(key, AGENTS[key].label), key=f"home_agent_{key}",
+                              type="primary" if key == agent_key else "secondary", width="stretch",
+                              on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
         with st.container(height=480, border=True):
             if not turns:
@@ -245,7 +310,8 @@ if page == "홈":
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
                 with st.chat_message("assistant"):
-                    st.caption(f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent")
+                    st.caption(theme.agent_label(turn.get("agent", AUTO),
+                                                 f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
                     if turn["ok"]:
                         st.markdown(turn["answer"])
                     else:
@@ -294,20 +360,20 @@ if page == "홈":
 elif page == "인력 관리":
     st.subheader("인력 목록")
     people = service.people()
-    query = st.text_input("이름·업체·계정 ID·관리번호 검색", key="person_search").strip().casefold()
+    query = st.text_input("이름·업체·직무·계정 ID 검색", key="person_search").strip().casefold()
     latest = {a["person_id"]: a for a in service.assignments()}
     filtered = [r for r in people if query in
-                " ".join(str(r.get(k) or "") for k in ("id", "name", "company", "account_id")).casefold()]
+                " ".join(str(r.get(k) or "") for k in ("name", "company", "job_role", "account_id")).casefold()]
     overview = [dict(r, **{k: latest.get(r["id"], {}).get(k)
                           for k in ("grade", "start_date", "end_date", "assignment_type", "mm")}) for r in filtered]
     show_table(overview, ["name", "company", "category", "job_role", "account_id", "grade", "start_date", "end_date",
-                          "assignment_type", "mm", "id"])
+                          "assignment_type", "mm"])
     st.caption("등급·기간은 시작일이 가장 최근인 투입 건을 표시합니다. 전체 투입은 투입 관리에서 확인하세요.")
     options = [None] + [r["id"] for r in people]
     by_id = {r["id"]: r for r in people}
     target = st.selectbox(
         "등록 또는 수정할 인력", options,
-        format_func=lambda i: "신규 등록" if i is None else f"{by_id[i]['name']} · {by_id[i]['company']} · {i}",
+        format_func=lambda i: "신규 등록" if i is None else person_label(by_id[i]),
         key="person_target"
     )
     current = by_id.get(target)
@@ -317,7 +383,7 @@ elif page == "인력 관리":
         st.session_state["edit_context"] = context
     st.subheader("인력 수정 / 계정 ID 보완" if current else "신규 투입 대상 등록")
     if current:
-        st.caption(f"내부 관리번호: {current['id']} · 계정 ID를 입력해도 관리번호와 투입 연결은 유지됩니다.")
+        st.caption("계정 ID를 입력해도 이 사람의 투입·계약 연결은 그대로 유지됩니다.")
     else:
         st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요.")
     with st.container():
@@ -352,12 +418,14 @@ elif page == "인력 관리":
     confirm()
 
 elif page == "투입 관리":
+    render_monthly_mm()
+    st.divider()
     st.subheader("투입 목록")
     people = service.people()
     by_person = {r["id"]: r for r in people}
     person_id = st.selectbox(
         "인력 선택", [r["id"] for r in people],
-        format_func=lambda i: f"{by_person[i]['name']} · {by_person[i]['company']} · {i}", key="assignment_person"
+        format_func=lambda i: person_label(by_person[i]), key="assignment_person"
     ) if people else None
     if person_id is None:
         st.info("먼저 인력을 등록하세요.")
@@ -365,7 +433,7 @@ elif page == "투입 관리":
     rows = service.assignments(person_id)
     timeline = service.assignment_timeline(person_id)
     columns = ["project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
-               "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit", "id"]
+               "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit"]
     for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입 이력", "past")):
         st.markdown(f"**{title}** ({len(timeline[key])}건)")
         show_table(timeline[key], columns)
@@ -373,7 +441,8 @@ elif page == "투입 관리":
     by_id = {r["id"]: r for r in rows}
     target = st.selectbox(
         "등록 또는 수정할 투입", [None] + list(by_id),
-        format_func=lambda i: "신규 등록" if i is None else f"{by_id[i]['project'] or '과제 미입력'} · {by_id[i]['start_date']} · {i}",
+        format_func=lambda i: "신규 등록" if i is None else
+        f"{by_id[i]['project'] or '과제 미입력'} · {by_id[i]['start_date']}~{by_id[i]['end_date']}",
         key=f"assignment_target_{person_id}"
     )
     current = by_id.get(target)
@@ -421,13 +490,20 @@ elif page == "투입 관리":
     confirm()
 
 elif page == "근무 환경 준비":
-    from pmo.checklist import STATUSES
+    from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES
 
     st.subheader("준비가 남은 투입")
-    st.caption("좌석 배정·ID카드 신청·OA기기 신청·방문예약 진행 상황입니다. "
+    st.caption("방문예약·계정 신청·ID카드 신청·OA기기 신청 진행 상황입니다. "
                "'완료'는 사내 시스템에서 실제 신청·예약을 마친 경우에만 선택하세요.")
     include_closed = st.checkbox("준비를 마친 투입도 보기", key="ck_include_closed")
     overview = service.checklist_overview(include_closed=include_closed)
+
+    STATUS_STYLE = {   # 준비 항목 상태 색 (10/20 담당자: 시각적으로 잘 보이게)
+        "완료": "background-color: #E5F4E4; color: #1E6B35; font-weight: 600",
+        "진행 중": "background-color: #E7F1FB; color: #1D4ED8; font-weight: 600",
+        "미진행": "background-color: #F9ECE7; color: #B4441E",
+        "해당 없음": "background-color: #F0EFEC; color: #6B7280",
+    }
 
     def start_label(days: int) -> str:
         return "투입 중" if days < 0 else ("오늘 시작" if days == 0 else f"시작 D-{days}")
@@ -435,13 +511,14 @@ elif page == "근무 환경 준비":
     if not overview:
         st.success("준비가 남은 투입이 없습니다.")
         st.stop()
-    # 항목마다 상태를 한 칸씩 보여준다. '진행'은 완료·해당 없음으로 끝난 항목 수다.
-    st.dataframe([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
-                   "시작일": r["start_date"], "시작까지": start_label(r["days_to_start"]),
-                   "끝난 항목": f"{r['done']}/{r['total']}", **r["statuses"],
-                   "투입 관리번호": r["id"]} for r in overview],
+    # 항목마다 상태를 한 칸씩, 상태별 색으로 보여준다 (항목 순서: 방문예약·계정 신청·ID카드 신청·OA기기 신청)
+    frame = pd.DataFrame([{"이름": r["name"], "업체명": r["company"], "과제명": r["project"] or "미입력",
+                           "시작일": r["start_date"], "투입 현황": start_label(r["days_to_start"]),
+                           **r["statuses"]} for r in overview])
+    st.dataframe(frame.style.map(lambda v: STATUS_STYLE.get(v, ""), subset=list(CHECKLIST_ITEMS)),
                  use_container_width=True, hide_index=True)
-    st.caption("'끝난 항목'은 완료·해당 없음 처리한 항목 수입니다. 진행 중인 항목은 아직 끝나지 않은 것으로 셉니다.")
+    st.markdown(" ".join(f'<span style="{style}; padding: 2px 10px; border-radius: 10px; font-size: 13px">'
+                         f'{name}</span>' for name, style in STATUS_STYLE.items()), unsafe_allow_html=True)
     by_assignment = {r["id"]: r for r in overview}
     aid = st.selectbox(
         "확인할 투입", list(by_assignment), key="ck_assignment",
@@ -532,7 +609,7 @@ elif page == "구매계약 관리":
                      contract_no=r.get("contract_no") or "미발급") for r in rows]
 
     contract_columns = ["name", "company", "contract_no", "status", "start_date", "end_date",
-                        "label", "has_successor", "person_id"]
+                        "label", "has_successor"]
     all_contracts = service.contracts()
     today = service.clock()
 
@@ -560,7 +637,7 @@ elif page == "구매계약 관리":
     people_by_id = {r["id"]: r for r in eligible}
     person_id = st.selectbox(
         "계약 대상 인력 (협력·컨설팅)", list(people_by_id),
-        format_func=lambda i: f"{people_by_id[i]['name']} · {people_by_id[i]['company']} · {i}",
+        format_func=lambda i: person_label(people_by_id[i]),
         key="contract_person")
     person_contracts = service.contracts(person_id)
     by_id = {r["id"]: r for r in person_contracts}
@@ -633,7 +710,7 @@ elif page == "계약 종료 알림":
         with st.container(border=True):
             left, middle, right, action = st.columns([3, 2, 2, 1])
             left.markdown(f"**{alert['name']}** · {alert['company']} · {alert['category']}")
-            left.caption(f"계약번호 {alert['contract_no'] or '미발급(준비)'} · 관리번호 {alert['person_id']}")
+            left.caption(f"계약번호 {alert['contract_no'] or '미발급(준비)'}")
             middle.markdown(f"**{alert['label']}**")
             middle.caption(f"종료일 {alert['end_date']} · 알림 시작 {alert['notify_from']}")
             right.write("연장 계약 등록됨" if alert["has_successor"] else "연장 계약 없음")

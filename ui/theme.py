@@ -16,7 +16,13 @@ NAV_ICONS = {
     "근무 환경 준비": ":material/task_alt:", "구매계약 관리": ":material/description:",
     "계약 종료 알림": ":material/notifications:", "변경 이력": ":material/history:",
 }
-NAV_LABELS = {"홈": "홈 · AI Agent"}
+NAV_LABELS = {"홈": "홈 · PMO Agent"}
+# 홈 화면 업무 카테고리 버튼의 이모티콘 (10/20 담당자). 키는 pmo/agent/agents.py의 AGENTS 키.
+AGENT_ICONS = {"auto": "🤖", "staff": "👤", "environment": "💻", "contract": "📄", "inspection": "💰"}
+
+
+def agent_label(key: str, label: str) -> str:
+    return f"{AGENT_ICONS.get(key, '')} {label}".strip()
 PAGES = list(NAV_ICONS)
 
 _CSS = """
@@ -69,16 +75,18 @@ header[data-testid="stHeader"] { background: transparent; }
   background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px;
 }
 
-/* ---- 업무 카테고리: 알약 버튼 ---- */
-.st-key-home_agent [role="radiogroup"] { gap: 6px; flex-wrap: wrap; }
-.st-key-home_agent label[data-baseweb="radio"] {
-  margin: 0; padding: 5px 13px; border: 1px solid #D5DCE8; border-radius: 16px; background: #FFFFFF;
+/* ---- 업무 카테고리: 큰 버튼 (key home_agent_<카테고리>) ---- */
+.st-key-home_agent [data-testid="stHorizontalBlock"] { gap: 8px; }
+.st-key-home_agent button {
+  min-height: 64px; padding: 8px 10px; border: 1px solid #D5DCE8; border-radius: 12px;
+  background: #FFFFFF; color: #172033; box-shadow: none;
 }
-.st-key-home_agent label[data-baseweb="radio"] > div:first-child { display: none; }
-.st-key-home_agent label[data-baseweb="radio"]:has(input:checked) {
-  background: #1D4ED8; border-color: #1D4ED8;
+.st-key-home_agent button p { font-size: 15px; line-height: 1.3; }
+.st-key-home_agent button:hover { border-color: #1D4ED8; color: #1D4ED8; }
+.st-key-home_agent button[data-testid="stBaseButton-primary"] {
+  background: #1D4ED8; border-color: #1D4ED8; color: #FFFFFF;
 }
-.st-key-home_agent label[data-baseweb="radio"]:has(input:checked) * { color: #FFFFFF; font-weight: 600; }
+.st-key-home_agent button[data-testid="stBaseButton-primary"] p { font-weight: 600; color: #FFFFFF; }
 
 /* ---- 채팅 말풍선 ---- */
 [data-testid="stChatMessage"] { border-radius: 14px; padding: 10px 14px; }
