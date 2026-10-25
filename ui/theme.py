@@ -17,6 +17,7 @@ NAV_GROUPS = [
     ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리"]),
     ("근무 환경 준비", ":material/task_alt:", []),
     ("구매계약 관리", ":material/description:", ["전체 계약 조회", "계약 등록·수정"]),
+    ("검수 금액 조회", ":material/payments:", []),
     ("계약 종료 알림", ":material/notifications:", []),
     ("변경 이력", ":material/history:", []),
 ]
@@ -46,7 +47,7 @@ _CSS = """
 header[data-testid="stHeader"] { background: transparent; }
 [data-testid="stMainBlockContainer"] { padding-top: 2.2rem; }
 
-/* ---- 사이드바: 네이비 메뉴 (버튼 nav_0~nav_8, 하위 메뉴는 navgroup_* 안에서 들여쓰기) ---- */
+/* ---- 사이드바: 네이비 메뉴 (버튼 nav_0~nav_9, 하위 메뉴는 navgroup_* 안에서 들여쓰기) ---- */
 .pmo-nav-group { display: flex; align-items: center; gap: 10px; color: #8C9AB5; font-size: 13px;
   font-weight: 600; padding: 14px 14px 2px; letter-spacing: 0.02em; }
 [data-testid="stSidebar"] [class*="st-key-navgroup_"] [class*="st-key-nav_"] button {
@@ -139,7 +140,7 @@ def _go(page: str) -> None:
 
 
 def sidebar_nav(alerts: int = 0) -> str:
-    """시안 A의 왼쪽 메뉴: 메뉴 버튼(key nav_0~nav_8). 지금 화면은 primary 버튼으로 강조한다.
+    """시안 A의 왼쪽 메뉴: 메뉴 버튼(key nav_0~nav_9). 지금 화면은 primary 버튼으로 강조한다.
 
     인력 관리·구매계약 관리는 그룹 제목 아래에 하위 메뉴 버튼을 들여 써서 보여준다.
     """

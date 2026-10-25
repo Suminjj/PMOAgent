@@ -20,7 +20,7 @@ def test_nav_label_keeps_page_value_and_shows_alert_badge():
     assert theme.nav_label("홈") == "홈 · PMO Agent"
     assert theme.agent_label("contract", "구매계약") == "📄 구매계약"
     assert theme.PAGES == ["홈", "전체 인력 조회", "신규 인력 등록", "과제 투입 관리", "근무 환경 준비",
-                           "전체 계약 조회", "계약 등록·수정", "계약 종료 알림", "변경 이력"]
+                           "전체 계약 조회", "계약 등록·수정", "검수 금액 조회", "계약 종료 알림", "변경 이력"]
     assert theme.GROUP_OF["과제 투입 관리"] == "인력 관리" and theme.GROUP_OF["홈"] == "홈"
     assert theme.nav_label("계약 종료 알림", 2).endswith(":orange-badge[2]")
     assert "badge" not in theme.nav_label("계약 종료 알림", 0)
