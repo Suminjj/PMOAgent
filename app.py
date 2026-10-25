@@ -9,7 +9,7 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
-from pmo.config import db_path, grades
+from pmo.config import CONTRACT_ALERT_DAYS, db_path, grades
 from pmo.mm import calculate_full_time
 from pmo.service import (
     ConflictError, Service, ValidationError,
@@ -41,7 +41,8 @@ st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가
 if _people_count == 0:
     st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 theme.sidebar_footer(service.path.name, _people_count, os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"))
-theme.page_header(service.clock(), "무엇을 도와드릴까요?" if page == "홈" else page)
+theme.page_header(service.clock(), "무엇을 도와드릴까요?" if page == "홈" else
+                  page if theme.GROUP_OF[page] == page else f"{theme.GROUP_OF[page]} · {page}")
 if pending_alerts and page != "계약 종료 알림":
     st.warning(f"계약 종료 검토 대상이 {len(pending_alerts)}건 있습니다. "
                "왼쪽 메뉴의 '계약 종료 알림'에서 확인하세요.")
@@ -173,6 +174,48 @@ def render_monthly_mm() -> None:
             st.warning(f"{r['name']} · {r['project'] or '과제 미입력'}: {r['note']}")
 
 
+def person_form(current: dict | None) -> None:
+    """신규 인력 등록(current=None: 인력 + 첫 투입) 또는 기존 인력 수정·계정 ID 보완."""
+    target = current["id"] if current else None
+    context = ("person", target)
+    if st.session_state.get("edit_context") != context:
+        st.session_state.pop("pending", None)
+        st.session_state["edit_context"] = context
+    st.subheader("인력 수정 / 계정 ID 보완" if current else "신규 투입 대상 등록")
+    if current:
+        st.caption("계정 ID를 입력해도 이 사람의 투입·계약 연결은 그대로 유지됩니다.")
+    else:
+        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요. "
+                   "이미 등록된 인력의 추가 투입은 '과제 투입 관리'에서 등록하세요.")
+    name = st.text_input("이름", value=current["name"] if current else "", key=f"name_{target}")
+    company = st.text_input("업체명", value=current["company"] if current else "", key=f"company_{target}")
+    categories = ["정", "협력", "컨설팅"]
+    category = st.selectbox("분류", categories, key=f"category_{target}",
+                            index=categories.index(current["category"]) if current else None)
+    job_role = st.text_input("직무 (선택)", value=(current.get("job_role") or "") if current else "",
+                             key=f"job_{target}")
+    account_id = st.text_input("계정 ID (발급 후 입력 / 선택)",
+                               value=(current["account_id"] or "") if current else "", key=f"account_{target}")
+    if not current:
+        grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade",
+                             placeholder="선택 (컨설팅은 비워 둘 수 있음)")
+        a, b = st.columns(2)
+        start = a.date_input("투입 시작일", value=None, key="intake_start",
+                             min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
+        end = b.date_input("투입 종료일", value=None, key="intake_end",
+                           min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
+        mode, manual_mm = mm_fields(start, end, None, "intake")
+    person_data = dict(name=name, company=company, category=category, account_id=account_id, job_role=job_role)
+    kind = "person" if current else "intake"
+    input_data = dict(person_data, id=current["id"]) if current else dict(
+        person=person_data, assignment=dict(grade=grade, start_date=start, end_date=end,
+                                            assignment_type=mode, mm=manual_mm))
+    invalidate_preview(kind, input_data)
+    if st.button("미리보기", key="preview_person"):
+        stage(kind, input_data, current)
+    confirm()
+
+
 def show_table(rows: list[dict], fields: list[str]) -> None:
     if rows:
         st.dataframe(
@@ -225,7 +268,7 @@ def confirm() -> None:
         similar = [p for p in service.people() if p["name"] == data["person"]["name"]
                    and p["company"] == data["person"]["company"]]
         if similar:
-            st.warning("같은 이름·업체의 인력이 이미 있습니다. 기존 인력의 추가 투입이라면 투입 관리에서 등록하세요.")
+            st.warning("같은 이름·업체의 인력이 이미 있습니다. 기존 인력의 추가 투입이라면 '과제 투입 관리'에서 등록하세요.")
             show_table(similar, ["name", "company", "job_role", "account_id"])
     reviewed = False
     if pending["kind"] == "assignment":
@@ -357,7 +400,7 @@ if page == "홈":
                                           f"{turns[i]['question'][:40]}")
             render_turn_results(turns[selected], service, actor, selected)
 
-elif page == "인력 관리":
+elif page == "전체 인력 조회":
     st.subheader("인력 목록")
     people = service.people()
     query = st.text_input("이름·업체·직무·계정 ID 검색", key="person_search").strip().casefold()
@@ -368,59 +411,23 @@ elif page == "인력 관리":
                           for k in ("grade", "start_date", "end_date", "assignment_type", "mm")}) for r in filtered]
     show_table(overview, ["name", "company", "category", "job_role", "account_id", "grade", "start_date", "end_date",
                           "assignment_type", "mm"])
-    st.caption("등급·기간은 시작일이 가장 최근인 투입 건을 표시합니다. 전체 투입은 투입 관리에서 확인하세요.")
-    options = [None] + [r["id"] for r in people]
-    by_id = {r["id"]: r for r in people}
-    target = st.selectbox(
-        "등록 또는 수정할 인력", options,
-        format_func=lambda i: "신규 등록" if i is None else person_label(by_id[i]),
-        key="person_target"
-    )
-    current = by_id.get(target)
-    context = ("person", target)
-    if st.session_state.get("edit_context") != context:
-        st.session_state.pop("pending", None)
-        st.session_state["edit_context"] = context
-    st.subheader("인력 수정 / 계정 ID 보완" if current else "신규 투입 대상 등록")
-    if current:
-        st.caption("계정 ID를 입력해도 이 사람의 투입·계약 연결은 그대로 유지됩니다.")
-    else:
-        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요.")
-    with st.container():
-        name = st.text_input("이름", value=current["name"] if current else "", key=f"name_{target}")
-        company = st.text_input("업체명", value=current["company"] if current else "",
-                                key=f"company_{target}")
-        categories = ["정", "협력", "컨설팅"]
-        category = st.selectbox("분류", categories,
-                                index=categories.index(current["category"]) if current else None)
-        job_role = st.text_input("직무 (선택)", value=(current.get("job_role") or "") if current else "",
-                                 key=f"job_{target}")
-        account_id = st.text_input("계정 ID (발급 후 입력 / 선택)",
-                                    value=(current["account_id"] or "") if current else "",
-                                    key=f"account_{target}")
-        if not current:
-            grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade",
-                                 placeholder="선택 (컨설팅은 비워 둘 수 있음)")
-            a, b = st.columns(2)
-            start = a.date_input("투입 시작일", value=None, key="intake_start",
-                                 min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
-            end = b.date_input("투입 종료일", value=None, key="intake_end",
-                               min_value=date(1900, 1, 1), max_value=date(2100, 12, 31))
-            mode, manual_mm = mm_fields(start, end, None, "intake")
-        person_data = dict(name=name, company=company, category=category, account_id=account_id, job_role=job_role)
-        kind = "person" if current else "intake"
-        input_data = dict(person_data, id=current["id"]) if current else dict(
-            person=person_data, assignment=dict(grade=grade, start_date=start, end_date=end,
-                                                assignment_type=mode, mm=manual_mm))
-        invalidate_preview(kind, input_data)
-        if st.button("미리보기", key="preview_person"):
-            stage(kind, input_data, current)
-    confirm()
-
-elif page == "투입 관리":
+    st.caption("등급·기간은 시작일이 가장 최근인 투입 건을 표시합니다. 투입 등록·수정은 '과제 투입 관리'에서 합니다.")
+    st.divider()
     render_monthly_mm()
     st.divider()
-    st.subheader("투입 목록")
+    if people:
+        by_id = {r["id"]: r for r in people}
+        with st.expander("인력 정보 수정 · 계정 ID 보완", expanded=bool(st.session_state.get("person_target"))):
+            target = st.selectbox("수정할 인력", [None] + list(by_id), key="person_target",
+                                  format_func=lambda i: "선택하세요" if i is None else person_label(by_id[i]))
+            if target:
+                person_form(by_id[target])
+
+elif page == "신규 인력 등록":
+    person_form(None)
+
+elif page == "과제 투입 관리":
+    st.subheader("인력별 투입 목록")
     people = service.people()
     by_person = {r["id"]: r for r in people}
     person_id = st.selectbox(
@@ -603,32 +610,46 @@ elif page == "근무 환경 준비":
                     st.session_state.pop("ck_pending", None)
                     st.rerun()
 
-elif page == "구매계약 관리":
-    def contract_rows(rows: list[dict]) -> list[dict]:
-        return [dict(r, has_successor="예" if r.get("has_successor") else "",
-                     contract_no=r.get("contract_no") or "미발급") for r in rows]
-
-    contract_columns = ["name", "company", "contract_no", "status", "start_date", "end_date",
-                        "label", "has_successor"]
+elif page == "전체 계약 조회":
     all_contracts = service.contracts()
-    today = service.clock()
+    if not all_contracts:
+        st.info("등록된 구매계약이 없습니다. '계약 등록·수정'에서 등록하세요.")
+        st.stop()
+    soon_count = sum(c["ending_soon"] for c in all_contracts)
+    f1, f2, f3, f4 = st.columns([1, 1, 1, 1.4])
+    company_filter = f1.selectbox("업체", ["전체"] + sorted({c["company"] for c in all_contracts}),
+                                  key="contract_company")
+    status_filter = f2.selectbox("계약 상태", ["전체", "준비", "확정"], key="contract_status")
+    month_filter = f3.selectbox("종료 월", ["전체"] + sorted({c["end_date"][:7] for c in all_contracts}),
+                                key="contract_month",
+                                format_func=lambda m: m if m == "전체" else f"{m[:4]}년 {int(m[5:])}월")
+    f4.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+    only_soon = f4.toggle(f"계약 종료 예정만 보기 ({soon_count}명)", key="contract_only_soon")
+    rows = [c for c in all_contracts
+            if (company_filter == "전체" or c["company"] == company_filter)
+            and (status_filter == "전체" or c["status"] == status_filter)
+            and (month_filter == "전체" or c["end_date"].startswith(month_filter))
+            and (not only_soon or c["ending_soon"])]
+    if not rows:
+        st.info("조건에 맞는 계약이 없습니다.")
+    else:
+        frame = pd.DataFrame([{"이름": r["name"], "업체명": r["company"],
+                               "계약번호": r.get("contract_no") or "미발급", "계약 상태": r["status"],
+                               "계약 시작일": r["start_date"], "계약 종료일": r["end_date"],
+                               "만료 상태": r["label"], "연장 계약": "등록" if r["has_successor"] else ""}
+                              for r in rows])
+        soon = [r["ending_soon"] for r in rows]
+        # 계약 종료 예정 줄은 붉은 계열 (10/25 담당자)
+        styled = frame.style.apply(lambda row: ["background-color: #FBEBEB; color: #9B1C1C"] * len(row)
+                                   if soon[row.name] else [""] * len(row), axis=1)
+        st.dataframe(styled, hide_index=True, use_container_width=True)
+    st.markdown(f'<span style="background-color: #FBEBEB; color: #9B1C1C; padding: 2px 10px; '
+                f'border-radius: 10px; font-size: 13px">계약 종료 예정</span> '
+                f'<span style="font-size: 13px; color: #5B6780">종료 {CONTRACT_ALERT_DAYS}일 전부터 종료일 당일까지, '
+                f'연장 계약이 아직 등록되지 않은 계약 · {len(rows)}건 표시 / 전체 {len(all_contracts)}건</span>',
+                unsafe_allow_html=True)
 
-    st.subheader("계약 종료 예정 조회")
-    c1, c2, c3 = st.columns(3)
-    year = c1.number_input("연도", min_value=2000, max_value=2100, value=today.year, step=1,
-                           key="ending_year")
-    month = c2.selectbox("월", list(range(1, 13)), index=today.month - 1,
-                         format_func=lambda m: f"{m}월", key="ending_month")
-    company_options = ["전체"] + sorted({c["company"] for c in all_contracts})
-    company_filter = c3.selectbox("업체", company_options, key="ending_company")
-    ending = service.contracts_ending(int(year), month,
-                                      None if company_filter == "전체" else company_filter)
-    show_table(contract_rows(ending), contract_columns)
-
-    st.subheader("구매계약 목록")
-    show_table(contract_rows(all_contracts), contract_columns)
-    st.caption("'연장 계약 등록'은 이 계약을 이전 계약으로 지정한 후속 계약이 있다는 뜻입니다.")
-
+elif page == "계약 등록·수정":
     st.subheader("계약 등록 / 수정")
     eligible = [r for r in service.people() if r["category"] in ("협력", "컨설팅")]
     if not eligible:
@@ -703,7 +724,7 @@ elif page == "계약 종료 알림":
     st.subheader("계약 종료 알림")
     st.caption("계약 종료 14일 전부터 표시하며, 앱을 실행할 때마다 미처리 대상을 다시 확인합니다. "
                "'확인'은 알림을 봤다는 기록이고 계약 갱신 완료와는 별개입니다. "
-               "연장 계약은 '구매계약 관리'에서 이전 계약을 지정해 등록하세요.")
+               "연장 계약은 '계약 등록·수정'에서 이전 계약을 지정해 등록하세요.")
     if not pending_alerts:
         st.success("미확인 계약 종료 알림이 없습니다.")
     for alert in pending_alerts:

@@ -10,12 +10,27 @@ import streamlit as st
 
 NAVY, BLUE, MUTED = "#0F1B33", "#1D4ED8", "#5B6780"
 
-# 메뉴 값(화면 이름)은 그대로 두고 표시만 바꾼다. 아이콘은 Streamlit Material 아이콘.
-NAV_ICONS = {
-    "홈": ":material/forum:", "인력 관리": ":material/person:", "투입 관리": ":material/work:",
-    "근무 환경 준비": ":material/task_alt:", "구매계약 관리": ":material/description:",
-    "계약 종료 알림": ":material/notifications:", "변경 이력": ":material/history:",
+# 왼쪽 메뉴 (10/25 담당자: 인력 관리·구매계약 관리를 하위 메뉴로 세분화).
+# (그룹 이름, 아이콘, 하위 화면 목록) — 하위 화면이 없으면 그룹 이름이 곧 화면 이름이다.
+NAV_GROUPS = [
+    ("홈", ":material/forum:", []),
+    ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리"]),
+    ("근무 환경 준비", ":material/task_alt:", []),
+    ("구매계약 관리", ":material/description:", ["전체 계약 조회", "계약 등록·수정"]),
+    ("계약 종료 알림", ":material/notifications:", []),
+    ("변경 이력", ":material/history:", []),
+]
+SUB_ICONS = {
+    "전체 인력 조회": ":material/table_view:", "신규 인력 등록": ":material/person_add:",
+    "과제 투입 관리": ":material/work:", "전체 계약 조회": ":material/table_view:",
+    "계약 등록·수정": ":material/edit_note:",
 }
+NAV_ICONS = {}
+GROUP_OF = {}
+for _group, _icon, _subs in NAV_GROUPS:
+    for _page in _subs or [_group]:
+        NAV_ICONS[_page] = SUB_ICONS.get(_page, _icon)
+        GROUP_OF[_page] = _group
 NAV_LABELS = {"홈": "홈 · PMO Agent"}
 # 홈 화면 업무 카테고리 버튼의 이모티콘 (10/20 담당자). 키는 pmo/agent/agents.py의 AGENTS 키.
 AGENT_ICONS = {"auto": "🤖", "staff": "👤", "environment": "💻", "contract": "📄", "inspection": "💰"}
@@ -31,7 +46,12 @@ _CSS = """
 header[data-testid="stHeader"] { background: transparent; }
 [data-testid="stMainBlockContainer"] { padding-top: 2.2rem; }
 
-/* ---- 사이드바: 네이비 메뉴 (버튼 nav_0~nav_6) ---- */
+/* ---- 사이드바: 네이비 메뉴 (버튼 nav_0~nav_8, 하위 메뉴는 navgroup_* 안에서 들여쓰기) ---- */
+.pmo-nav-group { display: flex; align-items: center; gap: 10px; color: #8C9AB5; font-size: 13px;
+  font-weight: 600; padding: 14px 14px 2px; letter-spacing: 0.02em; }
+[data-testid="stSidebar"] [class*="st-key-navgroup_"] [class*="st-key-nav_"] button {
+  min-height: 40px; padding: 8px 14px 8px 30px; }
+[data-testid="stSidebar"] [class*="st-key-navgroup_"] [class*="st-key-nav_"] button p { font-size: 15px; }
 [data-testid="stSidebar"] [class*="st-key-nav_"] { margin-bottom: -10px; }
 [data-testid="stSidebar"] [class*="st-key-nav_"] button {
   justify-content: flex-start; gap: 10px; min-height: 46px; padding: 10px 14px;
@@ -119,13 +139,29 @@ def _go(page: str) -> None:
 
 
 def sidebar_nav(alerts: int = 0) -> str:
-    """시안 A의 왼쪽 메뉴: 라디오 대신 메뉴 버튼(key nav_0~nav_6). 지금 화면은 primary 버튼으로 강조한다."""
-    current = st.session_state.setdefault("nav_page", PAGES[0])
-    for i, page in enumerate(PAGES):
-        st.sidebar.button(nav_label(page, alerts), key=f"nav_{i}", icon=NAV_ICONS[page],
-                          type="primary" if page == current else "secondary", width="stretch",
-                          on_click=_go, args=(page,))
-    return st.session_state["nav_page"]
+    """시안 A의 왼쪽 메뉴: 메뉴 버튼(key nav_0~nav_8). 지금 화면은 primary 버튼으로 강조한다.
+
+    인력 관리·구매계약 관리는 그룹 제목 아래에 하위 메뉴 버튼을 들여 써서 보여준다.
+    """
+    if st.session_state.get("nav_page") not in PAGES:   # 예전 메뉴 이름이 남은 세션은 홈으로
+        st.session_state["nav_page"] = PAGES[0]
+    current = st.session_state["nav_page"]
+
+    def button(page: str) -> None:
+        st.button(nav_label(page, alerts), key=f"nav_{PAGES.index(page)}", icon=NAV_ICONS[page],
+                  type="primary" if page == current else "secondary", width="stretch",
+                  on_click=_go, args=(page,))
+
+    with st.sidebar:
+        for group, icon, subs in NAV_GROUPS:
+            if not subs:
+                button(group)
+                continue
+            st.markdown(f'<div class="pmo-nav-group">{escape(group)}</div>', unsafe_allow_html=True)
+            with st.container(key=f"navgroup_{NAV_GROUPS.index((group, icon, subs))}"):
+                for page in subs:
+                    button(page)
+    return current
 
 
 def sidebar_brand() -> None:
