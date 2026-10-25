@@ -109,11 +109,11 @@ def test_inspection_page_shows_totals(monkeypatch, tmp_path, filled):
     from ui.theme import PAGES
     monkeypatch.setenv("PMO_DB_PATH", str(filled.path))
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
-    app.button(key=f"nav_{PAGES.index('검수 금액 조회')}").click().run()
+    app.button(key=f"nav_{PAGES.index('검수하기')}").click().run()
     assert not app.exception
-    table = app.dataframe[0].value
-    assert table.iloc[-1]["매출귀속 프로젝트"] == "합계"
-    assert table.iloc[-1]["계약 기간 금액"] == "56,833,333원"
+    table = app.dataframe[0].value                               # 기본 = 이번 달(2026-10은 계약 기간 안)
+    assert list(table.columns) == ["인력명", "매출귀속 프로젝트", "MM", "검수금액"]
+    assert table.iloc[-1]["인력명"] == "합계"
 
 
 def test_period_with_only_uncomputable_lines_is_not_zero(service):

@@ -720,7 +720,7 @@ elif page == "계약 등록·수정":
             stage("contract", input_data, current)
     confirm()
 
-elif page == "검수 금액 조회":
+elif page == "검수하기":
     def won(value) -> str:
         return "계산 불가" if value is None else f"{value:,}원"
 
@@ -731,27 +731,32 @@ elif page == "검수 금액 조회":
     if not choices:
         st.info("계약번호가 있는 구매계약이 없습니다. '계약 등록·수정'에서 계약번호를 입력하세요.")
         st.stop()
-    s1, s2 = st.columns(2)
+    # 검색은 한 줄: 업체명 · 계약번호 · 월 (+ 세부 조회 토글) (10/25 담당자)
+    s1, s2, s3, s4 = st.columns([1.2, 1.6, 1, 0.8], vertical_alignment="bottom")
     company = s1.selectbox("업체명", sorted({c["company"] for c in choices}), key="insp_company")
     numbers = {c["contract_no"]: c for c in choices if c["company"] == company}
     contract_no = s2.selectbox(
         "계약번호", list(numbers), key=f"insp_no_{company}",
         format_func=lambda n: f"{n} · {numbers[n]['start_date']}~{numbers[n]['end_date']} · {numbers[n]['people']}명")
     chosen = numbers[contract_no]
-    # 조회 기간: 계약 기간 안의 달, 기본은 이번 달(계약 기간 밖이면 가장 가까운 달) (10/25 담당자)
     months, cursor = [], date.fromisoformat(chosen["start_date"]).replace(day=1)
     while cursor.isoformat()[:7] <= chosen["end_date"][:7]:
         months.append(cursor.isoformat()[:7])
         cursor = date(cursor.year + (cursor.month == 12), cursor.month % 12 + 1, 1)
-    this_month = service.clock().isoformat()[:7]
-    default = min(max(this_month, months[0]), months[-1])
+    # 기본은 이번 달 (계약 기간 밖이면 가장 가까운 달)
+    default = min(max(service.clock().isoformat()[:7], months[0]), months[-1])
     label = lambda m: f"{m[:4]}년 {int(m[5:])}월"  # noqa: E731
-    p1, p2 = st.columns(2)
     key = f"{company}_{contract_no}"
-    start_month = p1.selectbox("조회 시작 월", months, index=months.index(default), format_func=label,
-                               key=f"insp_from_{key}")
-    end_month = p2.selectbox("조회 종료 월", months, index=months.index(default), format_func=label,
-                             key=f"insp_to_{key}")
+    detail = s4.toggle("세부 조회", key=f"insp_detail_{key}", help="시작 월과 종료 월을 골라 여러 달을 한 번에 봅니다.")
+    month = s3.selectbox("월", months, index=months.index(default), format_func=label,
+                         key=f"insp_month_{key}", disabled=detail)
+    start_month = end_month = month
+    if detail:
+        d1, d2, _ = st.columns([1.2, 1.6, 1.8])
+        start_month = d1.selectbox("시작 월", months, index=months.index(month), format_func=label,
+                                   key=f"insp_from_{key}")
+        end_month = d2.selectbox("종료 월", months, index=months.index(month), format_func=label,
+                                 key=f"insp_to_{key}")
     try:
         result = service.inspection(company, contract_no, start_month, end_month)
     except ValidationError as exc:
@@ -761,40 +766,26 @@ elif page == "검수 금액 조회":
     theme.kpi_row([("계약 총액 (계약 기간 전체)", total_text(result["contract"]["total"]), "원", False),
                    (f"검수 금액 · {period_label}", total_text(result["selected"]["total"]), "원", False),
                    ("계약 인원", result["people"], "명", False),
-                   ("계산 불가 건", result["contract"]["incomplete"], "건", bool(result["contract"]["incomplete"]))])
-    st.subheader("매출귀속 프로젝트별 금액")
-    contract_by = {p["revenue_project"]: p for p in result["contract"]["projects"]}
-    selected_by = {p["revenue_project"]: p for p in result["selected"]["projects"]}
-    table = []
-    for project in sorted(set(contract_by) | set(selected_by)):
-        sel, tot = selected_by.get(project), contract_by.get(project)
-        table.append({"매출귀속 프로젝트": project, "인원": (tot or sel)["people"],
-                      f"{period_label} MM": (sel["mm"] or "") if sel else "", f"{period_label} 금액": won(sel["amount"]) if sel else "",
-                      "계약 기간 MM": (tot["mm"] or "") if tot else "", "계약 기간 금액": won(tot["amount"]) if tot else "",
-                      "계산 불가": (tot["incomplete"] if tot else 0) or ""})
-    table.append({"매출귀속 프로젝트": "합계", "인원": result["people"],
-                  f"{period_label} MM": result["selected"]["mm"] or "", f"{period_label} 금액": won(result["selected"]["total"]),
-                  "계약 기간 MM": result["contract"]["mm"] or "", "계약 기간 금액": won(result["contract"]["total"]),
-                  "계산 불가": result["contract"]["incomplete"] or ""})
-    frame = pd.DataFrame(table)
-    right = {c: st.column_config.TextColumn(alignment="right")
-             for c in frame.columns if c not in ("매출귀속 프로젝트",)}
-    st.dataframe(frame.style.apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
-                                   if row["매출귀속 프로젝트"] == "합계" else [""] * len(row), axis=1),
-                 hide_index=True, use_container_width=True, column_config=right)
-    incomplete = [line for line in result["contract"]["lines"] if line["amount"] is None]
+                   ("계산 불가 건", result["selected"]["incomplete"], "건", bool(result["selected"]["incomplete"]))])
+    st.subheader(f"매출귀속 프로젝트별 검수 금액 · {period_label}")
+    lines = result["selected"]["lines"]
+    if not lines:
+        st.info("이 기간에 계약·투입이 겹치는 인력이 없습니다.")
+    else:
+        # 간소화 (10/25 담당자): 인력명 · 매출귀속 프로젝트 · MM · 검수금액
+        table = [{"인력명": l["name"], "매출귀속 프로젝트": l["revenue_project"], "MM": l["mm"] or "",
+                  "검수금액": won(l["amount"])} for l in lines]
+        table.append({"인력명": "합계", "매출귀속 프로젝트": "", "MM": result["selected"]["mm"] or "",
+                      "검수금액": won(result["selected"]["total"])})
+        frame = pd.DataFrame(table)
+        st.dataframe(frame.style.apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
+                                       if row["인력명"] == "합계" else [""] * len(row), axis=1),
+                     hide_index=True, use_container_width=True,
+                     column_config={c: st.column_config.TextColumn(alignment="right") for c in ("MM", "검수금액")})
+    incomplete = [l for l in lines if l["amount"] is None]
     if incomplete:
         st.warning(f"계산할 수 없는 {len(incomplete)}건은 합계에서 뺐습니다(0원으로 계산하지 않음). "
-                   "아래 '인력별 계산 근거'에서 사유를 확인하고 과제 투입 관리에서 보완하세요.")
-    with st.expander("인력별 계산 근거"):
-        for title, part in ((period_label, result["selected"]), ("계약 기간 전체", result["contract"])):
-            st.markdown(f"**{title}**")
-            st.dataframe([{"이름": l["name"], "매출귀속 프로젝트": l["revenue_project"], "투입 과제": l["project"] or "",
-                           "투입 Type": l["assignment_type"] or "", "계산 기간": f"{l['start']} ~ {l['end']}",
-                           "MM": l["mm"] or "", "매입단가": won(int(Decimal(l["purchase_rate"])))
-                           if l["purchase_rate"] not in (None, "") else "",
-                           "금액": won(l["amount"]) if l["amount"] is not None else "", "비고": l["note"]}
-                          for l in part["lines"]], hide_index=True, use_container_width=True)
+                   + " · ".join(f"{l['name']}: {l['note']}" for l in incomplete))
     st.caption(f"계산 규칙: {result['rule']}. 이 금액은 구매시스템의 실제 검수·승인과 별개이며, "
                "구매시스템 계약금액과 대조해 규칙을 확정할 예정입니다.")
 

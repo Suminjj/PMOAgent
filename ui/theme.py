@@ -17,14 +17,14 @@ NAV_GROUPS = [
     ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리"]),
     ("근무 환경 준비", ":material/task_alt:", []),
     ("구매계약 관리", ":material/description:", ["전체 계약 조회", "계약 등록·수정"]),
-    ("검수 금액 조회", ":material/payments:", []),
+    ("검수 관리", ":material/payments:", ["검수하기"]),
     ("계약 종료 알림", ":material/notifications:", []),
     ("변경 이력", ":material/history:", []),
 ]
 SUB_ICONS = {
     "전체 인력 조회": ":material/table_view:", "신규 인력 등록": ":material/person_add:",
     "과제 투입 관리": ":material/work:", "전체 계약 조회": ":material/table_view:",
-    "계약 등록·수정": ":material/edit_note:",
+    "계약 등록·수정": ":material/edit_note:", "검수하기": ":material/fact_check:",
 }
 NAV_ICONS = {}
 GROUP_OF = {}
