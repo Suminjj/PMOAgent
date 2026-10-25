@@ -39,7 +39,7 @@ TABLE_CONTEXT = {
                  "status=준비/확정, previous_contract_id=연장 전 계약 id.",
     "contract_alerts": "계약 종료 알림. contract_id=contracts.id, end_date=기준 종료일, "
                        "notify_from=알림 시작일(종료 14일 전), status=미확인/확인/기준일 변경.",
-    "checklist": "근무 환경 준비. assignment_id=assignments.id, item=좌석 배정/ID카드 신청/OA기기 신청/방문예약, "
+    "checklist": "근무 환경 준비. assignment_id=assignments.id, item=방문예약/계정 신청/ID카드 신청/OA기기 신청(좌석 배정은 예전 항목), "
                  "status=미진행/진행 중/완료/해당 없음, reason=사유, applied_at=실제 신청 완료 시각.",
 }
 
