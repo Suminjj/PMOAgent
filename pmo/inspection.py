@@ -94,3 +94,51 @@ def _summary(done: list[dict], base: dict, total_key: str = "amount") -> dict:
         return dict(base, mm=None, **{total_key: None})
     return dict(base, mm=format(sum((Decimal(d["mm"]) for d in done), Decimal(0)), "f"),
                 **{total_key: sum(d["amount"] for d in done)})
+
+
+def _sum(values: list) -> int | None:
+    """금액 합. 계산 불가(None)가 하나라도 있으면 그 묶음은 None(0원으로 바꾸지 않음)."""
+    return None if any(v is None for v in values) else sum(values)
+
+
+def _mm_sum(values: list) -> str | None:
+    return None if any(v is None for v in values) else format(sum((Decimal(v) for v in values), Decimal(0)), "f")
+
+
+def report_rows(selected: list[dict], contract: list[dict]) -> list[dict]:
+    """검수 화면 표 (10/25 담당자): 인력·프로젝트별 줄 + 프로젝트 소계 + 합계.
+
+    project_amount = 계약 기간 전체에서 그 프로젝트에 귀속되는 금액(구매시스템 계약금액과 맞춰 보는 용도),
+    amount = 조회 기간(기본 이번 달) 검수 금액, mm = 조회 기간 MM.
+    인력 줄은 같은 인력·프로젝트의 여러 투입을 합치며, 그중 계산 불가가 있으면 None.
+    소계·합계는 계산된 건만 더하고(계산 불가 건수는 화면 경고로 알림), 계산된 건이 없으면 None.
+    """
+    keys = sorted({(l["revenue_project"], l["name"] or "", l["person_id"]) for l in selected + contract})
+    rows, projects = [], {}
+    for project, name, pid in keys:
+        sel = [l for l in selected if (l["revenue_project"], l["person_id"]) == (project, pid)]
+        con = [l for l in contract if (l["revenue_project"], l["person_id"]) == (project, pid)]
+        row = {"kind": "person", "name": name, "revenue_project": project,
+               "mm": _mm_sum([l["mm"] for l in sel]) if sel else None,
+               "project_amount": _sum([l["amount"] for l in con]) if con else None,
+               "amount": _sum([l["amount"] for l in sel]) if sel else None,
+               "in_period": bool(sel)}
+        rows.append(row)
+        projects.setdefault(project, ([], []))[0].extend(sel)
+        projects[project][1].extend(con)
+        is_last = keys.index((project, name, pid)) == len(keys) - 1 or \
+            keys[keys.index((project, name, pid)) + 1][0] != project
+        if is_last:
+            sel_all, con_all = projects[project]
+            rows.append(_subtotal("subtotal", "소계", project, sel_all, con_all))
+    rows.append(_subtotal("total", "합계", "", selected, contract))
+    return rows
+
+
+def _subtotal(kind: str, name: str, project: str, sel: list[dict], con: list[dict]) -> dict:
+    done_sel = [l for l in sel if l["amount"] is not None]
+    done_con = [l for l in con if l["amount"] is not None]
+    return {"kind": kind, "name": name, "revenue_project": project,
+            "mm": format(sum((Decimal(l["mm"]) for l in done_sel), Decimal(0)), "f") if done_sel else None,
+            "project_amount": sum(l["amount"] for l in done_con) if done_con else None,
+            "amount": sum(l["amount"] for l in done_sel) if done_sel else None, "in_period": bool(sel)}

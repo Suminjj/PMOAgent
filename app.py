@@ -768,21 +768,39 @@ elif page == "검수하기":
                    ("계약 인원", result["people"], "명", False),
                    ("계산 불가 건", result["selected"]["incomplete"], "건", bool(result["selected"]["incomplete"]))])
     st.subheader(f"매출귀속 프로젝트별 검수 금액 · {period_label}")
+    st.caption("'프로젝트 전체 금액'은 계약 기간 전체에서 그 프로젝트에 귀속되는 금액입니다. "
+               "구매시스템의 계약금액과 맞춰 볼 때 쓰세요.")
     lines = result["selected"]["lines"]
-    if not lines:
-        st.info("이 기간에 계약·투입이 겹치는 인력이 없습니다.")
+    if not lines and not result["contract"]["lines"]:
+        st.info("이 계약에 연결된 투입이 없습니다.")
     else:
-        # 간소화 (10/25 담당자): 인력명 · 매출귀속 프로젝트 · MM · 검수금액
-        table = [{"인력명": l["name"], "매출귀속 프로젝트": l["revenue_project"], "MM": l["mm"] or "",
-                  "검수금액": won(l["amount"])} for l in lines]
-        table.append({"인력명": "합계", "매출귀속 프로젝트": "", "MM": result["selected"]["mm"] or "",
-                      "검수금액": won(result["selected"]["total"])})
-        frame = pd.DataFrame(table)
-        st.dataframe(frame.style.apply(lambda row: ["font-weight: 600; background-color: #F1F4F9"] * len(row)
-                                       if row["인력명"] == "합계" else [""] * len(row), axis=1),
-                     hide_index=True, use_container_width=True,
-                     column_config={c: st.column_config.TextColumn(alignment="right") for c in ("MM", "검수금액")})
-    incomplete = [l for l in lines if l["amount"] is None]
+        from pmo.inspection import report_rows
+        # 구매시스템에는 프로젝트 번호가 없어, 계약 금액 중 프로젝트 귀속 총액(계약 기간)과 이번 달 검수 금액을 함께 본다 (10/25)
+        amount_col, total_col = f"검수 금액 ({period_label})", "프로젝트 전체 금액 (계약 기간)"
+        rows = report_rows(lines, result["contract"]["lines"])
+
+        def amount_cell(row, key):
+            if key == "amount" and not row["in_period"]:
+                return ""                                   # 이 기간에 투입이 없는 인력
+            return won(row[key])                            # None이면 '계산 불가' (0원 아님)
+
+        frame = pd.DataFrame([{"인력명": r["name"], "매출귀속 프로젝트": r["revenue_project"],
+                               "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
+                               amount_col: amount_cell(r, "amount")} for r in rows])
+        kinds = [r["kind"] for r in rows]
+        shade = {"subtotal": "font-weight: 600; background-color: #F7F9FC",
+                 "total": "font-weight: 700; background-color: #E8EEFB"}
+
+        def style_row(row):
+            base = shade.get(kinds[row.name], "")
+            # 이번 달(조회 기간) 검수 금액은 굵게, 파란색으로 강조 (10/25 담당자)
+            return [f"{base}; font-weight: 700; color: #1D4ED8" if col == amount_col else base for col in row.index]
+
+        st.dataframe(frame.style.apply(style_row, axis=1), hide_index=True, use_container_width=True,
+                     column_config={c: st.column_config.TextColumn(alignment="right")
+                                    for c in ("MM", total_col, amount_col)})
+    incomplete = [l for l in lines + result["contract"]["lines"] if l["amount"] is None]
+    incomplete = list({(l["name"], l["note"]): l for l in incomplete}.values())
     if incomplete:
         st.warning(f"계산할 수 없는 {len(incomplete)}건은 합계에서 뺐습니다(0원으로 계산하지 않음). "
                    + " · ".join(f"{l['name']}: {l['note']}" for l in incomplete))

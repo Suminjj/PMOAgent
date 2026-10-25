@@ -111,8 +111,10 @@ def test_inspection_page_shows_totals(monkeypatch, tmp_path, filled):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
     app.button(key=f"nav_{PAGES.index('검수하기')}").click().run()
     assert not app.exception
-    table = app.dataframe[0].value                               # 기본 = 이번 달(2026-10은 계약 기간 안)
-    assert list(table.columns) == ["인력명", "매출귀속 프로젝트", "MM", "검수금액"]
+    table = app.dataframe[0].value
+    assert list(table.columns)[:4] == ["인력명", "매출귀속 프로젝트", "MM", "프로젝트 전체 금액 (계약 기간)"]
+    assert table.columns[4].startswith("검수 금액 (")              # 기본 = 이번 달(실행 날짜에 따라 다름)
+    assert table.iloc[-1]["프로젝트 전체 금액 (계약 기간)"] == "56,833,333원"
     assert table.iloc[-1]["인력명"] == "합계"
 
 
@@ -123,3 +125,21 @@ def test_period_with_only_uncomputable_lines_is_not_zero(service):
     [project] = result["selected"]["projects"]
     assert project["amount"] is None and project["mm"] is None and project["incomplete"] == 1
     assert result["selected"]["total"] is None and result["contract"]["total"] is None
+
+
+def test_report_rows_show_project_total_and_month_amount(filled):
+    from pmo.inspection import report_rows
+    result = filled.inspection("가상 업체", "C-100", "2026-10", "2026-10")
+    rows = report_rows(result["selected"]["lines"], result["contract"]["lines"])
+    sub = {r["revenue_project"]: r for r in rows if r["kind"] == "subtotal"}
+    # 프로젝트 전체 금액(계약 기간) = 구매시스템 계약금액과 맞춰 볼 프로젝트 귀속 총액
+    assert sub["RP-A"]["project_amount"] == 30_833_333 and sub["RP-A"]["amount"] == 10_833_333
+    assert sub["RP-B"]["project_amount"] == 26_000_000 and sub["RP-B"]["amount"] == 8_000_000
+    p4 = next(r for r in rows if r["kind"] == "person" and r["name"] == "가상 사")
+    assert not p4["in_period"] and p4["project_amount"] == 2_000_000          # 11월 Part time: 10월 검수 없음
+    p5 = next(r for r in rows if r["kind"] == "person" and r["name"] == "가상 오")
+    assert p5["amount"] is None and p5["project_amount"] is None              # 계산 불가는 0원이 아님
+    total = rows[-1]
+    assert total["kind"] == "total" and total["project_amount"] == 56_833_333 and total["amount"] == 18_833_333
+    order = [(r["kind"], r["revenue_project"]) for r in rows]
+    assert order.index(("subtotal", "RP-A")) < order.index(("person", "RP-B"))   # 프로젝트마다 소계
