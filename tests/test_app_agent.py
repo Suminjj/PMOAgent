@@ -59,7 +59,7 @@ def test_home_is_first_page_with_chat_and_results(app):
     assert app.session_state["nav_page"] == "홈"
     assert not app.sidebar.radio                                         # 메뉴는 라디오가 아니라 버튼
     assert [b.key for b in app.sidebar.button][:7] == [f"nav_{i}" for i in range(7)]
-    assert [s.value for s in app.subheader][:2] == ["AI Agent", "수행 결과"]
+    assert [s.value for s in app.subheader][:2] == ["🤖 PMO Agent", "수행 결과"]
     assert app.chat_input
 
 
@@ -90,6 +90,11 @@ def test_example_button_and_llm_unavailable(app, monkeypatch):
     assert any("연결할 수 없습니다" in e.value for e in app.error)
 
 
+def status_of(service, aid, item):
+    """항목 순서가 바뀌어도 되도록 이름으로 찾는다."""
+    return next(r for r in service.checklist(aid) if r["item"] == item)["status"]
+
+
 def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     REPLIES[:] = [tool("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중"),
                   say("화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요.")]
@@ -97,13 +102,13 @@ def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     assert not app.exception
     service = Service(Path(os.environ["PMO_DB_PATH"]))
     aid = service.assignments("DEMO-002")[0]["id"]
-    assert service.checklist(aid)[1]["status"] == "미진행"            # 카드만으로는 저장 안 됨
+    assert status_of(service, aid, "ID카드 신청") == "미진행"            # 카드만으로는 저장 안 됨
     rows = app.table[0].value
     assert list(rows["변경"])[3] == "진행 중"                          # 현재 → 변경 카드
     assert not [s for s in app.selectbox if s.key and s.key.startswith("act")]  # 값을 고르는 양식이 없음
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
-    assert service.checklist(aid)[1]["status"] == "진행 중"
+    assert status_of(service, aid, "ID카드 신청") == "진행 중"
 
 
 def test_cancel_does_not_save(app):
@@ -117,10 +122,11 @@ def test_cancel_does_not_save(app):
 
 
 def test_category_selector_limits_agent_tools(app):
-    assert app.radio(key="home_agent").value == "auto"
-    assert [o for o in app.radio(key="home_agent").options] == [
-        "자동(전체)", "인력관리", "근무 환경 준비", "구매계약", "검수"]
-    app.radio(key="home_agent").set_value("contract").run()
+    labels = [app.button(key=f"home_agent_{k}").label for k in ("auto", "staff", "environment", "contract", "inspection")]
+    assert labels == ["🤖 자동(전체)", "👤 인력관리", "💻 근무 환경 준비", "📄 구매계약", "💰 검수"]
+    assert app.session_state["home_category"] == "auto"
+    app.button(key="home_agent_contract").click().run()
+    assert app.session_state["home_category"] == "contract"
     assert any("구매계약" in c.value for c in app.caption)               # 예시 질문 · 구매계약
     REPLIES[:] = [tool("pending_contract_alerts"), say("미확인 알림은 2건입니다.")]
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
@@ -128,11 +134,11 @@ def test_category_selector_limits_agent_tools(app):
     sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
     assert "pending_contract_alerts" in sent and "checklist_status" not in sent
     assert "[업무 지침: contract-expiry]" in RECEIVED[0]["messages"][0]["content"]
-    assert any(c.value == "구매계약 Agent" for c in app.caption)
+    assert any(c.value == "📄 구매계약 Agent" for c in app.caption)
 
 
 def test_auto_category_keeps_all_tools(app):
     REPLIES[:] = [say("안녕하세요.")]
     app.chat_input[0].set_value("안녕").run()
     assert len(RECEIVED[0]["tools"]) == 14
-    assert any(c.value == "자동(전체) Agent" for c in app.caption)
+    assert any(c.value == "🤖 자동(전체) Agent" for c in app.caption)

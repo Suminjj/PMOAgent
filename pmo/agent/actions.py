@@ -102,7 +102,7 @@ def _plan_checklist(service, values: dict) -> dict:
     person = _person(service, values)
     item, status = values.get("item"), values.get("status")
     if item not in ITEMS:
-        raise ValidationError("어느 항목(좌석 배정·ID카드 신청·OA기기 신청·방문예약)인지 사용자에게 확인하세요.")
+        raise ValidationError("어느 항목(방문예약·계정 신청·ID카드 신청·OA기기 신청)인지 사용자에게 확인하세요.")
     if not status:
         raise ValidationError("어떤 상태(미진행·진행 중·완료·해당 없음)로 바꿀지 사용자에게 확인하세요.")
     today = service.clock().isoformat()

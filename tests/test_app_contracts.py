@@ -45,7 +45,7 @@ def test_acknowledge_alert_from_screen(demo_app):
 
 def test_register_contract_with_preview_and_confirm(demo_app):
     path, app = demo_app
-    go(app, "구매계약 관리")
+    go(app, "계약 등록·수정")
     suffix = "DEMO-001_None"
     app.selectbox(key=f"cstatus_{suffix}").set_value("확정")
     app.text_input(key=f"cno_{suffix}").set_value("UI-C-1")
@@ -62,7 +62,7 @@ def test_register_contract_with_preview_and_confirm(demo_app):
 
 def test_contract_without_number_cannot_be_confirmed(demo_app):
     path, app = demo_app
-    go(app, "구매계약 관리")
+    go(app, "계약 등록·수정")
     suffix = "DEMO-001_None"
     count = len(Service(path).contracts())
     app.selectbox(key=f"cstatus_{suffix}").set_value("확정")
@@ -71,3 +71,21 @@ def test_contract_without_number_cannot_be_confirmed(demo_app):
     app.button(key="preview_contract").click().run()
     assert any("계약번호" in e.value for e in app.error)
     assert len(Service(path).contracts()) == count
+
+
+def test_contract_overview_marks_and_filters_ending_soon(demo_app):
+    """전체 계약 조회: 종료 14일 전~당일·연장 미등록 계약은 붉은 줄, 토글로 그것만 보기 (가상 데이터)."""
+    path, app = demo_app
+    go(app, "전체 계약 조회")
+    contracts = Service(path).contracts()
+    soon = [c for c in contracts if c["ending_soon"]]
+    table = app.dataframe[0].value
+    assert len(table) == len(contracts)
+    assert list(table.columns) == ["이름", "업체명", "계약번호", "계약 상태", "계약 시작일", "계약 종료일",
+                                   "만료 상태", "연장 계약"]
+    app.toggle(key="contract_only_soon").set_value(True).run()
+    assert not app.exception
+    if soon:
+        assert len(app.dataframe[0].value) == len(soon)
+    else:
+        assert any("조건에 맞는 계약이 없습니다" in i.value for i in app.info)

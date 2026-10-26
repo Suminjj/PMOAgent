@@ -5,7 +5,7 @@ import json
 import sqlite3
 import time
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -337,6 +337,91 @@ class Service:
                 "SELECT * FROM people WHERE name LIKE ? ORDER BY name, id",
                 (f"%{keyword}%",))]
 
+    @staticmethod
+    def fiscal_year_of(day: date) -> int:
+        """회계연도: 4월~다음 해 3월. 2026-10-20 → 2026, 2027-02-01 → 2026."""
+        return day.year if day.month >= 4 else day.year - 1
+
+    @staticmethod
+    def fiscal_months(fiscal_year: int) -> list[str]:
+        return [f"{fiscal_year + (m < 4)}-{m:02d}" for m in (4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3)]
+
+    def monthly_mm(self, fiscal_year: int) -> list[dict]:
+        """회계연도(4월~다음 해 3월)에 걸친 투입별 월별 MM.
+
+        Full time은 구매시스템 방식(pmo/mm.py)으로 달마다 (투입 근무일 ÷ 그 달 근무일)을 구해 셋째 자리 반올림해 보여준다.
+        투입 전체 MM(합계를 한 번 반올림)과 월별 값의 합은 0.001 차이가 날 수 있다.
+        Part time은 기간 전체 MM만 있으므로 월별 값을 만들지 않는다(None). 계산 실패도 0이 아니라 None.
+        """
+        months = self.fiscal_months(fiscal_year)
+        first, last = f"{months[0]}-01", f"{months[-1]}-31"
+        people = {p["id"]: p for p in self.people()}
+        rows = []
+        for a in self.assignments():
+            if a["end_date"] < first or a["start_date"] > last:
+                continue
+            values, note = dict.fromkeys(months), ""
+            if a["assignment_type"] == "Full time":
+                try:
+                    detail = calculate_full_time(date.fromisoformat(a["start_date"]), date.fromisoformat(a["end_date"]))
+                    for m in detail["months"]:
+                        if m["month"] in values and m["assigned_days"]:
+                            values[m["month"]] = format(Decimal(m["mm"]).quantize(
+                                Decimal("0.001"), rounding=ROUND_HALF_UP), "f")
+                except ValueError as exc:
+                    note = f"계산 실패: {exc}"
+            else:
+                note = "Part time은 기간 전체 MM만 입력되어 월별 값이 없습니다."
+            person = people.get(a["person_id"], {})
+            rows.append({"name": person.get("name"), "company": person.get("company"),
+                         "category": person.get("category"), "project": a["project"],
+                         "start_date": a["start_date"], "end_date": a["end_date"],
+                         "assignment_type": a["assignment_type"], "mm": a["mm"],
+                         "months": values, "note": note, "assignment_id": a["id"]})
+        return sorted(rows, key=lambda r: (r["company"] or "", r["name"] or "", r["start_date"]))
+
+    def inspection_contracts(self) -> list[dict]:
+        """검수 화면의 업체·계약번호 선택 목록. 계약번호가 있는 계약만, 같은 번호는 한 줄(인원 수·전체 기간)."""
+        groups: dict[tuple[str, str], dict] = {}
+        for c in self.contracts():
+            if not c.get("contract_no"):
+                continue
+            key = (c["company"].strip(), c["contract_no"].strip())
+            g = groups.setdefault(key, {"company": key[0], "contract_no": key[1], "start_date": c["start_date"],
+                                        "end_date": c["end_date"], "people": set()})
+            g["start_date"], g["end_date"] = min(g["start_date"], c["start_date"]), max(g["end_date"], c["end_date"])
+            g["people"].add(c["person_id"])
+        return sorted((dict(g, people=len(g["people"])) for g in groups.values()),
+                      key=lambda g: (g["company"], g["contract_no"]))
+
+    def inspection(self, company: str, contract_no: str, start_month: str, end_month: str) -> dict:
+        """업체·계약번호의 매출귀속 프로젝트별 검수 금액 (pmo/inspection.py 규칙).
+
+        계약 총액 = 계약 기간 전체, 검수 금액 = 조회 기간(start_month~end_month, 'YYYY-MM').
+        """
+        from pmo.contracts import month_range
+        from pmo.inspection import RULE, by_project, line_items
+        company, contract_no = required(company, "업체명"), required(contract_no, "계약번호")
+        rows = [c for c in self.contracts() if c.get("contract_no") and c["contract_no"].strip() == contract_no
+                and c["company"].strip().casefold() == company.casefold()]
+        if not rows:
+            raise ValidationError(f"{company}의 계약번호 {contract_no} 계약이 없습니다.")
+        try:
+            first = month_range(int(start_month[:4]), int(start_month[5:7]))[0]
+            last = month_range(int(end_month[:4]), int(end_month[5:7]))[1]
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("조회 기간을 'YYYY-MM' 형식으로 입력하세요.") from exc
+        if first > last:
+            raise ValidationError("조회 시작 월이 종료 월보다 늦습니다.")
+        assignments = self.assignments()
+        contract_period = (min(r["start_date"] for r in rows), max(r["end_date"] for r in rows))
+        contract_lines = line_items(rows, assignments, contract_period)
+        period_lines = line_items(rows, assignments, (first, last))
+        return {"company": company, "contract_no": contract_no, "contract_period": contract_period,
+                "period": (first, last), "people": len({r["person_id"] for r in rows}),
+                "contract": dict(by_project(contract_lines), lines=contract_lines),
+                "selected": dict(by_project(period_lines), lines=period_lines), "rule": RULE}
+
     def assignment_timeline(self, person_id: str, today: date | None = None) -> dict:
         """현재 투입·과거 투입·예정 투입을 구분해 돌려준다."""
         today_text = (today or self.clock()).isoformat()
@@ -382,6 +467,8 @@ class Service:
         for row in rows:
             row.update(expiry_state(row["end_date"], day))
             row["has_successor"] = bool(row["has_successor"])
+            # 계약 종료 예정 = 종료 14일 전 ~ 종료일 당일, 연장 계약 미등록 (전체 계약 조회의 붉은 줄·필터)
+            row["ending_soon"] = row["in_window"] and row["days_left"] >= 0 and not row["has_successor"]
         return rows
 
     @logged("save_contract")
@@ -539,7 +626,7 @@ class Service:
     # 근무 환경 준비 체크리스트
     # ------------------------------------------------------------------
     def checklist(self, assignment_id: str) -> list[dict]:
-        """투입 건의 4개 항목을 정해진 순서로 돌려준다.
+        """투입 건의 4개 항목(방문예약·계정 신청·ID카드 신청·OA기기 신청)을 정해진 순서로 돌려준다.
 
         예전 데이터에 빠진 항목이 있으면 exists=False인 '미진행'으로 보여주고, 처음 저장할 때 만든다.
         """

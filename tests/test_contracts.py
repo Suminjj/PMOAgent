@@ -274,3 +274,29 @@ def test_v3_database_migrates_with_backup_and_keeps_rows(tmp_path):
     add_contract(service, contract("OLD-1"))
     Service(path)  # 재실행 시 다시 마이그레이션하지 않는다
     assert len(list(tmp_path.glob("v3.db.backup-v3-*.db"))) == 1
+
+
+# --- 전체 계약 조회: 계약 종료 예정 표시 (10/25) ----------------------------------
+
+@pytest.mark.parametrize("today, expected", [
+    (date(2026, 10, 16), False),                # 15일 전: 아직 아님
+    (date(2026, 10, 17), True),                 # 14일 전부터
+    (date(2026, 10, 31), True),                 # 종료일 당일
+    (date(2026, 11, 1), False),                 # 종료일이 지나면 '만료'(종료 예정 아님)
+])
+def test_ending_soon_window(service, clock, today, expected):
+    clock.day = today
+    add_person(service, "P-1")
+    add_contract(service)
+    [row] = service.contracts()
+    assert row["ending_soon"] is expected
+
+
+def test_ending_soon_excludes_contracts_with_extension(service):
+    add_person(service, "P-1")
+    first = add_contract(service)
+    add_contract(service, contract(start_date="2026-11-01", end_date="2027-01-31",
+                                   contract_no="C-002", previous_contract_id=first))
+    rows = {r["contract_no"]: r for r in service.contracts()}
+    assert rows["C-001"]["in_window"] and not rows["C-001"]["ending_soon"]   # 연장 계약을 등록했으면 제외
+    assert not rows["C-002"]["ending_soon"]
