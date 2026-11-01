@@ -96,6 +96,22 @@ python -m streamlit run app.py
 10. 계약 종료 14일 전부터 화면 상단과 '계약 종료 알림' 메뉴에 표시됩니다. 앱을 다시 실행해도
    미확인 대상은 계속 표시됩니다. '확인'은 알림을 봤다는 기록이며 계약 갱신 완료와는 별개입니다.
 
+### 정확도 평가 세트 (가상 데이터, 기준일 2026-11-15)
+
+```powershell
+.venv\Scripts\python.exe -m scripts.run_evals --set eval                     # 정답 도구로 데이터·정답 검증 (LLM 없음)
+.venv\Scripts\python.exe -m scripts.run_evals --set eval --model qwen3:8b    # Agent 평가, 답변은 evals\results\에 기록
+.venv\Scripts\python.exe -m scripts.build_eval_set                          # 평가 데이터를 고친 뒤 정답 다시 계산
+```
+
+화면에서 평가 데이터를 보려면 별도 DB에 넣고 기준일을 고정해 실행합니다(업무 DB에 넣지 마세요).
+
+```powershell
+.venv\Scripts\python.exe -m scripts.seed_demo --eval
+$env:PMO_DB_PATH = "data\eval.db"; $env:PMO_TODAY = "2026-11-15"
+.venv\Scripts\python.exe -m streamlit run app.py
+```
+
 단가는 쉼표 없이 입력하며 0원도 유효한 입력입니다. 빈 단가는 미입력으로 저장·표시하며
 0원으로 대체하지 않습니다. 이름·업체명이 같아도 별도의 내부 관리번호로 등록할 수 있습니다.
 검수 금액 계산, 월별 구매 필요 판정, 자연어 등록·수정은 후속 단계입니다.

@@ -16,6 +16,7 @@ from pmo.service import Service
 from pmo.tools import call_tool, tool_specs
 
 QUESTIONS = ROOT / "evals" / "questions.json"
+EVAL_SET = ROOT / "evals" / "eval_set.json"   # 정확도 평가 세트 (기준일 2026-11-15, scripts/build_eval_set.py)
 RESULTS_DIR = ROOT / "evals" / "results"
 
 
@@ -31,7 +32,7 @@ class OraclePlanner:
     name = "oracle"
 
     def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]:
-        return [(s["tool"], s["args"]) for s in question["steps"]]
+        return [(s["tool"], s["args"]) for s in question["steps"] or []]
 
 
 ROUTINGS = ("auto", "category")
@@ -82,6 +83,15 @@ def check(expect: dict, result: dict) -> list[str]:
     return problems
 
 
+def _attach_answer(row: dict, last: dict | None) -> bool:
+    """Agent 답변·오류·응답 시간을 붙인다. Agent 오류가 있으면 True."""
+    if not last:
+        return False
+    row.update(answer=last["answer"], agent_error=last["error"],
+               agent_ms=last["duration_ms"], agent_used=last.get("agent"))
+    return bool(last["error"])
+
+
 def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
         save: bool = True, on_result=None) -> dict:
     """on_result(row): 질문 하나가 끝날 때마다 호출된다(진행 상황 출력용)."""
@@ -91,11 +101,25 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
         service = Service(Path(tmp) / "eval.db", clock=lambda: today)
-        seed_demo(service, today)
+        if spec.get("seed") == "eval":
+            from pmo.eval_data import seed_eval
+            seed_eval(service, today)
+        else:
+            seed_demo(service, today)
         for q in spec["questions"]:
             t0 = time.perf_counter()
             calls = planner.plan(q, tool_specs(), service)
             called = [c[0] for c in calls]
+            if q["steps"] is None:
+                # 답변 채점 질문: 맞는 도구가 없거나 답변 내용이 핵심. 기록만 하고 v2 저지가 answer 키로 채점한다.
+                row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"), "tools": called,
+                       "graded": False, "success": None, "problems": [], "answer_key": q.get("answer"),
+                       "duration_ms": round((time.perf_counter() - t0) * 1000)}
+                _attach_answer(row, getattr(planner, "last", None))
+                rows.append(row)
+                if on_result:
+                    on_result(row)
+                continue
             # optional 단계(예: 이름을 받는 도구 앞의 find_people)는 건너뛰어도 된다. 코드가 이름을 관리번호로 바꾼다.
             steps = [st for st in q["steps"] if not st.get("optional") or st["tool"] in called]
             problems = []
@@ -106,25 +130,23 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                 for (name, args), step in zip(calls, steps):
                     problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
             row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"),
-                   "tools": [c[0] for c in calls],
-                   "success": not problems, "problems": problems,
+                   "tools": [c[0] for c in calls], "graded": True,
+                   "success": not problems, "problems": problems, "answer_key": q.get("answer"),
                    "duration_ms": round((time.perf_counter() - t0) * 1000)}
-            last = getattr(planner, "last", None)
-            if last:
-                row.update(answer=last["answer"], agent_error=last["error"],
-                           agent_ms=last["duration_ms"], agent_used=last.get("agent"))
-                if last["error"]:
-                    row["success"] = False
-                    row["problems"].append(f"Agent 오류: {last['error']}")
+            if _attach_answer(row, getattr(planner, "last", None)):
+                row["success"] = False
+                row["problems"].append(f"Agent 오류: {row['agent_error']}")
             rows.append(row)
             if on_result:
                 on_result(row)
-    report = {"planner": planner.name, "today": spec["today"],
+    graded = [r for r in rows if r.get("graded", True)]
+    report = {"planner": planner.name, "today": spec["today"], "questions": Path(questions_path).name,
               "run_at": datetime.now(TIMEZONE).isoformat(),
-              "passed": sum(r["success"] for r in rows), "total": len(rows), "results": rows}
+              "passed": sum(bool(r["success"]) for r in graded), "total": len(graded),
+              "ungraded": len(rows) - len(graded), "results": rows}
     if save:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        out = RESULTS_DIR / f"{planner.name}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
+        out = RESULTS_DIR / f"{Path(questions_path).stem}-{planner.name}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         report["saved_to"] = str(out)
     return report
