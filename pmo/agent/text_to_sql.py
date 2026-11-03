@@ -127,6 +127,7 @@ class LlamaIndexSQLGenerator:
     def __init__(self, path: Path, today: date, model: str | None = None, base_url: str | None = None):
         try:
             from sqlalchemy import create_engine
+            from sqlalchemy.pool import NullPool
             from llama_index.core import SQLDatabase
             from llama_index.core.embeddings import MockEmbedding
             from llama_index.core.query_engine import NLSQLTableQueryEngine
@@ -136,7 +137,10 @@ class LlamaIndexSQLGenerator:
                            "'pip install -r requirements.txt'로 설치하세요.") from exc
         uri = _readonly_uri(path)
         # LlamaIndex가 스키마를 읽을 때도 읽기 전용 연결만 쓴다.
-        engine = create_engine("sqlite://", creator=lambda: readonly_connect(path))
+        # NullPool: 쓴 연결을 바로 닫는다. 연결을 풀에 남기면 Windows에서 DB 파일이 잠겨 지우거나 옮길 수 없다
+        # (11/03 평가 실행 끝에 임시 평가 DB를 지우지 못해 결과 저장 전에 멈춤).
+        engine = create_engine("sqlite://", creator=lambda: readonly_connect(path), poolclass=NullPool)
+        self._sql_engine = engine
         database = SQLDatabase(engine, include_tables=list(SAFE_TABLES), sample_rows_in_table_info=2)
         think = os.environ.get("PMO_OLLAMA_THINK", "false").strip().lower()
         llm_kwargs = dict(
@@ -159,6 +163,8 @@ class LlamaIndexSQLGenerator:
             response = self._engine.query(question)
         except Exception as exc:  # noqa: BLE001 - LlamaIndex·Ollama 오류를 사용자 메시지로 바꾼다
             raise LLMError(f"Text-to-SQL로 SQL을 만들지 못했습니다: {type(exc).__name__}: {exc}"[:300]) from exc
+        finally:
+            self._sql_engine.dispose()       # 남은 연결을 모두 닫는다
         return str((response.metadata or {}).get("sql_query") or "")
 
 
