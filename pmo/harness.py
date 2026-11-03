@@ -111,7 +111,8 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
     spec = json.loads(Path(questions_path).read_text(encoding="utf-8"))
     today = date.fromisoformat(spec["today"])
     rows = []
-    with tempfile.TemporaryDirectory() as tmp:
+    # ignore_cleanup_errors: Windows에서 다른 연결이 임시 DB를 잡고 있어도 평가 결과 저장까지 마친다(11/03 실행에서 결과 유실).
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         service = Service(Path(tmp) / "eval.db", clock=lambda: today)
         if spec.get("seed") == "eval":
             from pmo.eval_data import seed_eval
