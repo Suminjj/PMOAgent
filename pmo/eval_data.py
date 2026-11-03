@@ -39,6 +39,28 @@ PEOPLE = [
 ]
 
 
+# 평가·시연용 계정 (v2 권한). 가상 데이터 전용 비밀번호이며 업무 DB에는 넣지 않는다.
+EVAL_PASSWORD = "eval-pass-1115"
+EVAL_USERS = [
+    ("pmo", "가상 PMO", "PMO", ()),
+    ("pm", "가상 PM", "PM", ()),
+    ("leader-erp", "ERP 리더", "과제 리더", (ERP,)),
+    ("leader-data", "데이터 리더", "과제 리더", (DATA,)),
+]
+
+
+def seed_eval_users(path) -> dict:
+    """평가용 계정을 만든다(첫 계정은 PMO). 아이디 → 사용자 id."""
+    from pmo.access import authenticate, create_user
+    ids, admin = {}, None
+    for login, name, role, projects in EVAL_USERS:
+        ids[login] = create_user(path, login=login, name=name, role=role, password=EVAL_PASSWORD,
+                                 projects=projects, actor=admin)
+        if admin is None:
+            admin = authenticate(path, login, EVAL_PASSWORD)
+    return ids
+
+
 def _token() -> str:
     return str(uuid4())
 
@@ -123,4 +145,5 @@ def seed_eval(service: Service, today: date = TODAY) -> dict:
     set_item(a["EV-13"], "방문예약", "완료")
     set_item(a["EV-13"], "계정 신청", "진행 중")
     set_item(a["EV-13"], "ID카드 신청", "해당 없음", "기존 출입증 보유")
-    return {"people": len(PEOPLE), "today": today.isoformat()}
+    seed_eval_users(service.path)
+    return {"people": len(PEOPLE), "users": len(EVAL_USERS), "today": today.isoformat()}

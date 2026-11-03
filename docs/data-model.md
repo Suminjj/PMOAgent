@@ -12,6 +12,9 @@
 | contracts | id, person_id, assignment_id, company, contract_no, start_date, end_date, status, previous_contract_id, note, version | 인력별 구매계약. 연장은 이전 계약을 가리킨다 |
 | contract_alerts | id, contract_id, kind, end_date, notify_from, status, created_at, acknowledged_at, acknowledged_by | 계약 종료 알림 (계약·기준 종료일마다 1건) |
 | run_log | operation, actor, input_json, ok, result, error, duration_ms, started_at | 업무 함수·도구 실행 기록 (하네스) |
+| users | id, login, name, role(PMO·PM·과제 리더), password_hash, salt, active, created_at, version | 로그인 사용자 (v7). 비밀번호는 PBKDF2 해시만 저장 |
+| user_projects | user_id, project | 과제 리더의 담당 과제(투입 과제) (v7) |
+| change_requests | id, requester_id, requester_name, person_id, project, content, status(요청·처리 완료·반려), created_at, handled_by, handled_at, note | 과제 리더의 수정 요청 (v7) |
 
 ## 식별과 필드 원본
 
@@ -56,7 +59,7 @@
 - 구매MM과 계약의 관계, 월별 구매 필요 판정 기준
 - 앞으로의 선거일·임시공휴일·회사 지정 휴일과 구매시스템 달력 일치, 검수 금액 반올림 규칙 (MM 반올림은 확정: 합계 셋째 자리 반올림)
 
-스키마 버전은 PRAGMA user_version=5다. v1~v4는 백업 후 마이그레이션하며 기존
+스키마 버전은 PRAGMA user_version=7이다(v7: 사용자·권한·수정 요청). v1~v4는 백업 후 마이그레이션하며 기존
 관리번호·금액·이력·연결 관계를 보존한다. 기존의 직접 입력한 ID를 계정 ID로 추정하지 않는다.
 미확인 스키마는 자동 재생성하거나 삭제하지 않고 실행을 중단한다.
 

@@ -21,11 +21,50 @@ from ui import theme
 st.set_page_config(page_title="CoE 인력관리", page_icon=":material/groups:", layout="wide")
 theme.apply()
 try:
-    service = Service(db_path())
+    Service(db_path())                       # DB 준비(마이그레이션). 화면은 아래에서 로그인 사용자 권한으로 다시 연다.
 except (OSError, sqlite3.Error, RuntimeError) as exc:
     st.error(f"DB를 열 수 없습니다: {exc}")
     st.stop()
 
+# ---- v2 로그인: 권한은 로그인한 사용자 정보로만 정한다(질문 속 문장은 권한에 쓰지 않음) ----
+from pmo import access as auth  # noqa: E402
+
+if not auth.has_users(db_path()):
+    theme.page_header(date.today(), "초기 설정 · PMO 계정 만들기")
+    st.info("사용자가 아직 없습니다. 첫 계정은 PMO로 만듭니다. 다른 사용자는 로그인 후 '사용자 관리'에서 추가하세요.")
+    with st.form("setup"):
+        login_id = st.text_input("아이디")
+        name = st.text_input("이름")
+        pw1 = st.text_input("비밀번호 (8자 이상)", type="password")
+        pw2 = st.text_input("비밀번호 확인", type="password")
+        if st.form_submit_button("PMO 계정 만들기", type="primary"):
+            try:
+                if pw1 != pw2:
+                    raise ValidationError("비밀번호가 서로 다릅니다.")
+                auth.create_user(db_path(), login=login_id, name=name, role="PMO", password=pw1)
+                st.session_state["user_id"] = auth.authenticate(db_path(), login_id, pw1).user_id
+                st.rerun()
+            except ValidationError as exc:
+                st.error(str(exc))
+    st.stop()
+
+user = auth.load_user(db_path(), st.session_state["user_id"]) if st.session_state.get("user_id") else None
+if user is None:
+    theme.page_header(date.today(), "로그인")
+    with st.form("login"):
+        login_id = st.text_input("아이디")
+        password = st.text_input("비밀번호", type="password")
+        if st.form_submit_button("로그인", type="primary"):
+            found = auth.authenticate(db_path(), login_id, password)
+            if found:
+                st.session_state.clear()
+                st.session_state["user_id"] = found.user_id
+                st.rerun()
+            st.error("아이디 또는 비밀번호가 맞지 않습니다.")
+    st.stop()
+
+service = Service(db_path(), access=user)
+can_write = user.can_write
 _people_count = len(service.people())
 # 앱 실행(재실행) 시마다 미처리 계약 만료 대상을 다시 확인한다.
 try:
@@ -34,9 +73,12 @@ except sqlite3.Error:
     pending_alerts = []
     st.sidebar.error("계약 만료 알림을 확인하지 못했습니다.")
 theme.sidebar_brand()
-page = theme.sidebar_nav(len(pending_alerts))
-actor = st.sidebar.text_input("변경 주체", value="로컬 담당자")
-st.sidebar.caption("이 값은 이력 기록용이며 로그인 인증 정보가 아닙니다.")
+page = theme.sidebar_nav(len(pending_alerts), allowed=theme.pages_for(user.role))
+actor = f"{user.name}({user.login})"                       # 변경 이력의 주체 = 로그인 사용자
+st.sidebar.caption(f"로그인: {user.label()}")
+if st.sidebar.button("로그아웃", key="logout"):
+    st.session_state.clear()
+    st.rerun()
 # 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
 if _people_count == 0:
     st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
@@ -415,7 +457,7 @@ elif page == "전체 인력 조회":
     st.divider()
     render_monthly_mm()
     st.divider()
-    if people:
+    if people and can_write:
         by_id = {r["id"]: r for r in people}
         with st.expander("인력 정보 수정 · 계정 ID 보완", expanded=bool(st.session_state.get("person_target"))):
             target = st.selectbox("수정할 인력", [None] + list(by_id), key="person_target",
@@ -445,6 +487,9 @@ elif page == "과제 투입 관리":
         st.markdown(f"**{title}** ({len(timeline[key])}건)")
         show_table(timeline[key], columns)
     st.caption(f"기준일 {timeline['today']} (Asia/Seoul) · 시작·종료일을 포함해 현재 투입을 판단합니다.")
+    if not can_write:
+        st.info("과제 리더는 조회만 할 수 있습니다. 수정이 필요하면 왼쪽 메뉴 '수정 요청'에서 PM·PMO에게 요청하세요.")
+        st.stop()
     by_id = {r["id"]: r for r in rows}
     target = st.selectbox(
         "등록 또는 수정할 투입", [None] + list(by_id),
@@ -534,6 +579,11 @@ elif page == "근무 환경 준비":
     if st.session_state.get("ck_context") != aid:
         st.session_state.pop("ck_pending", None)
         st.session_state["ck_context"] = aid
+    if not can_write:
+        st.dataframe([{"항목": r["item"], "상태": r["status"], "사유·메모": r["reason"]}
+                      for r in service.checklist(aid)], use_container_width=True, hide_index=True)
+        st.info("과제 리더는 조회만 할 수 있습니다. 상태 변경은 '수정 요청'으로 PM·PMO에게 요청하세요.")
+        st.stop()
 
     for index, row in enumerate(service.checklist(aid)):
         with st.container(border=True):
@@ -822,7 +872,7 @@ elif page == "계약 종료 알림":
             middle.markdown(f"**{alert['label']}**")
             middle.caption(f"종료일 {alert['end_date']} · 알림 시작 {alert['notify_from']}")
             right.write("연장 계약 등록됨" if alert["has_successor"] else "연장 계약 없음")
-            if action.button("확인", key=f"ack_{alert['id']}"):
+            if can_write and action.button("확인", key=f"ack_{alert['id']}"):
                 try:
                     service.acknowledge_alert(alert["id"], actor=actor)
                     st.session_state["saved_message"] = f"{alert['name']}의 계약 종료 알림을 확인 처리했습니다."
@@ -831,6 +881,82 @@ elif page == "계약 종료 알림":
                     st.error(str(exc))
                 except sqlite3.Error:
                     st.error("확인 처리를 저장하지 못했습니다. 다시 시도하세요.")
+
+elif page == "수정 요청":
+    st.subheader("수정 요청 남기기")
+    st.caption("과제 리더는 조회만 할 수 있습니다. 바꿀 내용이 있으면 여기에 남기면 PM·PMO가 처리합니다.")
+    projects = sorted({a["project"] for a in service.assignments() if a["project"]})
+    if not projects:
+        st.info("요청할 수 있는 과제가 없습니다.")
+    else:
+        project = st.selectbox("과제", projects, key="req_project")
+        with st.form("change_request", clear_on_submit=True):
+            in_project = {a["person_id"]: a for a in service.assignments() if a["project"] == project}
+            people_by_id = {p["id"]: p for p in service.people() if p["id"] in in_project}
+            person = st.selectbox("대상 인력 (선택)", [None] + list(people_by_id),
+                                  format_func=lambda i: "선택 안 함" if i is None else person_label(people_by_id[i]))
+            content = st.text_area("요청 내용", placeholder="예: 투입 종료일을 12월 31일로 연장해 주세요.")
+            if st.form_submit_button("요청 보내기", type="primary"):
+                try:
+                    service.create_change_request(project=project, content=content, person_id=person)
+                    st.session_state["saved_message"] = "수정 요청을 남겼습니다. PM·PMO가 처리하면 상태가 바뀝니다."
+                    st.rerun()
+                except ValidationError as exc:
+                    st.error(str(exc))
+    st.subheader("요청 목록" if can_write else "내가 남긴 요청")
+    requests = service.change_requests()
+    if not requests:
+        st.info("요청이 없습니다.")
+    for r in requests:
+        with st.container(border=True):
+            head, state = st.columns([4, 1])
+            head.markdown(f"**{r['project']}** · {r['person_name'] or '대상 인력 없음'} · {r['requester_name']}")
+            state.markdown(f"**{r['status']}**")
+            st.write(r["content"])
+            st.caption(f"요청 {r['created_at'][:16].replace('T', ' ')}"
+                       + (f" · 처리 {r['handled_by']} {r['handled_at'][:16].replace('T', ' ')}" if r["handled_at"] else "")
+                       + (f" · 메모: {r['note']}" if r["note"] else ""))
+            if can_write and r["status"] == "요청":
+                note = st.text_input("처리 메모", key=f"req_note_{r['id']}")
+                done, reject = st.columns(2)
+                for column, result in ((done, "처리 완료"), (reject, "반려")):
+                    if column.button(result, key=f"req_{result}_{r['id']}"):
+                        try:
+                            service.handle_change_request(r["id"], result, note)
+                            st.session_state["saved_message"] = f"요청을 '{result}'로 처리했습니다."
+                            st.rerun()
+                        except (ValidationError, ConflictError) as exc:
+                            st.error(str(exc))
+
+elif page == "사용자 관리":
+    st.subheader("사용자 목록")
+    try:
+        user_rows = auth.users(db_path(), user)
+    except ValidationError as exc:
+        st.error(str(exc))
+        st.stop()
+    st.dataframe([{"아이디": u["login"], "이름": u["name"], "역할": u["role"],
+                   "담당 과제": ", ".join(u["projects"]) or ("전체" if u["role"] != "과제 리더" else ""),
+                   "사용": "예" if u["active"] else "아니오"} for u in user_rows],
+                 use_container_width=True, hide_index=True)
+    st.subheader("사용자 추가")
+    st.caption("PMO·PM은 전체 과제 조회·등록·수정, 과제 리더는 담당 과제(투입 과제)의 인력·단가 조회와 수정 요청만 할 수 있습니다.")
+    all_projects = sorted({a["project"] for a in service.assignments() if a["project"]})
+    with st.form("new_user", clear_on_submit=True):
+        a, b = st.columns(2)
+        new_login = a.text_input("아이디")
+        new_name = b.text_input("이름")
+        role = st.selectbox("역할", list(auth.ROLES))
+        projects = st.multiselect("담당 과제 (과제 리더만)", all_projects)
+        pw = st.text_input("초기 비밀번호 (8자 이상)", type="password")
+        if st.form_submit_button("사용자 추가", type="primary"):
+            try:
+                auth.create_user(db_path(), login=new_login, name=new_name, role=role, password=pw,
+                                 projects=projects if role == "과제 리더" else (), actor=user)
+                st.session_state["saved_message"] = f"{new_name}({role}) 계정을 만들었습니다."
+                st.rerun()
+            except ValidationError as exc:
+                st.error(str(exc))
 
 else:
     st.subheader("변경 이력")

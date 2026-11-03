@@ -5,6 +5,7 @@ import pytest
 
 from pmo.service import Service
 from tests.test_schema_v6 import intake
+from tests.conftest import login_app  # noqa: E402
 
 TODAY = date(2026, 10, 20)
 
@@ -62,7 +63,8 @@ def test_assignment_page_shows_monthly_columns(monkeypatch, tmp_path):
     path = tmp_path / "ui-mm.db"
     seed_demo(Service(path), today())
     monkeypatch.setenv("PMO_DB_PATH", str(path))
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
+    app = login_app(AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30),
+                    path).run()
     from ui.theme import PAGES
     app.button(key=f"nav_{PAGES.index('전체 인력 조회')}").click().run()   # 인력 관리 › 전체 인력 조회
     assert not app.exception

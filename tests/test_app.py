@@ -4,13 +4,15 @@ from datetime import date
 from streamlit.testing.v1 import AppTest
 
 from pmo.service import Service
+from pmo.config import db_path  # noqa: E402
+from tests.conftest import login_app  # noqa: E402
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
 
 
 def open_app(page="신규 인력 등록"):
     """앱을 열고 메뉴를 고른다. 첫 화면은 홈(AI Agent)이다."""
-    app = AppTest.from_file(str(APP), default_timeout=30).run()
+    app = login_app(AppTest.from_file(str(APP), default_timeout=30), db_path()).run()
     go(app, page)
     return app
 
@@ -49,7 +51,7 @@ def test_person_preview_cancel_save_edit_restart(monkeypatch, tmp_path):
     assert not app.exception
     assert len(Service(path).people()) == 1
     app.run()
-    assert len(Service(path).history()) == 2
+    assert len([h for h in Service(path).history() if h["entity"] != "users"]) == 2   # 테스트 계정 생성 이력 제외
     person_id = Service(path).people()[0]["id"]
     assert Service(path).people()[0]["account_id"] is None
     assert Service(path).assignments()[0]["purchase_rate"] is None
@@ -99,4 +101,4 @@ def test_assignment_preview_validation_save_and_edit(monkeypatch, tmp_path):
     assert not app.exception
     assert service.assignments()[0]["project"] == "수정된 가상 과제"
     go(app, "변경 이력")
-    assert len(app.expander) == 3
+    assert len(app.expander) == 4                                     # 인력 1 + 투입 2 + 테스트 계정 생성 1

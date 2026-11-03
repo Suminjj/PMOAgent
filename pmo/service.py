@@ -1,8 +1,10 @@
 """Validated business operations shared by forms and future LLM tools."""
+import contextlib
 import functools
 import hashlib
 import json
 import sqlite3
+import tempfile
 import time
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -16,6 +18,7 @@ from pmo.contracts import (
     CONTRACT_CATEGORIES, expiry_state, month_range, notify_from, validate_contract,
 )
 from pmo.db import connection, initialize
+from pmo.access import AccessDenied
 from pmo.errors import ConflictError, ValidationError  # 기존 import 경로(pmo.service) 유지
 from pmo.mm import calculate_full_time
 
@@ -142,16 +145,149 @@ def logged(operation: str):
     return decorator
 
 
+def writes(fn):
+    """등록·수정·삭제 업무 함수: 로그인 사용자가 PMO·PM이 아니면 실행하지 않는다(v2 권한)."""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        self._require_write()
+        return fn(self, *args, **kwargs)
+    return wrapper
+
+
 class Service:
-    def __init__(self, path: Path, clock=None):
-        """clock: 오늘 날짜(Asia/Seoul)를 돌려주는 함수. 테스트에서 날짜를 고정할 때 사용한다."""
+    def __init__(self, path: Path, clock=None, access=None):
+        """clock: 오늘 날짜(Asia/Seoul)를 돌려주는 함수. 테스트에서 날짜를 고정할 때 사용한다.
+
+        access: 로그인한 사용자의 접근 범위(pmo.access.Access). 화면·Agent는 반드시 넘긴다(v2 권한).
+        None은 명령어·테스트·평가처럼 사람이 로그인하지 않는 내부 실행용(전체 접근)이다.
+        """
         self.path = Path(path)
         self.clock = clock or kst_today
+        self.access = access
         initialize(self.path)
+
+    # ------------------------------------------------------------------
+    # v2 데이터 접근 권한: 과제 리더는 담당 과제(투입 과제)의 투입과 그 인력·계약만 본다
+    # ------------------------------------------------------------------
+    def _scoped(self) -> bool:
+        return self.access is not None and not self.access.all_projects
+
+    def _require_write(self) -> None:
+        if self.access is not None:
+            self.access.require_write()
+
+    def _visible(self) -> tuple[set, set]:
+        """(볼 수 있는 투입 id, 볼 수 있는 인력 id). 전체 접근이면 호출하지 않는다."""
+        with connection(self.path) as con:
+            rows = con.execute("SELECT id, person_id, project FROM assignments").fetchall()
+        mine = [r for r in rows if self.access.sees_project(r["project"])]
+        return {r["id"] for r in mine}, {r["person_id"] for r in mine}
+
+    def _filter_people(self, rows: list[dict], key: str = "id") -> list[dict]:
+        if not self._scoped():
+            return rows
+        _, persons = self._visible()
+        return [r for r in rows if r[key] in persons]
+
+    def _filter_contracts(self, rows: list[dict], assignment_key: str = "assignment_id") -> list[dict]:
+        """연결 투입이 있으면 그 투입이 담당 과제일 때만, 연결이 없으면 인력이 담당 과제에 있을 때만 보인다."""
+        if not self._scoped():
+            return rows
+        assignments, persons = self._visible()
+        def visible(r):
+            return r[assignment_key] in assignments if r.get(assignment_key) else r["person_id"] in persons
+        return [r for r in rows if visible(r)]
+
+    def require_assignment(self, assignment_id: str) -> None:
+        if self._scoped() and assignment_id not in self._visible()[0]:
+            raise AccessDenied("조회 권한이 없는 투입입니다.")
 
     def people(self) -> list[dict]:
         with connection(self.path) as con:
-            return [dict(r) for r in con.execute("SELECT * FROM people ORDER BY name, id")]
+            rows = [dict(r) for r in con.execute("SELECT * FROM people ORDER BY name, id")]
+        return self._filter_people(rows)
+
+    @contextlib.contextmanager
+    def read_snapshot(self, tables=("people", "assignments", "contracts", "contract_alerts", "checklist")):
+        """Text-to-SQL용 DB 경로. 전체 접근이면 원래 DB, 과제 리더면 볼 수 있는 행만 담은 임시 DB.
+
+        LLM이 만든 SQL이 WHERE를 빠뜨려도 권한 밖 행은 아예 없는 DB에서 실행되므로 보이지 않는다(행 단위 권한).
+        """
+        if not self._scoped():
+            yield self.path
+            return
+        assignments, persons = self._visible()
+        with connection(self.path) as con:
+            schema = {r["name"]: r["sql"] for r in con.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='table'") if r["name"] in tables}
+            data = {t: [dict(r) for r in con.execute(f"SELECT * FROM {t}")] for t in schema}
+        contracts = {c["id"] for c in self._filter_contracts(data.get("contracts", []))}
+        keep = {"people": lambda r: r["id"] in persons,
+                "assignments": lambda r: r["id"] in assignments,
+                "contracts": lambda r: r["id"] in contracts,
+                "contract_alerts": lambda r: r["contract_id"] in contracts,
+                "checklist": lambda r: r["assignment_id"] in assignments}
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot = Path(tmp) / "scoped.db"
+            with contextlib.closing(sqlite3.connect(snapshot)) as out:
+                for table, ddl in schema.items():
+                    out.execute(ddl)
+                    rows = [r for r in data[table] if keep[table](r)]
+                    if rows:
+                        cols = list(rows[0])
+                        out.executemany(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                                        [tuple(r[c] for c in cols) for r in rows])
+                out.commit()
+            yield snapshot
+
+    # ------------------------------------------------------------------
+    # 과제 리더의 수정 요청 (리더는 조회만, 수정은 PM·PMO에게 요청)
+    # ------------------------------------------------------------------
+    REQUEST_STATUSES = ("요청", "처리 완료", "반려")
+
+    def create_change_request(self, *, project: str, content: str, person_id: str | None = None) -> int:
+        """로그인 사용자가 수정 요청을 남긴다. 과제 리더는 담당 과제에 대해서만."""
+        if self.access is None:
+            raise AccessDenied("로그인한 사용자만 수정 요청을 남길 수 있습니다.")
+        project, content = required(project, "과제"), required(content, "요청 내용")
+        if not self.access.sees_project(project):
+            raise AccessDenied("담당 과제에 대해서만 수정 요청을 남길 수 있습니다.")
+        if person_id and person_id not in {r["id"] for r in self.people()}:
+            raise AccessDenied("조회 권한이 없는 인력입니다.")
+        with connection(self.path) as con:
+            cur = con.execute("""INSERT INTO change_requests(requester_id, requester_name, person_id, project,
+                                 content, created_at) VALUES (?,?,?,?,?,?)""",
+                              (self.access.user_id, self.access.name, person_id or None, project, content,
+                               datetime.now(TIMEZONE).isoformat()))
+            return int(cur.lastrowid)
+
+    def change_requests(self, status: str | None = None) -> list[dict]:
+        """PM·PMO는 전체, 과제 리더는 자기가 남긴 요청만."""
+        sql = """SELECT r.*, p.name AS person_name FROM change_requests r
+                 LEFT JOIN people p ON p.id=r.person_id"""
+        where, params = [], []
+        if self.access is not None and not self.access.can_write:
+            where.append("r.requester_id=?")
+            params.append(self.access.user_id)
+        if status:
+            where.append("r.status=?")
+            params.append(status)
+        sql += (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY r.status='요청' DESC, r.id DESC"
+        with connection(self.path) as con:
+            return [dict(r) for r in con.execute(sql, params)]
+
+    @writes
+    def handle_change_request(self, request_id: int, status: str, note: str = "") -> None:
+        if status not in ("처리 완료", "반려"):
+            raise ValidationError("처리 결과는 '처리 완료' 또는 '반려'입니다.")
+        handler = self.access.name if self.access else "내부"
+        with connection(self.path) as con:
+            done = con.execute("""UPDATE change_requests SET status=?, note=?, handled_by=?, handled_at=?
+                                  WHERE id=? AND status='요청'""",
+                               (status, str(note or "").strip(), handler, datetime.now(TIMEZONE).isoformat(),
+                                int(request_id))).rowcount
+        if not done:
+            raise ConflictError("이미 처리된 요청입니다. 목록을 새로 확인하세요.")
 
     def assignments(self, person_id: str | None = None) -> list[dict]:
         sql = """SELECT a.*, p.name, p.company, p.category FROM assignments a
@@ -161,9 +297,12 @@ class Service:
             sql += " WHERE a.person_id=?"
             params = (person_id,)
         with connection(self.path) as con:
-            return [dict(r) for r in con.execute(sql + " ORDER BY a.start_date, a.id", params)]
+            rows = [dict(r) for r in con.execute(sql + " ORDER BY a.start_date, a.id", params)]
+        return [r for r in rows if self.access.sees_project(r["project"])] if self._scoped() else rows
 
     def history(self) -> list[dict]:
+        if self._scoped():
+            raise AccessDenied("변경 이력은 PM·PMO만 볼 수 있습니다.")
         with connection(self.path) as con:
             return [dict(r) for r in con.execute("SELECT * FROM audit ORDER BY id DESC")]
 
@@ -181,11 +320,13 @@ class Service:
         )]
 
     @logged("save_person")
+    @writes
     def save_person(self, data: dict, *, token: str, actor: str,
                     expected_version: int | None = None) -> str:
         return self._save("people", validate_person(data), token, actor, expected_version)
 
     @logged("save_intake")
+    @writes
     def save_intake(self, data: dict, *, token: str, actor: str) -> str:
         """Atomically register a person, first assignment, checklist and audit."""
         data = validate_intake(data)
@@ -264,6 +405,7 @@ class Service:
         )
 
     @logged("save_assignment")
+    @writes
     def save_assignment(self, data: dict, *, token: str, actor: str,
                         assignment_id: str | None = None,
                         expected_version: int | None = None,
@@ -322,6 +464,8 @@ class Service:
             pass
 
     def run_log(self, limit: int = 200) -> list[dict]:
+        if self._scoped():
+            raise AccessDenied("실행 기록은 PM·PMO만 볼 수 있습니다.")
         with connection(self.path) as con:
             return [dict(r) for r in con.execute(
                 "SELECT * FROM run_log ORDER BY id DESC LIMIT ?", (limit,))]
@@ -333,9 +477,10 @@ class Service:
         """이름 일부로 후보를 찾는다. 이름만으로 확정하지 않고 관리번호로 대상을 고른다."""
         keyword = required(name, "이름")
         with connection(self.path) as con:
-            return [dict(r) for r in con.execute(
+            rows = [dict(r) for r in con.execute(
                 "SELECT * FROM people WHERE name LIKE ? ORDER BY name, id",
                 (f"%{keyword}%",))]
+        return self._filter_people(rows)          # 권한 밖 인력은 '없는 사람'처럼 보인다(존재도 알리지 않음)
 
     @staticmethod
     def fiscal_year_of(day: date) -> int:
@@ -447,7 +592,7 @@ class Service:
             sql, params = sql + " WHERE c.person_id=?", (person_id,)
         with connection(self.path) as con:
             rows = [dict(r) for r in con.execute(sql + " ORDER BY c.end_date, p.name, c.id", params)]
-        return self._with_state(rows, today)
+        return self._with_state(self._filter_contracts(rows), today)
 
     def contracts_ending(self, year: int, month: int, company: str | None = None,
                          today: date | None = None) -> list[dict]:
@@ -460,7 +605,7 @@ class Service:
             sql, params = sql + " AND lower(trim(c.company))=lower(?)", params + (company,)
         with connection(self.path) as con:
             rows = [dict(r) for r in con.execute(sql + " ORDER BY c.end_date, p.name", params)]
-        return self._with_state(rows, today)
+        return self._with_state(self._filter_contracts(rows), today)
 
     def _with_state(self, rows: list[dict], today: date | None) -> list[dict]:
         day = today or self.clock()
@@ -472,6 +617,7 @@ class Service:
         return rows
 
     @logged("save_contract")
+    @writes
     def save_contract(self, data: dict, *, token: str, actor: str,
                       contract_id: str | None = None,
                       expected_version: int | None = None) -> str:
@@ -486,6 +632,7 @@ class Service:
             row = con.execute("SELECT result_id FROM requests WHERE token=?", (f"import:{file_hash}",)).fetchone()
         return json.loads(row["result_id"]) if row else None
 
+    @writes
     def import_batch(self, plan: dict, *, token: str, actor: str) -> dict:
         """실행 기록에는 파일 내용 대신 건수만 남긴다(_import_batch 참고)."""
         started, t0 = datetime.now(TIMEZONE).isoformat(), time.perf_counter()
@@ -599,14 +746,16 @@ class Service:
         with connection(self.path) as con:
             rows = [dict(r) for r in con.execute(
                 """SELECT a.*, c.person_id, c.company, c.contract_no, c.status AS contract_status,
+                          c.assignment_id AS contract_assignment_id,
                           c.start_date AS contract_start, p.name, p.category,
                           EXISTS(SELECT 1 FROM contracts n WHERE n.previous_contract_id=c.id) AS has_successor
                    FROM contract_alerts a JOIN contracts c ON c.id=a.contract_id
                    JOIN people p ON p.id=c.person_id
                    WHERE a.status='미확인' ORDER BY a.end_date, p.name""")]
-        return self._with_state(rows, day)
+        return self._with_state(self._filter_contracts(rows, "contract_assignment_id"), day)
 
     @logged("acknowledge_alert")
+    @writes
     def acknowledge_alert(self, alert_id: int, *, actor: str) -> int:
         """알림 확인만 기록한다. 계약 갱신 완료와는 별도 상태다."""
         actor = required(actor, "변경 주체")
@@ -631,6 +780,7 @@ class Service:
         예전 데이터에 빠진 항목이 있으면 exists=False인 '미진행'으로 보여주고, 처음 저장할 때 만든다.
         """
         assignment_id = required(assignment_id, "투입 관리번호")
+        self.require_assignment(assignment_id)
         with connection(self.path) as con:
             rows = {r["item"]: dict(r) for r in con.execute(
                 "SELECT * FROM checklist WHERE assignment_id=?", (assignment_id,))}
@@ -654,6 +804,8 @@ class Service:
             rows = {}
             for r in con.execute("SELECT assignment_id, item, status FROM checklist"):
                 rows.setdefault(r["assignment_id"], {})[r["item"]] = r["status"]
+        if self._scoped():
+            assignments = [a for a in assignments if self.access.sees_project(a["project"])]
         result = []
         for a in assignments:
             statuses = {item: rows.get(a["id"], {}).get(item, "미진행") for item in CHECKLIST_ITEMS}
@@ -682,6 +834,7 @@ class Service:
         return dict(assignment), dict(row)
 
     @logged("update_checklist_item")
+    @writes
     def update_checklist_item(self, assignment_id: str, item: str, status: str, reason: str = "", *,
                               actual_done: bool = False, token: str, actor: str,
                               expected_version: int) -> str:
@@ -713,6 +866,7 @@ class Service:
             return entity_id
 
     @logged("create_checklist_draft")
+    @writes
     def create_checklist_draft(self, assignment_id: str, item: str, *, actor: str) -> str:
         """신청 초안을 만들어 저장한다. 상태는 바꾸지 않는다(초안 ≠ 실제 신청)."""
         actor = required(actor, "변경 주체")
@@ -732,6 +886,7 @@ class Service:
     # 구매계약 삭제 (정해진 업무 함수로만 삭제한다)
     # ------------------------------------------------------------------
     @logged("delete_contract")
+    @writes
     def delete_contract(self, contract_id: str, *, token: str, actor: str, expected_version: int) -> str:
         """계약 한 건과 그 알림을 삭제한다. 연장(후속) 계약이 가리키는 계약은 삭제하지 않는다.
 

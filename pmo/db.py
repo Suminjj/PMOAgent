@@ -35,6 +35,27 @@ CREATE TABLE IF NOT EXISTS run_log (
 );
 """
 
+# v7: 데이터 접근 권한 (사용자·역할·담당 과제, 과제 리더의 수정 요청). 11/03 담당자: 역할은 PMO·PM·과제 리더
+V7_TABLES = """
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('PMO','PM','과제 리더')),
+    password_hash TEXT NOT NULL, salt TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS user_projects (
+    user_id TEXT NOT NULL REFERENCES users(id), project TEXT NOT NULL,
+    PRIMARY KEY(user_id, project)
+);
+CREATE TABLE IF NOT EXISTS change_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id TEXT NOT NULL REFERENCES users(id), requester_name TEXT NOT NULL,
+    person_id TEXT REFERENCES people(id), project TEXT NOT NULL, content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT '요청' CHECK(status IN ('요청','처리 완료','반려')),
+    created_at TEXT NOT NULL, handled_by TEXT, handled_at TEXT, note TEXT
+);
+"""
+
 # v6: 컨설팅 인력은 등급 없이 저장(grade NULL 허용), 매출귀속팀(revenue_team) 추가, 인력 직무(people.job_role) 추가
 ASSIGNMENTS_V6 = """CREATE TABLE IF NOT EXISTS {name} (
     id TEXT PRIMARY KEY, person_id TEXT NOT NULL REFERENCES people(id),
@@ -72,9 +93,10 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE TABLE IF NOT EXISTS requests (
     token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
 );
-""".replace("{ASSIGNMENTS}", ASSIGNMENTS_V6.format(name="assignments")) + V4_TABLES + "PRAGMA user_version = 6;"
+""".replace("{ASSIGNMENTS}", ASSIGNMENTS_V6.format(name="assignments")) + V4_TABLES + V7_TABLES + \
+    "PRAGMA user_version = 7;"
 
-LATEST_VERSION = 6
+LATEST_VERSION = 7
 # v5: 체크리스트 상태 변경 지원 (버전 검사, 신청 초안, 실제 신청 완료 시각, 처리자)
 V5_CHECKLIST_COLUMNS = ("version INTEGER NOT NULL DEFAULT 1", "draft TEXT", "drafted_at TEXT",
                         "applied_at TEXT", "updated_at TEXT", "updated_by TEXT")
@@ -112,6 +134,9 @@ def initialize(path: Path) -> None:
             version = 5
         if version == 5:
             migrate_v5(con, path)
+            version = 6
+        if version == 6:
+            migrate_v6(con, path)
             return
         tables = con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -253,3 +278,23 @@ def migrate_v5(con: sqlite3.Connection, path: Path) -> None:
         raise
     finally:
         con.execute("PRAGMA foreign_keys = ON")
+
+
+def migrate_v6(con: sqlite3.Connection, path: Path) -> None:
+    """사용자·담당 과제·수정 요청 표를 더한다(기존 표는 그대로). 시작 전에 백업한다."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        if con.execute("PRAGMA user_version").fetchone()[0] >= 7:
+            con.commit()
+            return
+        backup = path.with_name(path.name + ".backup-v6-" + uuid4().hex[:8] + ".db")
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
+            source.backup(destination)
+        for statement in V7_TABLES.split(";"):
+            if statement.strip():
+                con.execute(statement)
+        con.execute("PRAGMA user_version = 7")
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise

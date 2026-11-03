@@ -56,6 +56,7 @@ PROPOSAL_NOTE = ("저장하지 않았습니다. 화면 오른쪽에 '현재 → 
 def _plan(action: str):
     """LLM이 넣은 값으로 변경 계획(현재 → 변경)을 만든다. 저장하지 않는다(pmo/agent/actions.py)."""
     def handler(service: Service, args: dict) -> dict:
+        service._require_write()      # v2: 과제 리더에게는 확인 카드도 만들지 않는다(수정 요청 안내)
         return {"plan": build_plan(service, action, args), "message": PROPOSAL_NOTE}
     return handler
 INT = {"type": "integer"}
@@ -85,7 +86,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "LlamaIndex Text-to-SQL로 조회한다. question에 조회할 내용을 한국어 문장으로 넣는다. "
          "읽기 전용 SELECT만 실행되며 등록·수정·삭제에는 쓸 수 없다.",
          _obj({"question": STR}, ("question",)),
-         handler=lambda s, a: query_database(s.path, s.clock(), a["question"])),
+         handler=lambda s, a: _query_database(s, a["question"])),
     # --- 등록·수정·삭제 제안: 값만 채우고 저장하지 않는다 ---
     Tool("prepare_checklist_update", "근무 환경 준비 항목의 상태 변경을 준비한다(저장 안 함). "
          "투입이 여러 건이면 project에 과제명을 넣는다. 사용자가 화면에서 확인해야 저장된다.",
@@ -137,6 +138,12 @@ def _pid(service: Service, value: str) -> str:
     작은 모델이 find_people 없이 이름을 넣으면 빈 결과가 나오고, 모델이 '모두 완료'처럼 지어내 답하던 문제를 막는다.
     """
     return _person(service, {"person_id": value})["id"]
+
+
+def _query_database(service: Service, question: str) -> dict:
+    """v2 권한: 과제 리더는 볼 수 있는 행만 담은 임시 DB에서 Text-to-SQL을 실행한다."""
+    with service.read_snapshot() as path:
+        return query_database(path, service.clock(), question)
 
 
 def _checklist_status(service: Service, person_id: str | None) -> list[dict]:

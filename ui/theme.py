@@ -20,7 +20,11 @@ NAV_GROUPS = [
     ("검수 관리", ":material/payments:", ["검수하기"]),
     ("계약 종료 알림", ":material/notifications:", []),
     ("변경 이력", ":material/history:", []),
+    ("수정 요청", ":material/rate_review:", []),          # v2: 과제 리더 → PM·PMO
+    ("사용자 관리", ":material/manage_accounts:", []),     # v2: PMO·PM
 ]
+# v2 역할별 메뉴 (11/03 담당자): 과제 리더는 조회 메뉴와 수정 요청만. 등록·수정 화면과 변경 이력·사용자 관리는 숨긴다.
+LEADER_HIDDEN = {"신규 인력 등록", "계약 등록·수정", "변경 이력", "사용자 관리"}
 SUB_ICONS = {
     "전체 인력 조회": ":material/table_view:", "신규 인력 등록": ":material/person_add:",
     "과제 투입 관리": ":material/work:", "전체 계약 조회": ":material/table_view:",
@@ -139,12 +143,17 @@ def _go(page: str) -> None:
     st.session_state["nav_page"] = page
 
 
-def sidebar_nav(alerts: int = 0) -> str:
+def pages_for(role: str) -> list[str]:
+    return [p for p in PAGES if not (role == "과제 리더" and p in LEADER_HIDDEN)]
+
+
+def sidebar_nav(alerts: int = 0, allowed: list[str] | None = None) -> str:
     """시안 A의 왼쪽 메뉴: 메뉴 버튼(key nav_0~nav_9). 지금 화면은 primary 버튼으로 강조한다.
 
     인력 관리·구매계약 관리는 그룹 제목 아래에 하위 메뉴 버튼을 들여 써서 보여준다.
     """
-    if st.session_state.get("nav_page") not in PAGES:   # 예전 메뉴 이름이 남은 세션은 홈으로
+    allowed = allowed or PAGES
+    if st.session_state.get("nav_page") not in allowed:   # 예전 메뉴 이름·권한 밖 메뉴는 홈으로
         st.session_state["nav_page"] = PAGES[0]
     current = st.session_state["nav_page"]
 
@@ -154,12 +163,16 @@ def sidebar_nav(alerts: int = 0) -> str:
                   on_click=_go, args=(page,))
 
     with st.sidebar:
-        for group, icon, subs in NAV_GROUPS:
+        for index, (group, _icon, all_subs) in enumerate(NAV_GROUPS):
+            subs = [p for p in all_subs if p in allowed]
+            if not all_subs:
+                if group in allowed:
+                    button(group)
+                continue
             if not subs:
-                button(group)
                 continue
             st.markdown(f'<div class="pmo-nav-group">{escape(group)}</div>', unsafe_allow_html=True)
-            with st.container(key=f"navgroup_{NAV_GROUPS.index((group, icon, subs))}"):
+            with st.container(key=f"navgroup_{index}"):
                 for page in subs:
                     button(page)
     return current
