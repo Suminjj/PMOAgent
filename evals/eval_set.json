@@ -869,16 +869,42 @@
       "agent": "staff",
       "case": "월 하나만 매출귀속 프로젝트 변경",
       "question": "신협력 12월 매출귀속 프로젝트를 30133686-D047로 바꿔줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "신협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "prepare_assignment_update",
+          "args": {
+            "person_id": "EV-17",
+            "month": "2026-12",
+            "revenue_project": "30133686-D047"
+          },
+          "expect": {
+            "ok": true,
+            "action": "assignment_update"
+          }
+        }
+      ],
       "answer": {
         "target": "추가 기능",
-        "hold_ok": true,
+        "must_include": [
+          "30133686-D047"
+        ],
         "must_not_include": [
           "변경되었습니다",
           "저장했습니다",
           "바꿨습니다"
         ],
-        "note": "기대 동작(투입 수정 Agent 도구 구현 후): 12월 투입(2026-12-01~2026-12-31)만 30133686-D046 → 30133686-D047 확인 카드. 10·11월 투입은 그대로. 도구 구현 전(v1~v3): 지어내지 말고 '과제 투입 관리' 화면 안내."
+        "note": "확인 카드: 12월 투입(2026-12-01~2026-12-31)만 30133686-D046 → 30133686-D047. 10·11월 투입은 그대로. 저장했다고 말하지 않는다."
       }
     },
     {
@@ -983,16 +1009,51 @@
       "agent": "staff",
       "case": "인력 교체",
       "question": "전표작성 자동화 류협력을 12월 1일부터 노협력(L6)으로 교체해줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "류협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "노협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "prepare_assignment_replace",
+          "args": {
+            "person_id": "EV-19",
+            "new_person_id": "EV-20",
+            "start_date": "2026-12-01",
+            "grade": "L6"
+          },
+          "expect": {
+            "ok": true,
+            "action": "assignment_replace"
+          }
+        }
+      ],
       "answer": {
         "target": "추가 기능",
-        "hold_ok": true,
         "must_not_include": [
           "교체했습니다",
           "변경되었습니다",
           "저장했습니다"
         ],
-        "note": "기대 동작(투입 등록·수정 Agent 도구 구현 후): 류협력 투입 종료일 2027-01-31 → 2026-11-30, 노협력 신규 투입 전표작성 자동화 2026-12-01~2027-01-31(매출귀속 프로젝트 30133686-D047를 이어받을지 확인), 류협력 계약 C-2026-108 종료일 변경·노협력 계약 등록 필요 안내. 한 확인 카드로 함께 보여준다."
+        "note": "확인 카드 한 장: 류협력 투입 종료일 2027-01-31 → 2026-11-30, 노협력 신규 투입 전표작성 자동화 2026-12-01~2027-01-31(매출귀속 프로젝트 30133686-D047 이어받음, 등급 L6), 류협력 계약 C-2026-108 종료일 2026-11-30, 노협력 계약 준비(계약번호 미발급)."
       }
     },
     {
@@ -1000,16 +1061,39 @@
       "agent": "staff",
       "case": "다른 과제로 이동",
       "question": "명협력 12월 1일부터 APC Analysis로 옮겨줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "명협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "prepare_assignment_transfer",
+          "args": {
+            "person_id": "EV-21",
+            "to_project": "APC Analysis",
+            "start_date": "2026-12-01"
+          },
+          "expect": {
+            "ok": true,
+            "action": "assignment_transfer"
+          }
+        }
+      ],
       "answer": {
         "target": "추가 기능",
-        "hold_ok": true,
         "must_not_include": [
           "옮겼습니다",
           "변경되었습니다",
           "저장했습니다"
         ],
-        "note": "기대 동작(투입 등록·수정 Agent 도구 구현 후): Soft Lab 고도화 투입 종료일 2027-02-28 → 2026-11-30, APC Analysis 신규 투입 2026-12-01~2027-02-28. 새 투입의 매출귀속 프로젝트는 되묻거나 미정으로, 계약 C-2026-206의 연결 투입 처리 안내."
+        "note": "확인 카드: Soft Lab 고도화 투입 종료일 2027-02-28 → 2026-11-30, APC Analysis 신규 투입 2026-12-01~2027-02-28(매출귀속 프로젝트 미정, 등급·단가·준비 상태는 이어받음), 계약 C-2026-206은 연결 투입을 풀어 두 투입을 모두 덮음."
       }
     },
     {

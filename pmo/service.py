@@ -315,6 +315,70 @@ class Service:
             result["id"] = assignment_id
         return self._save("assignments", result, token, actor, expected_version, overlap_reviewed)
 
+    @logged("apply_assignment_changes")
+    def apply_assignment_changes(self, changes: list[dict], *, token: str, actor: str) -> list[str]:
+        """투입·계약 여러 건을 한 트랜잭션으로 저장한다(전부 또는 없음). Agent의 교체·이동·투입 나누기용.
+
+        changes: 순서대로 실행할 변경. 각 항목은
+          {"table": "assignments"|"contracts", "data": 저장할 값, "expected_version": 수정이면 현재 버전,
+           "checklist_from": (새 투입만) 근무 환경 준비 상태를 복사할 기존 투입 id}
+        새 행은 data["id"]를 미리 정해 둘 수 있다(같은 묶음의 계약이 새 투입을 가리킬 때).
+        기간을 줄이는 수정을 새 투입보다 먼저 두면 기간 중복 검사가 저장 순서대로 맞게 동작한다.
+        """
+        token, actor = required(token, "저장 요청 ID"), required(actor, "변경 주체")
+        if not changes:
+            raise ValidationError("저장할 변경이 없습니다.")
+        prepared = []
+        for change in changes:
+            table, raw = change.get("table"), dict(change.get("data") or {})
+            if table == "assignments":
+                data = validate_assignment(raw)
+            elif table == "contracts":
+                data = validate_contract(raw)
+            else:
+                raise ValidationError("투입·계약만 함께 저장할 수 있습니다.")
+            if raw.get("id"):
+                data["id"] = raw["id"]
+            prepared.append((table, data, change.get("expected_version"), change.get("checklist_from")))
+        fingerprint = self._fingerprint(["assignment_changes", prepared, actor])
+        try:
+            with connection(self.path) as con:
+                con.execute("BEGIN IMMEDIATE")
+                previous = self._previous_request(con, token, fingerprint)
+                if previous is not None:
+                    return json.loads(previous)
+                ids = []
+                for table, data, expected_version, checklist_from in prepared:
+                    if table == "assignments":
+                        person = con.execute("SELECT category FROM people WHERE id=?",
+                                             (data["person_id"],)).fetchone()
+                        if not person:
+                            raise ValidationError("등록된 인력을 선택하세요.")
+                        check_grade(person["category"], data.get("grade"))
+                        if self._overlaps(con, data, data.get("id")):
+                            raise ValidationError("투입 기간이 같은 인력의 다른 투입과 겹칩니다. 메뉴 화면에서 검토하세요.")
+                    else:
+                        self._check_contract_links(con, data)
+                    entity_id = self._write(con, table, data, actor, expected_version)
+                    if table == "assignments" and checklist_from and expected_version is None:
+                        self._copy_checklist(con, checklist_from, entity_id, actor)
+                    ids.append(entity_id)
+                self._sync_alerts(con, self.clock())
+                con.execute("INSERT INTO requests VALUES (?,?,?)", (token, fingerprint, json.dumps(ids)))
+                return ids
+        except sqlite3.IntegrityError as exc:
+            raise ValidationError("저장할 정보의 중복 또는 연결 관계를 확인하세요.") from exc
+
+    @staticmethod
+    def _copy_checklist(con, source_id: str, target_id: str, actor: str) -> None:
+        """같은 사람의 투입을 나누거나 과제를 옮길 때 근무 환경 준비 상태를 새 투입에 이어 쓴다."""
+        now = datetime.now(TIMEZONE).isoformat()
+        for row in con.execute("SELECT item, status, reason, applied_at FROM checklist WHERE assignment_id=?",
+                               (source_id,)).fetchall():
+            con.execute("""UPDATE checklist SET status=?, reason=?, applied_at=?, updated_at=?, updated_by=?
+                           WHERE assignment_id=? AND item=?""",
+                        (row["status"], row["reason"], row["applied_at"], now, actor, target_id, row["item"]))
+
     def _save(self, table: str, data: dict, token: str, actor: str,
               expected_version: int | None, overlap_reviewed: bool = False) -> str:
         token, actor = required(token, "저장 요청 ID"), required(actor, "변경 주체")

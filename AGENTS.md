@@ -215,8 +215,20 @@
 - [제안] 확인 카드만 만든 턴에 모델이 '변경되었습니다'처럼 답하면 코드가 '변경 준비를 마쳤습니다(아직 저장 전)'로 고친다.
 - [제안] 사용자만 알 수 있는 값(계정 ID, 새 계약번호)은 사용자 문장(이번 질문·최근 사용자 메시지)에 그대로 있어야 카드를 만든다.
   모델이 할 수 없는 요청을 다른 저장 도구로 대신 처리하며 값을 지어내는 것을 막는다(`runner.GROUNDED_FIELDS`).
-- [제안] Agent로 할 수 있는 저장 작업: 근무 환경 준비 상태 변경, 구매계약 등록·수정, 구매계약 삭제, 계정 ID 입력, 계약 종료 알림 확인.
-  인력·투입 신규 등록과 투입 수정은 아직 메뉴 화면에서 한다.
+- [제안] Agent로 할 수 있는 저장 작업: 근무 환경 준비 상태 변경, 구매계약 등록·수정, 구매계약 삭제, 계정 ID 입력, 계약 종료 알림 확인,
+  투입 변경·과제 이동·인력 교체(11/03 담당자 요청). 인력 신규 등록과 첫 투입 등록은 아직 메뉴 화면에서 한다.
+- [제안] 투입 변경·이동·교체(`actions.py`의 assignment_update·transfer·replace, `Service.apply_assignment_changes`):
+  - 투입·계약 여러 건을 한 트랜잭션으로 저장한다(전부 또는 없음). 버전 검사·요청 토큰·변경 이력은 다른 저장과 같다.
+  - 변경: '그 달만'(month)·'그날부터'(effective_date)가 투입 기간 일부면 투입을 나눈다(Full time만, MM은 기간별 재계산).
+    Part time은 MM을 나눌 기준이 없어 화면 안내.
+  - 이동: 기존 투입은 이동 전날 종료, 새 과제 투입은 기존 종료일까지. 등급·매입단가는 이어받고, 매출귀속 프로젝트는 말하지 않으면 미정.
+    과제명이 기존 과제와 비슷한데 다르면(오타) 맞는지 되묻는다.
+  - 교체: 기존 인력 투입은 교체 전날 종료, 교체 인력은 같은 과제·같은 매출귀속 프로젝트(말하면 그 값)로 기존 종료일까지.
+    교체 인력 등급은 사용자가 말해야 한다(정·협력). 매입단가는 말하지 않으면 미입력.
+    기존 인력 계약 종료일을 교체 전날로, 교체 인력(협력·컨설팅) 계약을 '준비'(계약번호 미발급)로 만든다.
+  - 같은 사람의 투입을 나누거나 옮기면 근무 환경 준비 상태를 이어 쓰고, 교체 인력은 새 체크리스트(미진행)를 만든다.
+  - 원래 투입에만 연결된 계약은 연결을 풀어 계약 기간 안의 그 인력 투입 전체를 덮게 한다(검수에서 뒤쪽 투입이 빠지지 않게).
+  - 매출귀속 프로젝트·등급·매입단가는 사용자 문장에 있어야 카드를 만든다(`runner.GROUNDED_FIELDS`).
 - [제안] 구매계약 삭제는 연장 계약이 가리키는 계약은 막고, 그 계약의 알림도 함께 지우며, 삭제 전 값을 변경 이력에 남긴다.
 - [확정] 동명이인이나 대상 계약이 여러 개면 대상 확인을 요청한다.
 - [확정] 등록·변경은 미리보기 후 사용자 확인을 거쳐 실행하고, 저장 성공을 확인한 뒤 완료를 안내한다.
@@ -234,7 +246,8 @@
 - [확정] 10/20 담당자: 홈 챗봇 이름은 '🤖 PMO Agent'. 카테고리는 라디오 대신 이모티콘을 붙인 큰 버튼
   (🤖 자동·👤 인력관리·💻 근무 환경 준비·📄 구매계약·💰 검수, `ui/theme.py` AGENT_ICONS). 고른 버튼은 파란색.
 - [제안] 각 전문 Agent는 맡은 업무의 도구만 받는다. 정의는 `pmo/agent/agents.py`의 `AGENTS`다.
-  - 인력관리: find_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id
+  - 인력관리: find_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id,
+    prepare_assignment_update, prepare_assignment_transfer, prepare_assignment_replace
   - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
   - 구매계약: find_people, list_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
   - 검수: inspection_amount_by_revenue_project(구현 예정). 도구가 모두 구현 예정이라 LLM 없이 정해진 안내로 답한다
@@ -282,7 +295,8 @@
 8. [구현] 정확도 평가 세트(11/01 담당자, 기준일 2026-11-15 고정): 평가용 가상 데이터 `pmo/eval_data.py`(인력 22명, 1명 = 시험할 경우 1개,
    이름은 김정직·김협력·김컨설처럼 분류를 넣음 — 분류를 묻는 질문은 넣지 않음, 한 투입 과제 안에 매출귀속 프로젝트가 여러 개) + 질문 49개 `evals/eval_set.json` (질문마다 풀 버전 target 표시).
    11/03 담당자 추가 질문: 월마다 다른 매출귀속 프로젝트·미정·오타 되묻기·인력 교체·과제 이동·0.5MM(반 달 Full time vs 한 달 Part time).
-   교체·이동·투입 값 변경(R02·X01·X02)은 투입 등록·수정 Agent 도구가 없어 target '추가 기능'(지금은 화면 안내가 정답).
+   교체·이동·투입 값 변경(R02·X01·X02)은 target '추가 기능': 투입 변경·이동·교체 도구로 확인 카드를 만들면 정답(도구 자동 채점).
+   v1 브랜치(도구 없음)에서는 답변 채점(화면 안내가 정답). find_people 같은 optional 단계는 실제로 부른 횟수만큼만 기대한다.
    정답은 손으로 쓰지 않고 `python -m scripts.build_eval_set`이 데이터에서 계산한다(테스트가 파일과 일치 확인).
    질문 종류: 도구 자동 채점 / 거절(도구를 부르면 안 됨) / 답변 채점(맞는 도구가 없거나 답변이 핵심 → answer 키를 v4 저지가 채점).
    실행: `python -m scripts.run_evals --set eval --model qwen3:8b`. 화면 확인: `scripts.seed_demo --eval` + PMO_TODAY=2026-11-15.

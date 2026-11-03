@@ -40,15 +40,19 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
     )),
     AgentSpec("staff", "인력관리",
               "너는 인력관리 담당 Agent다. 인력 찾기, 현재·과거·예정 투입의 과제·기간·매출귀속 프로젝트(월별 포함)·"
-              "등급·투입 Type·투입 MM 조회, 계정 ID 입력을 맡는다. 매출귀속 프로젝트를 묻는 질문은 네 업무다.",
-              ("find_people", "get_assignment_timeline", "get_project_members", "query_database", "prepare_account_id"),
+              "등급·투입 Type·투입 MM 조회, 계정 ID 입력, 투입 정보 변경(매출귀속 프로젝트 등)·다른 과제로 이동·"
+              "인력 교체 준비를 맡는다. 매출귀속 프로젝트를 묻거나 바꾸는 요청은 네 업무다.",
+              ("find_people", "get_assignment_timeline", "get_project_members", "query_database", "prepare_account_id",
+               "prepare_assignment_update", "prepare_assignment_transfer", "prepare_assignment_replace"),
               ("staff-assignment-lookup", "data-change"), (
                   "이가상 지금 무슨 과제에 투입되어 있어?",
                   "김가상의 CoE 전체 투입 과제와 기간을 알려줘.",
                   "이가상 월별 매출귀속 프로젝트 알려줘",
                   "Soft Lab 고도화 과제 인력을 매출귀속 프로젝트별로 알려줘",
                   "이가상 계정 ID lee.fake로 넣어줘",
-              ), "인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 계정 ID 입력"),
+                  "이가상 12월 매출귀속 프로젝트 30133686-D047로 바꿔줘",
+                  "이가상 12월 1일부터 다른 과제로 옮겨줘",
+              ), "인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 계정 ID 입력, 투입 변경·과제 이동·인력 교체"),
     AgentSpec("environment", "근무 환경 준비",
               "너는 근무 환경 준비 담당 Agent다. 방문예약·계정 신청·ID카드 신청·OA기기 신청의 현황 조회와 "
               "상태 변경 준비를 맡는다.",

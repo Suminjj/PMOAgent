@@ -134,11 +134,11 @@ def questions(s: Service) -> list[dict]:
     add("R01", "staff", "월마다 다른 매출귀속 프로젝트", "신협력 월별 매출귀속 프로젝트 알려줘.",
         person("신협력", "EV-17", "get_assignment_timeline"), must_include=[r["revenue_project"] for r in shin],
         note=" / ".join(f"{r['start_date'][:7]} {r['revenue_project']}" for r in shin) + " (같은 과제 Soft Lab 고도화)")
-    add("R02", "staff", "월 하나만 매출귀속 프로젝트 변경", "신협력 12월 매출귀속 프로젝트를 30133686-D047로 바꿔줘.", None,
-        target="추가 기능", hold_ok=True, must_not_include=["변경되었습니다", "저장했습니다", "바꿨습니다"],
-        note=f"기대 동작(투입 수정 Agent 도구 구현 후): 12월 투입({shin[-1]['start_date']}~{shin[-1]['end_date']})만 "
-             f"{shin[-1]['revenue_project']} → 30133686-D047 확인 카드. 10·11월 투입은 그대로. "
-             "도구 구현 전(v1~v3): 지어내지 말고 '과제 투입 관리' 화면 안내.")
+    add("R02", "staff", "월 하나만 매출귀속 프로젝트 변경", "신협력 12월 매출귀속 프로젝트를 30133686-D047로 바꿔줘.",
+        person("신협력", "EV-17", "prepare_assignment_update", {"month": "2026-12", "revenue_project": "30133686-D047"}),
+        target="추가 기능", must_include=["30133686-D047"], must_not_include=["변경되었습니다", "저장했습니다", "바꿨습니다"],
+        note=f"확인 카드: 12월 투입({shin[-1]['start_date']}~{shin[-1]['end_date']})만 "
+             f"{shin[-1]['revenue_project']} → 30133686-D047. 10·11월 투입은 그대로. 저장했다고 말하지 않는다.")
     add("R03", "staff", "매출귀속 프로젝트 미정", "문협력 매출귀속 프로젝트 어디야?",
         person("문협력", "EV-18", "get_assignment_timeline"), must_not_include=["30133686"],
         note="미입력(미정)이라고 답해야 한다. 다른 인력·과제의 코드를 가져다 쓰면 안 된다.")
@@ -151,17 +151,21 @@ def questions(s: Service) -> list[dict]:
     add("T03", "contract", "이름 오타 → 바로잡아 되묻기", "박헙력 구매계약 언제까지야?", None, target="v3",
         ask_back=True, must_include=["박협력"], note="'박헙력'은 없다. '박협력'이 맞는지 되묻는다(확인 전에 다른 사람 계약을 답하지 않음).")
     ryu = s.assignments("EV-19")[0]
-    add("X01", "staff", "인력 교체", "전표작성 자동화 류협력을 12월 1일부터 노협력(L6)으로 교체해줘.", None,
-        target="추가 기능", hold_ok=True, must_not_include=["교체했습니다", "변경되었습니다", "저장했습니다"],
-        note=f"기대 동작(투입 등록·수정 Agent 도구 구현 후): 류협력 투입 종료일 {ryu['end_date']} → 2026-11-30, "
-             f"노협력 신규 투입 {ryu['project']} 2026-12-01~{ryu['end_date']}(매출귀속 프로젝트 {ryu['revenue_project']}를 "
-             "이어받을지 확인), 류협력 계약 C-2026-108 종료일 변경·노협력 계약 등록 필요 안내. 한 확인 카드로 함께 보여준다.")
+    add("X01", "staff", "인력 교체", "전표작성 자동화 류협력을 12월 1일부터 노협력(L6)으로 교체해줘.",
+        [step(FIND, {"name": "류협력"}, optional=True), step(FIND, {"name": "노협력"}, optional=True),
+         step("prepare_assignment_replace", {"person_id": "EV-19", "new_person_id": "EV-20",
+                                             "start_date": "2026-12-01", "grade": "L6"})],
+        target="추가 기능", must_not_include=["교체했습니다", "변경되었습니다", "저장했습니다"],
+        note=f"확인 카드 한 장: 류협력 투입 종료일 {ryu['end_date']} → 2026-11-30, 노협력 신규 투입 {ryu['project']} "
+             f"2026-12-01~{ryu['end_date']}(매출귀속 프로젝트 {ryu['revenue_project']} 이어받음, 등급 L6), "
+             "류협력 계약 C-2026-108 종료일 2026-11-30, 노협력 계약 준비(계약번호 미발급).")
     myung = s.assignments("EV-21")[0]
-    add("X02", "staff", "다른 과제로 이동", "명협력 12월 1일부터 APC Analysis로 옮겨줘.", None,
-        target="추가 기능", hold_ok=True, must_not_include=["옮겼습니다", "변경되었습니다", "저장했습니다"],
-        note=f"기대 동작(투입 등록·수정 Agent 도구 구현 후): {myung['project']} 투입 종료일 {myung['end_date']} → 2026-11-30, "
-             f"APC Analysis 신규 투입 2026-12-01~{myung['end_date']}. 새 투입의 매출귀속 프로젝트는 되묻거나 미정으로, "
-             "계약 C-2026-206의 연결 투입 처리 안내.")
+    add("X02", "staff", "다른 과제로 이동", "명협력 12월 1일부터 APC Analysis로 옮겨줘.",
+        person("명협력", "EV-21", "prepare_assignment_transfer", {"to_project": "APC Analysis", "start_date": "2026-12-01"}),
+        target="추가 기능", must_not_include=["옮겼습니다", "변경되었습니다", "저장했습니다"],
+        note=f"확인 카드: {myung['project']} 투입 종료일 {myung['end_date']} → 2026-11-30, APC Analysis 신규 투입 "
+             f"2026-12-01~{myung['end_date']}(매출귀속 프로젝트 미정, 등급·단가·준비 상태는 이어받음), "
+             "계약 C-2026-206은 연결 투입을 풀어 두 투입을 모두 덮음.")
     baek, choi = s.assignments("EV-22")[0], s.assignments("EV-08")[0]
     add("H01", "staff", "0.5MM = 반 달 근무 (Full time)", "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
         person("백협력", "EV-22", "get_assignment_timeline"), must_include=[baek["start_date"], baek["end_date"]],

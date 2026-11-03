@@ -25,6 +25,9 @@ status: 연결 (prepare_* 도구 연결, 이 지침 본문은 인력관리·근�
 1. 대상 인력을 `find_people`로 확정한다(이름을 넣어도 코드가 보완하지만, 동명이인이면 먼저 되묻는다).
 2. 알맞은 `prepare_*` 도구에 사용자가 말한 값을 넣는다. 계약은 계약번호를, 투입이 여러 건이면 과제명(project)을 넣는다.
    새 계약이면 mode='신규'. 모르는 값(날짜·계약번호 등)은 지어내지 않는다.
+   투입: 값 하나(매출귀속 프로젝트 등)를 바꾸면 `prepare_assignment_update`(그 달만이면 month, 그날부터면 effective_date),
+   다른 과제로 옮기면 `prepare_assignment_transfer`, 다른 사람으로 바꾸면 `prepare_assignment_replace`.
+   "12월 1일부터"는 start_date 2026-12-01처럼 날짜로 넣는다. 사용자가 말하지 않은 매출귀속 프로젝트·등급·단가는 비워 둔다.
 3. 성공하면 "화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요"라고 안내한다.
 4. 실패하면 도구가 알려준 확인 사항을 사용자에게 묻고, 답을 받으면 다시 도구를 호출한다.
 
@@ -37,7 +40,10 @@ status: 연결 (prepare_* 도구 연결, 이 지침 본문은 인력관리·근�
 | `prepare_contract_delete` | 구현 | person_id, contract_id |
 | `prepare_account_id` | 구현 | person_id, account_id |
 | `prepare_alert_ack` | 구현 | person_id |
-| 인력·투입 신규 등록, 투입 수정 | 구현 예정 | 메뉴 화면 안내 |
+| `prepare_assignment_update` | 구현 | person_id, project, month(그 달만, YYYY-MM) 또는 effective_date(그날부터), revenue_project, grade, purchase_rate, start_date, end_date |
+| `prepare_assignment_transfer` | 구현 | person_id, to_project, start_date(이동일), from_project, end_date, revenue_project |
+| `prepare_assignment_replace` | 구현 | person_id(빠지는 인력), new_person_id(교체 인력), start_date(교체일), grade(교체 인력 등급), project, purchase_rate, revenue_project |
+| 인력 신규 등록, 첫 투입 등록 | 구현 예정 | 메뉴 화면(신규 인력 등록) 안내 |
 
 ## 예외 처리
 
