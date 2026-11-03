@@ -111,7 +111,7 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
             calls = planner.plan(q, tool_specs(), service)
             called = [c[0] for c in calls]
             if q["steps"] is None:
-                # 답변 채점 질문: 맞는 도구가 없거나 답변 내용이 핵심. 기록만 하고 v2 저지가 answer 키로 채점한다.
+                # 답변 채점 질문: 맞는 도구가 없거나 답변 내용이 핵심. 기록만 하고 v4 저지가 answer 키로 채점한다.
                 row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"), "tools": called,
                        "graded": False, "success": None, "problems": [], "answer_key": q.get("answer"),
                        "duration_ms": round((time.perf_counter() - t0) * 1000)}
