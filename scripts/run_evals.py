@@ -38,7 +38,7 @@ def print_row(row: dict) -> None:
         if missing:
             print(f"        ! 참고: 들어가야 할 말이 없음 → {', '.join(missing)}")
         if not leaked and not missing and (key.get("must_not_include") or key.get("must_include")):
-            print("        ✓ 참고: 답변 키(들어가야 할 말·나오면 안 되는 말) 글자 확인 통과")
+            print("        OK 참고: 답변 키(들어가야 할 말·나오면 안 되는 말) 글자 확인 통과")
     sys.stdout.flush()
 
 
@@ -53,6 +53,10 @@ def report(result: dict) -> None:
 
 
 def main() -> int:
+    # Windows 콘솔(cp949)이 못 쓰는 글자(✓·이모지 등)가 답변에 있어도 평가가 멈추지 않게 바꿔서 출력한다(11/04 --only 실행 중단).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(description="PMOAgent 평가 질문 실행")
     parser.add_argument("--model", help="Ollama 모델 이름. 쉼표로 여러 개를 비교한다. 없으면 oracle")
     parser.add_argument("--set", default="v1", choices=("v1", "eval"),
