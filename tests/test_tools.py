@@ -69,6 +69,6 @@ def test_eval_detects_wrong_tool_choice():
 
 def test_checklist_status_tool(service):
     result = call_tool(service, "checklist_status", {"person_id": "DEMO-002"})
-    assert result["ok"] and [i["item"] for i in result["data"][0]["items"]][0] == "좌석 배정"
+    assert result["ok"] and [i["item"] for i in result["data"][0]["items"]][0] == "방문예약"
     overview = call_tool(service, "checklist_status", {})
     assert overview["ok"] and all(r["open_labels"] for r in overview["data"])

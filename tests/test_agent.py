@@ -237,13 +237,13 @@ def test_missing_person_is_filled_from_the_question(service):
 
 
 def test_missing_person_uses_recent_user_message_and_namesakes_still_ask(service):
-    follow = ScriptedClient([tool_call("prepare_checklist_update", item="좌석 배정", status="진행 중"),
+    follow = ScriptedClient([tool_call("prepare_checklist_update", item="계정 신청", status="진행 중"),
                              text("확인해 주세요.")])
     history = [{"role": "user", "content": "이가상 근무 환경 준비 어디까지 됐어?"},
                {"role": "assistant", "content": "ID카드 신청이 미진행입니다."}]
-    result = ask(service, "좌석 배정 진행 중으로 바꿔줘", follow, history=history)
+    result = ask(service, "계정 신청 진행 중으로 바꿔줘", follow, history=history)
     assert result["calls"][0]["ok"] and result["calls"][0]["arguments"]["person_id"] == "이가상"
-    namesake = ScriptedClient([tool_call("prepare_checklist_update", item="좌석 배정", status="진행 중"),
+    namesake = ScriptedClient([tool_call("prepare_checklist_update", item="계정 신청", status="진행 중"),
                                text("어느 김가상인가요?")])
-    result = ask(service, "김가상 좌석 배정 진행 중으로 바꿔줘", namesake)
+    result = ask(service, "김가상 계정 신청 진행 중으로 바꿔줘", namesake)
     assert result["calls"][0]["ok"] is False and "2명" in result["calls"][0]["error"]

@@ -17,7 +17,7 @@ COLUMNS = {
 }
 
 _TABLE_FIELDS = {
-    "find_people": ["name", "company", "category", "account_id", "id"],
+    "find_people": ["name", "company", "category", "account_id"],
     "list_contracts": ["contract_no", "status", "start_date", "end_date", "label", "has_successor"],
     "contracts_ending": ["name", "company", "contract_no", "status", "end_date", "label", "has_successor"],
     "pending_contract_alerts": ["name", "company", "contract_no", "end_date", "label", "notify_from"],
@@ -37,11 +37,16 @@ def _cell(value):
     return value
 
 
+HIDDEN_KEYS = {"id", "person_id", "assignment_id", "contract_id", "previous_contract_id", "version"}
+
+
 def table(rows: list[dict], fields: list[str] | None = None) -> None:
     if not rows:
         st.caption("결과 없음")
         return
-    fields = fields or [k for k in rows[0] if not isinstance(rows[0][k], (dict, list)) or k in ("open_items", "open_labels")]
+    # 내부 관리번호(id 계열)는 화면에 보이지 않는다(10/20 담당자 요청)
+    fields = [k for k in (fields or [k for k in rows[0] if not isinstance(rows[0][k], (dict, list))
+                                    or k in ("open_items", "open_labels")]) if k not in HIDDEN_KEYS]
     st.dataframe([{COLUMNS.get(k, k): _cell(r.get(k)) for k in fields} for r in rows],
                  use_container_width=True, hide_index=True)
 

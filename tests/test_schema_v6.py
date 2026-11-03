@@ -69,7 +69,7 @@ def test_v5_database_migrates_keeping_rows_links_and_backup(tmp_path):
             INSERT INTO people (id,name,company,category) VALUES ('OLD','기존','업체','협력');
             INSERT INTO assignments (id,person_id,project,start_date,end_date,grade,mm)
                 VALUES ('A-OLD','OLD','과제','2026-10-01','2026-12-31','L6','3');
-            INSERT INTO checklist (assignment_id,item,status) VALUES ('A-OLD','좌석 배정','완료');
+            INSERT INTO checklist (assignment_id,item,status) VALUES ('A-OLD','방문예약','완료');
             INSERT INTO contracts (id,person_id,assignment_id,company,contract_no,start_date,end_date,status)
                 VALUES ('C-OLD','OLD','A-OLD','업체','4500000009','2026-10-01','2026-12-31','확정');
             PRAGMA user_version = 5;

@@ -74,7 +74,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
          handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
-    Tool("checklist_status", "근무 환경 준비(좌석 배정·ID카드 신청·OA기기 신청·방문예약) 진행 상황을 조회한다. "
+    Tool("checklist_status", "근무 환경 준비(방문예약·계정 신청·ID카드 신청·OA기기 신청) 진행 상황을 조회한다. "
          "person_id를 주면 그 인력의 투입별 항목 상태, 없으면 준비가 남은 투입 목록을 돌려준다.",
          _obj({"person_id": {"type": "string", "description": "대상 인력의 id 또는 이름. 비우면 준비가 남은 전체 투입"}}),
          handler=lambda s, a: _checklist_status(s, _pid(s, a["person_id"]) if a.get("person_id") else None)),

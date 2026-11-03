@@ -5,7 +5,7 @@ import json
 import sqlite3
 import time
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -337,6 +337,49 @@ class Service:
                 "SELECT * FROM people WHERE name LIKE ? ORDER BY name, id",
                 (f"%{keyword}%",))]
 
+    @staticmethod
+    def fiscal_year_of(day: date) -> int:
+        """회계연도: 4월~다음 해 3월. 2026-10-20 → 2026, 2027-02-01 → 2026."""
+        return day.year if day.month >= 4 else day.year - 1
+
+    @staticmethod
+    def fiscal_months(fiscal_year: int) -> list[str]:
+        return [f"{fiscal_year + (m < 4)}-{m:02d}" for m in (4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3)]
+
+    def monthly_mm(self, fiscal_year: int) -> list[dict]:
+        """회계연도(4월~다음 해 3월)에 걸친 투입별 월별 MM.
+
+        Full time은 구매시스템 방식(pmo/mm.py)으로 달마다 (투입 근무일 ÷ 그 달 근무일)을 구해 셋째 자리 반올림해 보여준다.
+        투입 전체 MM(합계를 한 번 반올림)과 월별 값의 합은 0.001 차이가 날 수 있다.
+        Part time은 기간 전체 MM만 있으므로 월별 값을 만들지 않는다(None). 계산 실패도 0이 아니라 None.
+        """
+        months = self.fiscal_months(fiscal_year)
+        first, last = f"{months[0]}-01", f"{months[-1]}-31"
+        people = {p["id"]: p for p in self.people()}
+        rows = []
+        for a in self.assignments():
+            if a["end_date"] < first or a["start_date"] > last:
+                continue
+            values, note = dict.fromkeys(months), ""
+            if a["assignment_type"] == "Full time":
+                try:
+                    detail = calculate_full_time(date.fromisoformat(a["start_date"]), date.fromisoformat(a["end_date"]))
+                    for m in detail["months"]:
+                        if m["month"] in values and m["assigned_days"]:
+                            values[m["month"]] = format(Decimal(m["mm"]).quantize(
+                                Decimal("0.001"), rounding=ROUND_HALF_UP), "f")
+                except ValueError as exc:
+                    note = f"계산 실패: {exc}"
+            else:
+                note = "Part time은 기간 전체 MM만 입력되어 월별 값이 없습니다."
+            person = people.get(a["person_id"], {})
+            rows.append({"name": person.get("name"), "company": person.get("company"),
+                         "category": person.get("category"), "project": a["project"],
+                         "start_date": a["start_date"], "end_date": a["end_date"],
+                         "assignment_type": a["assignment_type"], "mm": a["mm"],
+                         "months": values, "note": note, "assignment_id": a["id"]})
+        return sorted(rows, key=lambda r: (r["company"] or "", r["name"] or "", r["start_date"]))
+
     def assignment_timeline(self, person_id: str, today: date | None = None) -> dict:
         """현재 투입·과거 투입·예정 투입을 구분해 돌려준다."""
         today_text = (today or self.clock()).isoformat()
@@ -539,7 +582,7 @@ class Service:
     # 근무 환경 준비 체크리스트
     # ------------------------------------------------------------------
     def checklist(self, assignment_id: str) -> list[dict]:
-        """투입 건의 4개 항목을 정해진 순서로 돌려준다.
+        """투입 건의 4개 항목(방문예약·계정 신청·ID카드 신청·OA기기 신청)을 정해진 순서로 돌려준다.
 
         예전 데이터에 빠진 항목이 있으면 exists=False인 '미진행'으로 보여주고, 처음 저장할 때 만든다.
         """
