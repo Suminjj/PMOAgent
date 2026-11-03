@@ -13,6 +13,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 from pmo.config import today  # noqa: E402
 from pmo.demo import seed_demo  # noqa: E402
 from pmo.service import Service  # noqa: E402
+from tests.conftest import login_app  # noqa: E402
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
 REPLIES = []
@@ -50,7 +51,7 @@ def app(monkeypatch, tmp_path):
     monkeypatch.setenv("PMO_DB_PATH", str(path))
     monkeypatch.setenv("PMO_OLLAMA_URL", f"http://127.0.0.1:{server.server_port}")
     RECEIVED.clear()
-    test_app = AppTest.from_file(str(APP), default_timeout=30).run()
+    test_app = login_app(AppTest.from_file(str(APP), default_timeout=30), os.environ["PMO_DB_PATH"]).run()
     yield test_app
     server.shutdown()
 

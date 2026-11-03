@@ -10,6 +10,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 from pmo.config import today  # noqa: E402
 from pmo.demo import seed_demo  # noqa: E402
 from pmo.service import Service  # noqa: E402
+from tests.conftest import login_app  # noqa: E402
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
 
@@ -19,7 +20,7 @@ def demo_app(monkeypatch, tmp_path):
     path = tmp_path / "ui-contracts.db"
     seed_demo(Service(path), today())
     monkeypatch.setenv("PMO_DB_PATH", str(path))
-    return path, AppTest.from_file(str(APP), default_timeout=30).run()
+    return path, login_app(AppTest.from_file(str(APP), default_timeout=30), path).run()
 
 
 def go(app, page):

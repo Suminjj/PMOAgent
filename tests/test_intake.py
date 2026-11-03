@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from pmo.db import connection
+from pmo.db import LATEST_VERSION, connection
 from pmo.service import ConflictError, Service, ValidationError
 
 
@@ -110,7 +110,7 @@ def test_v1_migration_backup_and_all_relationships_preserved(tmp_path):
     assert service.assignments()[0]["version"] == 3
     assert len(service.history()) == 1
     with connection(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 1
         assert con.execute("SELECT count(*) FROM requests").fetchone()[0] == 1

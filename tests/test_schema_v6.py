@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from pmo.db import connection
+from pmo.db import LATEST_VERSION, connection
 from pmo.service import Service, ValidationError
 
 TODAY = date(2026, 10, 20)
@@ -80,7 +80,7 @@ def test_v5_database_migrates_keeping_rows_links_and_backup(tmp_path):
     assert service.checklist("A-OLD")[0]["status"] == "완료"
     assert service.contracts("OLD")[0]["assignment_id"] == "A-OLD"
     with connection(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
         grade = next(r for r in con.execute("PRAGMA table_info(assignments)") if r[1] == "grade")
         assert grade[3] == 0                                              # NULL 허용
