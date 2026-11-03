@@ -13,11 +13,11 @@ import argparse
 import os
 import sys
 
-from pmo.harness import ROUTINGS, AgentPlanner, OraclePlanner, run
+from pmo.harness import EVAL_SET, QUESTIONS, ROUTINGS, AgentPlanner, OraclePlanner, run
 
 
 def print_row(row: dict) -> None:
-    mark = "PASS" if row["success"] else "FAIL"
+    mark = "답변" if row.get("graded") is False else ("PASS" if row["success"] else "FAIL")
     ms = row.get("agent_ms", row["duration_ms"])
     who = f" [{row['agent_used']}]" if row.get("agent_used") else ""
     print(f"[{mark}] {row['id']}{who} {ms:>6}ms  {row['question']}")
@@ -31,13 +31,15 @@ def print_row(row: dict) -> None:
 
 def report(result: dict) -> None:
     times = [r.get("agent_ms", r["duration_ms"]) for r in result["results"]]
-    print(f"{result['passed']}/{result['total']} 통과 · 평균 {sum(times) // max(len(times), 1)}ms"
+    print(f"{result['passed']}/{result['total']} 통과 (답변 채점 대기 {result.get('ungraded', 0)}개) · 평균 {sum(times) // max(len(times), 1)}ms"
           f" · 결과 파일: {result.get('saved_to')}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="PMOAgent 평가 질문 실행")
     parser.add_argument("--model", help="Ollama 모델 이름. 쉼표로 여러 개를 비교한다. 없으면 oracle")
+    parser.add_argument("--set", default="v1", choices=("v1", "eval"),
+                        help="v1: 기존 평가 질문 9개(시연 데이터) · eval: 정확도 평가 세트(evals/eval_set.json, 기준일 11/15)")
     parser.add_argument("--routing", default="auto",
                         help="auto(자동(전체) 단일 Agent), category(질문별 전문 Agent). 쉼표로 둘 다 비교")
     args = parser.parse_args()
@@ -62,7 +64,7 @@ def main() -> int:
     results = []
     for planner in planners:
         print(f"\n=== {planner.name} === (질문 하나가 끝날 때마다 표시됩니다)", flush=True)
-        result = run(planner, on_result=print_row)
+        result = run(planner, questions_path=EVAL_SET if args.set == "eval" else QUESTIONS, on_result=print_row)
         report(result)
         results.append(result)
     if len(results) > 1:
