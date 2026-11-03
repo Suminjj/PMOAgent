@@ -151,6 +151,7 @@ def test_v6_database_gets_user_tables_with_backup(tmp_path):
 
 
 def test_leader_menu_hides_write_pages():
+    pytest.importorskip("streamlit")
     from ui.theme import pages_for
     leader, pmo = pages_for("과제 리더"), pages_for("PMO")
     assert {"신규 인력 등록", "계약 등록·수정", "변경 이력", "사용자 관리"}.isdisjoint(leader)
