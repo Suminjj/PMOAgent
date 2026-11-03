@@ -262,7 +262,7 @@
    `--routing auto,category`로 자동(전체) 단일 Agent와 카테고리별 전문 Agent(질문의 `agent` 태그)를 비교.
    이름을 받는 도구 앞의 find_people은 `optional` 단계로 두어 생략해도 정답으로 본다(동명이인 질문은 생략 불가)
 8. [구현] 정확도 평가 세트(11/01 담당자, 기준일 2026-11-15 고정): 평가용 가상 데이터 `pmo/eval_data.py`(인력 16명, 1명 = 시험할 경우 1개,
-   이름은 김정직·김협력·김컨설처럼 분류를 넣음 — 분류를 묻는 질문은 넣지 않음) + 질문 33개 `evals/eval_set.json` (질문마다 풀 버전 target 표시).
+   이름은 김정직·김협력·김컨설처럼 분류를 넣음 — 분류를 묻는 질문은 넣지 않음, 한 투입 과제 안에 매출귀속 프로젝트가 여러 개) + 질문 34개 `evals/eval_set.json` (질문마다 풀 버전 target 표시).
    정답은 손으로 쓰지 않고 `python -m scripts.build_eval_set`이 데이터에서 계산한다(테스트가 파일과 일치 확인).
    질문 종류: 도구 자동 채점 / 거절(도구를 부르면 안 됨) / 답변 채점(맞는 도구가 없거나 답변이 핵심 → answer 키를 v4 저지가 채점).
    실행: `python -m scripts.run_evals --set eval --model qwen3:8b`. 화면 확인: `scripts.seed_demo --eval` + PMO_TODAY=2026-11-15.
