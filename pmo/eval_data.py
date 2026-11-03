@@ -16,7 +16,7 @@ TODAY = date(2026, 11, 15)
 ACTOR = "평가 데이터"
 
 SOFTLAB, VOUCHER, APC = "Soft Lab 고도화", "전표작성 자동화", "APC Analysis"
-RP_A, RP_B, RP_C = "PRJ-A100", "PRJ-B200", "PRJ-C300"
+RP_A, RP_B, RP_C = "30133686-D036", "30133686-D037", "30133686-D038"   # 매출귀속 프로젝트 (D036~D052 범위에서 선택)
 
 # (관리번호, 이름, 업체, 분류, 시험할 경우)
 PEOPLE = [
