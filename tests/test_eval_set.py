@@ -30,6 +30,16 @@ def test_each_person_has_one_case_and_key_cases_hold(tmp_path):
     assert contracts[("조협력", "C-2026-104")]["has_successor"] and not contracts[("조협력", "C-2026-104")]["ending_soon"]
     assert contracts[("강협력", "C-2026-203")]["label"] == "오늘 종료"
     assert len(service.find_people("김협력")) == 2
+    # 11/03 담당자 질문용 경우
+    assert contracts[("문협력", "C-2026-205")]["days_left"] == 14 and contracts[("문협력", "C-2026-205")]["ending_soon"]
+    assert [x["revenue_project"] for x in service.assignments("EV-18")] == [None]            # 매출귀속 프로젝트 미정
+    shin = sorted(service.assignments("EV-17"), key=lambda x: x["start_date"])
+    assert {x["project"] for x in shin} == {"Soft Lab 고도화"} and len({x["revenue_project"] for x in shin}) == 3
+    baek, choi = service.assignments("EV-22")[0], service.assignments("EV-08")[0]
+    assert (baek["assignment_type"], baek["mm"]) == ("Full time", "0.500")                  # 10/1~10/16 반 달
+    assert (choi["assignment_type"], choi["mm"]) == ("Part time", "0.5")                    # 11월 한 달 병행
+    assert service.assignments("EV-20") == [] and "백협력" in {x["name"] for x in service.pending_alerts()}
+    assert sorted(x["name"] for x in service.people() if not x["account_id"]) == ["노협력", "서협력", "오협력"]
 
 
 def test_seed_eval_guards(tmp_path):

@@ -117,10 +117,63 @@ def questions(s: Service) -> list[dict]:
     apc = {}
     for a in s.assignments():
         if a["project"] == APC and a["end_date"] >= TODAY.isoformat():
-            apc.setdefault(a["revenue_project"], set()).add(a["name"])
+            apc.setdefault(a["revenue_project"] or "미정", set()).add(a["name"])
     add("S11", "staff", "한 과제 · 여러 매출귀속 프로젝트", "APC Analysis 과제 인력을 매출귀속 프로젝트별로 알려줘.", None,
         must_include=sorted(apc) + sorted(set().union(*apc.values())),
         note="투입 과제와 매출귀속 프로젝트는 다르다: " + " / ".join(f"{k}: {', '.join(sorted(v))}" for k, v in sorted(apc.items())))
+
+    # --- 11/03 담당자 질문: 월별 매출귀속 프로젝트 · 미정 · 오타 · 교체 · 이동 · 0.5MM ------------------
+    shin = sorted(s.assignments("EV-17"), key=lambda r: r["start_date"])
+    add("R01", "staff", "월마다 다른 매출귀속 프로젝트", "신협력 월별 매출귀속 프로젝트 알려줘.",
+        person("신협력", "EV-17", "get_assignment_timeline"), must_include=[r["revenue_project"] for r in shin],
+        note=" / ".join(f"{r['start_date'][:7]} {r['revenue_project']}" for r in shin) + " (같은 과제 Soft Lab 고도화)")
+    add("R02", "staff", "월 하나만 매출귀속 프로젝트 변경", "신협력 12월 매출귀속 프로젝트를 30133686-D047로 바꿔줘.", None,
+        target="추가 기능", hold_ok=True, must_not_include=["변경되었습니다", "저장했습니다", "바꿨습니다"],
+        note=f"기대 동작(투입 수정 Agent 도구 구현 후): 12월 투입({shin[-1]['start_date']}~{shin[-1]['end_date']})만 "
+             f"{shin[-1]['revenue_project']} → 30133686-D047 확인 카드. 10·11월 투입은 그대로. "
+             "도구 구현 전(v1~v3): 지어내지 말고 '과제 투입 관리' 화면 안내.")
+    add("R03", "staff", "매출귀속 프로젝트 미정", "문협력 매출귀속 프로젝트 어디야?",
+        person("문협력", "EV-18", "get_assignment_timeline"), must_not_include=["30133686"],
+        note="미입력(미정)이라고 답해야 한다. 다른 인력·과제의 코드를 가져다 쓰면 안 된다.")
+    add("R04", "staff", "미정 인력 찾기", "매출귀속 프로젝트가 아직 정해지지 않은 인력 알려줘.", None,
+        must_include=sorted({a["name"] for a in s.assignments() if not a["revenue_project"]}))
+    add("T01", "staff", "이름 오타 → 바로잡아 되묻기", "김졍직 지금 무슨 과제에 있어?", None, target="v3",
+        ask_back=True, must_include=["김정직"], note="'김졍직'은 없다. 비슷한 이름 '김정직'을 제안하고 맞는지 되묻는다.")
+    add("T02", "staff", "과제명 오타 → 바로잡아 되묻기", "Soft Lap 고도화 과제 인력 알려줘.", None, target="v3",
+        ask_back=True, must_include=["Soft Lab 고도화"], note="'Soft Lap'은 없다. 'Soft Lab 고도화'가 맞는지 되묻는다.")
+    add("T03", "contract", "이름 오타 → 바로잡아 되묻기", "박헙력 구매계약 언제까지야?", None, target="v3",
+        ask_back=True, must_include=["박협력"], note="'박헙력'은 없다. '박협력'이 맞는지 되묻는다(확인 전에 다른 사람 계약을 답하지 않음).")
+    ryu = s.assignments("EV-19")[0]
+    add("X01", "staff", "인력 교체", "전표작성 자동화 류협력을 12월 1일부터 노협력으로 교체해줘.", None,
+        target="추가 기능", hold_ok=True, must_not_include=["교체했습니다", "변경되었습니다", "저장했습니다"],
+        note=f"기대 동작(투입 등록·수정 Agent 도구 구현 후): 류협력 투입 종료일 {ryu['end_date']} → 2026-11-30, "
+             f"노협력 신규 투입 {ryu['project']} 2026-12-01~{ryu['end_date']}(매출귀속 프로젝트 {ryu['revenue_project']}를 "
+             "이어받을지 확인), 류협력 계약 C-2026-108 종료일 변경·노협력 계약 등록 필요 안내. 한 확인 카드로 함께 보여준다.")
+    myung = s.assignments("EV-21")[0]
+    add("X02", "staff", "다른 과제로 이동", "명협력 12월 1일부터 APC Analysis로 옮겨줘.", None,
+        target="추가 기능", hold_ok=True, must_not_include=["옮겼습니다", "변경되었습니다", "저장했습니다"],
+        note=f"기대 동작(투입 등록·수정 Agent 도구 구현 후): {myung['project']} 투입 종료일 {myung['end_date']} → 2026-11-30, "
+             f"APC Analysis 신규 투입 2026-12-01~{myung['end_date']}. 새 투입의 매출귀속 프로젝트는 되묻거나 미정으로, "
+             "계약 C-2026-206의 연결 투입 처리 안내.")
+    baek, choi = s.assignments("EV-22")[0], s.assignments("EV-08")[0]
+    add("H01", "staff", "0.5MM = 반 달 근무 (Full time)", "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
+        person("백협력", "EV-22", "get_assignment_timeline"), must_include=[baek["start_date"], baek["end_date"]],
+        note=f"{baek['assignment_type']} {baek['start_date']}~{baek['end_date']} = {mm(baek['mm'])}MM: 10월 근무일 20일 중 10일만 "
+             "근무(반 달). 한 달 내내 반씩 일한 것이 아니다.")
+    add("H02", "staff", "0.5MM = 한 달 병행 (Part time)", "최협력 11월 0.5MM는 반 달만 일하는 거야?",
+        person("최협력", "EV-08", "get_assignment_timeline"), must_include=[choi["start_date"], choi["end_date"]],
+        note=f"{choi['assignment_type']} {choi['start_date']}~{choi['end_date']} = {mm(choi['mm'])}MM: 한 달 내내 다른 업무와 "
+             "반씩 병행. 반 달만 일하는 것이 아니다.")
+    add("N01", "staff", "등록만 되고 투입 없음", "노협력 지금 무슨 과제야?",
+        person("노협력", "EV-20", "get_assignment_timeline"), must_include=["없"],
+        must_not_include=["Soft Lab 고도화", "전표작성 자동화", "APC Analysis"])
+    add("A01", "staff", "계정 ID 미발급", "계정 ID가 아직 없는 사람 알려줘.", None,
+        must_include=sorted(p["name"] for p in s.people() if not p["account_id"]))
+    add("A02", "staff", "계정 ID 입력 제안(저장 안 함)", "서협력 계정 ID evuser14로 등록해줘.",
+        person("서협력", "EV-14", "prepare_account_id", {"account_id": "evuser14"}),
+        must_include=["evuser14"], must_not_include=["저장했습니다", "등록했습니다"])
+    add("K01", "contract", "만료 후 미확인 알림 확인 제안", "백협력 계약 만료 알림 확인 처리해줘.",
+        person("백협력", "EV-22", "prepare_alert_ack"), must_not_include=["확인 처리했습니다", "저장했습니다"])
 
     # --- 근무 환경 준비 -----------------------------------------------------------
     add("E01", "environment", "준비 남은 투입", "근무 환경 준비가 남은 사람 알려줘.",
