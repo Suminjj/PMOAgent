@@ -6,6 +6,7 @@ import pytest
 
 from pmo.inspection import NO_PROJECT
 from pmo.service import Service, ValidationError
+from tests.conftest import login_app  # noqa: E402
 
 TODAY = date(2026, 10, 25)
 
@@ -108,7 +109,8 @@ def test_inspection_page_shows_totals(monkeypatch, tmp_path, filled):
     from streamlit.testing.v1 import AppTest
     from ui.theme import PAGES
     monkeypatch.setenv("PMO_DB_PATH", str(filled.path))
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
+    app = login_app(AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30),
+                    filled.path).run()
     app.button(key=f"nav_{PAGES.index('검수하기')}").click().run()
     assert not app.exception
     table = app.dataframe[0].value

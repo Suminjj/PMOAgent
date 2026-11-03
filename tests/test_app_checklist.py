@@ -9,6 +9,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 from pmo.config import today  # noqa: E402
 from pmo.demo import seed_demo  # noqa: E402
 from pmo.service import Service  # noqa: E402
+from tests.conftest import login_app  # noqa: E402
 
 APP = Path(__file__).resolve().parents[1] / "app.py"
 
@@ -18,7 +19,7 @@ def ready(monkeypatch, tmp_path):
     path = tmp_path / "ui-checklist.db"
     seed_demo(Service(path), today())
     monkeypatch.setenv("PMO_DB_PATH", str(path))
-    app = AppTest.from_file(str(APP), default_timeout=30).run()
+    app = login_app(AppTest.from_file(str(APP), default_timeout=30), path).run()
     from ui.theme import PAGES
     app.button(key=f"nav_{PAGES.index('근무 환경 준비')}").click().run()   # 왼쪽 메뉴 '근무 환경 준비'
     assert not app.exception

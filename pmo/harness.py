@@ -143,8 +143,15 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
             seed_eval(service, today)
         else:
             seed_demo(service, today)
+        base = service
         for q in spec["questions"]:
             t0 = time.perf_counter()
+            service = base
+            if q.get("user"):   # v2 권한 질문: 그 계정으로 로그인한 것처럼 권한을 적용해 실행한다
+                from pmo.access import authenticate
+                from pmo.eval_data import EVAL_PASSWORD
+                service = Service(base.path, clock=lambda: today,
+                                  access=authenticate(base.path, q["user"], EVAL_PASSWORD))
             calls = planner.plan(q, tool_specs(), service)
             called = [c[0] for c in calls]
             if q["steps"] is None:

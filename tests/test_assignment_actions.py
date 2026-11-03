@@ -7,7 +7,8 @@ import pytest
 from pmo.agent.actions import build_plan, execute_plan
 from pmo.agent.runner import _ungrounded
 from pmo.db import connection
-from pmo.eval_data import TODAY, seed_eval
+from pmo.access import authenticate
+from pmo.eval_data import EVAL_PASSWORD, TODAY, seed_eval
 from pmo.service import ConflictError, Service, ValidationError
 from pmo.tools import call_tool
 
@@ -138,6 +139,21 @@ def test_all_or_nothing_and_stale_plan(service):
     first = run(service, plan, token)
     assert run(service, plan, token) == first                       # 같은 요청 재실행: 한 번만 저장
     assert len(rows_of(service, "EV-21")) == 2
+
+
+def test_leader_gets_no_card_and_cannot_save(service):
+    """v2: 과제 리더는 투입 변경·이동·교체 카드를 받지 않고, 저장 함수도 막힌다."""
+    leader = Service(service.path, clock=lambda: TODAY,
+                     access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
+    result = call_tool(leader, "prepare_assignment_transfer",
+                       {"person_id": "명협력", "to_project": "APC Analysis", "start_date": "2026-12-01"})
+    assert not result["ok"] and "수정 요청" in result["error"]
+    plan = build_plan(service, "assignment_transfer",
+                      {"person_id": "명협력", "to_project": "APC Analysis", "start_date": "2026-12-01"})
+    with pytest.raises(ValidationError):
+        run(leader, plan)
+    other = call_tool(leader, "get_project_members", {"project": "APC Analisys"})
+    assert not other["ok"] and "APC Analysis" not in other["error"]               # 다른 과제 이름을 알리지 않음
 
 
 def test_values_the_user_did_not_say_are_rejected(service):
