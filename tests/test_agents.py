@@ -44,7 +44,8 @@ def test_every_tool_belongs_to_some_specialist():
 
 
 def test_writes_stay_in_their_category():
-    assert {t for t in AGENTS["staff"].tools if t.startswith("prepare_")} == {"prepare_account_id"}
+    assert {t for t in AGENTS["staff"].tools if t.startswith("prepare_")} == {
+        "prepare_account_id", "prepare_assignment_update", "prepare_assignment_transfer", "prepare_assignment_replace"}
     assert {t for t in AGENTS["environment"].tools if t.startswith("prepare_")} == {"prepare_checklist_update"}
     assert {t for t in AGENTS["contract"].tools if t.startswith("prepare_")} == {
         "prepare_contract_save", "prepare_contract_delete", "prepare_alert_ack"}

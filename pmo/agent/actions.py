@@ -8,11 +8,14 @@
 3. 화면은 계획을 확인 카드로 보여준다. 사용자는 값을 고르지 않고 '확인 후 저장' 또는 '취소'만 누른다.
 4. execute_plan이 정해진 업무 함수로 저장한다. 계획을 만든 뒤 데이터가 바뀌었으면 버전 검사로 막힌다.
 """
-from datetime import date
+import difflib
+from datetime import date, timedelta
+from uuid import uuid4
 
 from pmo.checklist import ITEMS, validate_change
 from pmo.contracts import CONTRACT_CATEGORIES, validate_contract
 from pmo.errors import ValidationError
+from pmo.service import validate_assignment
 
 TITLES = {
     "checklist_update": "근무 환경 준비 상태 변경",
@@ -20,6 +23,9 @@ TITLES = {
     "contract_delete": "구매계약 삭제",
     "account_id": "계정 ID 입력",
     "alert_ack": "계약 종료 알림 확인",
+    "assignment_update": "투입 정보 변경",
+    "assignment_transfer": "다른 과제로 이동",
+    "assignment_replace": "인력 교체",
 }
 _TITLE_WORDS = ("차장", "과장", "대리", "부장", "사원", "주임", "책임", "선임", "수석", "님", "씨")
 
@@ -224,8 +230,305 @@ def _plan_alert(service, values: dict) -> dict:
     }
 
 
+# --- 투입 변경·이동·교체 (11/03 담당자 요청) ------------------------------------------------
+# 투입은 기간이 있는 행이다. '12월만 매출귀속 프로젝트 변경'처럼 기간 일부만 바뀌면 투입을 나눈다.
+# 나눈 투입·이동한 투입은 같은 사람이므로 근무 환경 준비 상태를 이어 쓰고, 계약이 원래 투입에만 연결돼 있으면
+# 연결을 풀어 계약 기간 안의 그 인력 투입 전체를 덮게 한다(검수에서 뒤쪽 투입이 빠지지 않게). [제안]
+
+_ASSIGNMENT_KEYS = ("person_id", "project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
+                    "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit")
+
+
+def _day(value, label: str) -> date:
+    try:
+        return date.fromisoformat(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(f"{label}을(를) YYYY-MM-DD로 사용자에게 확인하세요.") from exc
+
+
+def _month(value) -> tuple[date, date]:
+    text = str(value).strip()
+    try:
+        first = date.fromisoformat(f"{text[:7]}-01")
+    except ValueError as exc:
+        raise ValidationError("어느 달인지 YYYY-MM으로 사용자에게 확인하세요.") from exc
+    last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    return first, last
+
+
+def _won(value) -> str:
+    if value in (None, ""):
+        return "미입력"
+    try:
+        return f"{int(float(value)):,}원"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _added(label, after) -> dict:
+    """새로 생기는 값(현재 값 없음)."""
+    return {"항목": label, "현재": "—", "변경": _shown(after)}
+
+
+def _period(a: dict) -> str:
+    return f"{a['start_date']}~{a['end_date']}"
+
+
+def _asg_label(a: dict) -> str:
+    return f"{a['project'] or '과제 미입력'} {_period(a)}"
+
+
+def _segment(a: dict, start: date, end: date, **changes) -> dict:
+    """기존 투입 값을 이어받은 새 기간의 투입 값(검증 전)."""
+    data = {k: a.get(k) for k in _ASSIGNMENT_KEYS}
+    data.update(start_date=start.isoformat(), end_date=end.isoformat(), **changes)
+    if data.get("purchase_rate") is not None or data.get("sales_rate") is not None:
+        data["rate_unit"] = data.get("rate_unit") or "원/MM"
+    return data
+
+
+def _check_split(a: dict) -> None:
+    if a["assignment_type"] == "Part time":
+        raise ValidationError(f"{_asg_label(a)}은(는) Part time이라 MM을 나눌 기준이 없습니다. "
+                              "'과제 투입 관리' 화면에서 기간별 MM을 직접 입력하도록 안내하세요.")
+
+
+def _pick_assignment(service, person: dict, *, project=None, on: date | None = None,
+                     month: tuple[date, date] | None = None) -> dict:
+    rows = sorted(service.assignments(person["id"]), key=lambda r: r["start_date"])
+    if not rows:
+        raise ValidationError(f"{person['name']}에게 등록된 투입이 없습니다.")
+    found = rows
+    hint = str(project or "").strip()
+    if hint:
+        found = [a for a in found if hint in (a["project"] or "")] or found
+    if on:
+        found = [a for a in found if a["start_date"] <= on.isoformat() <= a["end_date"]]
+    if month:
+        found = [a for a in found if a["start_date"] <= month[1].isoformat() and a["end_date"] >= month[0].isoformat()]
+    if not on and not month and not hint:
+        today = service.clock().isoformat()
+        found = [a for a in found if a["end_date"] >= today] or found
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        when = on.isoformat() if on else (f"{month[0]:%Y-%m}" if month else "")
+        raise ValidationError(f"{person['name']}의 투입 중 {when} 기간에 해당하는 투입이 없습니다. 투입: "
+                              + ", ".join(_asg_label(a) for a in rows) + ". 사용자에게 확인하세요.")
+    raise ValidationError(f"{person['name']}의 투입이 {len(found)}건입니다: "
+                          + ", ".join(_asg_label(a) for a in found)
+                          + ". 어느 투입(과제·기간)인지 사용자에게 확인하세요.")
+
+
+def _known_project(service, name: str) -> tuple[str, str | None]:
+    """기존 과제명과 맞춰 본다. 오타로 보이면 비슷한 과제명을 제안하며 되묻는다. (과제명, 경고)"""
+    name = str(name or "").strip()
+    if not name:
+        raise ValidationError("옮길 과제명을 사용자에게 확인하세요.")
+    known = sorted({a["project"] for a in service.assignments() if a["project"]})
+    if name in known:
+        return name, None
+    folded = {k.casefold().replace(" ", ""): k for k in known}
+    if name.casefold().replace(" ", "") in folded:
+        return folded[name.casefold().replace(" ", "")], None
+    close = difflib.get_close_matches(name, known, n=1, cutoff=0.6)
+    if close:
+        raise ValidationError(f"'{name}' 과제는 없습니다. '{close[0]}' 과제가 맞는지 사용자에게 확인하세요.")
+    return name, "처음 보는 과제명입니다(기존 투입에 없음). 맞는지 확인하세요."
+
+
+def _linked_contracts(service, person: dict, assignment: dict) -> list[dict]:
+    return [c for c in service.contracts(person["id"]) if c["assignment_id"] == assignment["id"]]
+
+
+def _unlink(contracts: list[dict], rows: list[dict], changes: list[dict], after: date) -> None:
+    """원래 투입에만 연결된 계약(after 이후까지 이어지는 것)의 연결을 풀어 그 인력의 투입 전체를 덮게 한다."""
+    for c in contracts:
+        if c["end_date"] > after.isoformat():
+            data = {k: c[k] for k in ("id", "person_id", "company", "contract_no", "start_date", "end_date",
+                                      "status", "previous_contract_id", "note")}
+            changes.append({"table": "contracts", "data": dict(data, assignment_id=None),
+                            "expected_version": c["version"]})
+            rows.append(_row(f"계약 {_contract_label(c)} 연결 투입", "이 투입 한 건",
+                             "연결 없음 (계약 기간 안의 이 인력 투입 전체)"))
+
+
+def _rate(values: dict, current=None):
+    value = values.get("purchase_rate")
+    return current if value in (None, "") else str(value).replace(",", "").replace("원", "").strip()
+
+
+def _plan_assignment_update(service, values: dict) -> dict:
+    """투입 값 변경. month(그 달만)·effective_date(그날부터)가 기간 일부면 투입을 나눈다."""
+    person = _person(service, values)
+    month = _month(values["month"]) if values.get("month") else None
+    effective = _day(values["effective_date"], "적용 시작일") if values.get("effective_date") else None
+    if month and effective:
+        raise ValidationError("'그 달만'인지 '그날부터'인지 사용자에게 확인하세요.")
+    a = _pick_assignment(service, person, project=values.get("project"), on=effective, month=month)
+    changes = {}
+    if "revenue_project" in values:
+        changes["revenue_project"] = str(values["revenue_project"]).strip()
+    if "grade" in values:
+        changes["grade"] = str(values["grade"]).strip()
+    if "purchase_rate" in values:
+        changes["purchase_rate"] = _rate(values)
+    dates = {k: _day(values[k], label).isoformat() for k, label in (("start_date", "시작일"), ("end_date", "종료일"))
+             if k in values}
+    if dates and (month or effective):
+        raise ValidationError("기간을 바꾸는 요청과 특정 달만 바꾸는 요청을 함께 처리할 수 없습니다. 하나씩 요청하도록 안내하세요.")
+    if not changes and not dates:
+        raise ValidationError(f"{person['name']}의 {_asg_label(a)}에서 무엇을 바꿀지(매출귀속 프로젝트·등급·매입단가·기간) "
+                              "사용자에게 확인하세요.")
+    labels = {"revenue_project": "매출귀속 프로젝트", "grade": "등급", "purchase_rate": "매입단가(원/MM)",
+              "start_date": "시작일", "end_date": "종료일"}
+    differs = {k: v for k, v in {**changes, **dates}.items()
+               if str(v) != str(a.get(k) if k != "purchase_rate" or a.get(k) is None else int(float(a[k])))}
+    if not differs:
+        raise ValidationError(f"{person['name']}의 {_asg_label(a)}은(는) 이미 그 값입니다. 바뀌는 값이 없습니다.")
+    start, end = date.fromisoformat(a["start_date"]), date.fromisoformat(a["end_date"])
+    seg_start = max(start, month[0]) if month else max(start, effective) if effective else start
+    seg_end = min(end, month[1]) if month else end
+    rows = [_row("인력", _person_label(person), _person_label(person)), _row("대상 투입", _asg_label(a), _asg_label(a))]
+    rows += [_row(labels[k], _won(a.get(k)), _won(v)) if k == "purchase_rate" else _row(labels[k], a.get(k), v)
+             for k, v in differs.items()]
+    plan_changes = []
+    if dates or (seg_start == start and seg_end == end):
+        data = validate_assignment(_segment(a, date.fromisoformat(dates.get("start_date", a["start_date"])),
+                                            date.fromisoformat(dates.get("end_date", a["end_date"])), **changes))
+        plan_changes.append({"table": "assignments", "data": dict(data, id=a["id"]), "expected_version": a["version"]})
+        if dates:
+            rows.append(_row("투입 MM", a["mm"], data["mm"]))
+        summary = f"{person['name']}의 {_asg_label(a)} 변경"
+    else:
+        _check_split(a)
+        parts = []
+        if seg_start > start:
+            parts.append((start, seg_start - timedelta(days=1), {}))
+        parts.append((seg_start, seg_end, changes))
+        if seg_end < end:
+            parts.append((seg_end + timedelta(days=1), end, {}))
+        shown = []
+        for i, (s, e, ch) in enumerate(parts):
+            data = validate_assignment(_segment(a, s, e, **ch))
+            if i == 0:
+                plan_changes.append({"table": "assignments", "data": dict(data, id=a["id"]),
+                                     "expected_version": a["version"]})
+            else:
+                plan_changes.append({"table": "assignments", "data": dict(data, id=str(uuid4())),
+                                     "checklist_from": a["id"]})
+            shown.append(f"{s}~{e} {data['mm']}MM" + (" (변경)" if ch else " (기존 값)"))
+        rows.append(_row("투입 나누기", f"{_period(a)} 한 건 {a['mm']}MM", " / ".join(shown)))
+        _unlink(_linked_contracts(service, person, a), rows, plan_changes, seg_start - timedelta(days=1))
+        summary = f"{person['name']}의 {seg_start}~{seg_end} 투입 변경(투입 {len(parts)}건으로 나눔)"
+    return {"rows": rows, "check": None, "params": {"changes": plan_changes}, "summary": summary}
+
+
+def _plan_assignment_transfer(service, values: dict) -> dict:
+    """같은 인력이 기존 과제에서 빠지고 다른 과제로 옮긴다: 기존 투입은 이동 전날 종료, 새 과제 투입 등록."""
+    person = _person(service, values)
+    move = _day(values.get("start_date"), "이동일(새 과제 시작일)")
+    to_project, warning = _known_project(service, values.get("to_project"))
+    a = _pick_assignment(service, person, project=values.get("from_project"), on=move)
+    if a["project"] == to_project:
+        raise ValidationError(f"{person['name']}은(는) {move}에 이미 {to_project} 과제에 투입되어 있습니다.")
+    if move.isoformat() <= a["start_date"]:
+        raise ValidationError(f"이동일 {move}이(가) 기존 투입 시작일({a['start_date']})보다 늦어야 합니다. "
+                              "투입 과제 자체를 바꾸려면 '과제 투입 관리' 화면을 안내하세요.")
+    _check_split(a)
+    end = _day(values["end_date"], "새 과제 종료일") if values.get("end_date") else date.fromisoformat(a["end_date"])
+    old_end = move - timedelta(days=1)
+    revenue = str(values.get("revenue_project") or "").strip() or None
+    old = validate_assignment(_segment(a, date.fromisoformat(a["start_date"]), old_end))
+    new_id = str(uuid4())
+    new = validate_assignment(_segment(a, move, end, project=to_project, revenue_project=revenue, revenue_team=None,
+                                       purchase_rate=_rate(values, a.get("purchase_rate"))))
+    others = [o for o in service.assignments(person["id"]) if o["id"] != a["id"]
+              and o["start_date"] <= new["end_date"] and o["end_date"] >= new["start_date"]]
+    if others:
+        raise ValidationError(f"{person['name']}의 새 투입 기간이 다른 투입과 겹칩니다: "
+                              + ", ".join(_asg_label(o) for o in others) + ". 종료일을 사용자에게 확인하세요.")
+    rows = [_row("인력", _person_label(person), _person_label(person)),
+            _row("기존 투입", _asg_label(a) + f" {a['mm']}MM",
+                 f"{a['project']} {a['start_date']}~{old_end} {old['mm']}MM"),
+            _added("새 투입 과제", to_project),
+            _added("새 투입 기간", f"{move}~{end} {new['mm']}MM ({new['assignment_type']})"),
+            _added("새 투입 매출귀속 프로젝트", revenue or "미정 (나중에 보완)"),
+            _added("새 투입 등급·매입단가", f"{new['grade'] or '미입력'} · {_won(new['purchase_rate'])} (기존 투입과 같게)"),
+            _added("근무 환경 준비", "기존 투입의 상태를 이어 씀")]
+    if warning:
+        rows.append(_added("확인", warning))
+    changes = [{"table": "assignments", "data": dict(old, id=a["id"]), "expected_version": a["version"]},
+               {"table": "assignments", "data": dict(new, id=new_id), "checklist_from": a["id"]}]
+    _unlink(_linked_contracts(service, person, a), rows, changes, old_end)
+    return {"rows": rows, "check": None, "params": {"changes": changes},
+            "summary": f"{person['name']} {move}부터 {a['project']} → {to_project} 이동"}
+
+
+def _plan_assignment_replace(service, values: dict) -> dict:
+    """과제 인력 교체: 기존 인력 투입은 교체 전날 종료, 교체 인력이 같은 과제에 새로 투입. 계약도 함께 맞춘다."""
+    old_person = _person(service, values)
+    if not values.get("new_person_id"):
+        raise ValidationError("누구로 교체할지(교체 인력 이름) 사용자에게 확인하세요.")
+    new_person = _person(service, {"person_id": values["new_person_id"]})
+    if new_person["id"] == old_person["id"]:
+        raise ValidationError("기존 인력과 교체 인력이 같습니다. 사용자에게 확인하세요.")
+    start = _day(values.get("start_date"), "교체일(교체 인력 투입 시작일)")
+    a = _pick_assignment(service, old_person, project=values.get("project"), on=start)
+    if start.isoformat() <= a["start_date"]:
+        raise ValidationError(f"교체일 {start}이(가) {old_person['name']}의 투입 시작일({a['start_date']})보다 늦어야 합니다.")
+    grade = str(values.get("grade") or "").strip() or None
+    if grade is None and new_person["category"] != "컨설팅":
+        raise ValidationError(f"교체 인력 {new_person['name']}의 등급(L7·L6·L5 등)을 사용자에게 확인하세요.")
+    kind = a["assignment_type"]
+    if kind == "Part time":
+        raise ValidationError(f"{_asg_label(a)}은(는) Part time입니다. 교체 인력의 MM을 '과제 투입 관리' 화면에서 입력하도록 안내하세요.")
+    end = _day(values["end_date"], "교체 인력 종료일") if values.get("end_date") else date.fromisoformat(a["end_date"])
+    old_end = start - timedelta(days=1)
+    revenue = str(values.get("revenue_project") or "").strip() or a["revenue_project"]
+    old = validate_assignment(_segment(a, date.fromisoformat(a["start_date"]), old_end))
+    new_id = str(uuid4())
+    rate = _rate(values)
+    new = validate_assignment({"person_id": new_person["id"], "project": a["project"], "revenue_project": revenue,
+                               "revenue_team": a.get("revenue_team"), "start_date": start.isoformat(),
+                               "end_date": end.isoformat(), "grade": grade, "assignment_type": kind,
+                               "purchase_rate": rate, "rate_unit": "원/MM" if rate else None})
+    clash = [o for o in service.assignments(new_person["id"])
+             if o["start_date"] <= new["end_date"] and o["end_date"] >= new["start_date"]]
+    if clash:
+        raise ValidationError(f"{new_person['name']}은(는) 그 기간에 이미 투입이 있습니다: "
+                              + ", ".join(_asg_label(o) for o in clash) + ". 사용자에게 확인하세요.")
+    rows = [_row("과제", a["project"], a["project"]),
+            _row("기존 인력", f"{_person_label(old_person)} · {_period(a)} {a['mm']}MM",
+                 f"{a['start_date']}~{old_end} {old['mm']}MM (투입 종료)"),
+            _added("교체 인력", f"{_person_label(new_person)} · {start}~{end} {new['mm']}MM ({kind})"),
+            _added("교체 인력 매출귀속 프로젝트", (revenue or "미정")
+                 + (" (기존 인력과 같게)" if revenue == a["revenue_project"] else "")),
+            _added("교체 인력 등급·매입단가", f"{grade or '없음(컨설팅)'} · {_won(rate)}"),
+            _added("교체 인력 근무 환경 준비", "4개 항목 미진행으로 새로 만듦")]
+    changes = [{"table": "assignments", "data": dict(old, id=a["id"]), "expected_version": a["version"]},
+               {"table": "assignments", "data": dict(new, id=new_id)}]
+    for c in service.contracts(old_person["id"]):
+        covers = c["assignment_id"] == a["id"] or (not c["assignment_id"] and c["start_date"] <= old_end.isoformat())
+        if covers and c["end_date"] > old_end.isoformat() and c["start_date"] <= old_end.isoformat():
+            data = {k: c[k] for k in ("id", "person_id", "assignment_id", "company", "contract_no", "start_date",
+                                      "status", "previous_contract_id", "note")}
+            changes.append({"table": "contracts", "data": dict(data, end_date=old_end.isoformat()),
+                            "expected_version": c["version"]})
+            rows.append(_row(f"기존 인력 계약 {c['contract_no'] or '번호 미발급'} 종료일", c["end_date"], old_end.isoformat()))
+    if new_person["category"] in CONTRACT_CATEGORIES:
+        changes.append({"table": "contracts", "data": {
+            "person_id": new_person["id"], "assignment_id": new_id, "company": new_person["company"],
+            "contract_no": None, "start_date": start.isoformat(), "end_date": end.isoformat(), "status": "준비"}})
+        rows.append(_added("교체 인력 구매계약", f"{new_person['company']} {start}~{end} 준비 (계약번호 발급 후 입력)"))
+    return {"rows": rows, "check": "교체 인력과 교체일이 맞는지 확인했습니다.", "params": {"changes": changes},
+            "summary": f"{a['project']} {old_person['name']} → {new_person['name']} 교체 ({start}부터)"}
+
+
 _BUILDERS = {"checklist_update": _plan_checklist, "contract_save": _plan_contract_save,
-             "contract_delete": _plan_contract_delete, "account_id": _plan_account, "alert_ack": _plan_alert}
+             "contract_delete": _plan_contract_delete, "account_id": _plan_account, "alert_ack": _plan_alert,
+             "assignment_update": _plan_assignment_update, "assignment_transfer": _plan_assignment_transfer,
+             "assignment_replace": _plan_assignment_replace}
 
 
 def build_plan(service, action: str, values: dict) -> dict:
@@ -255,6 +558,8 @@ def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool =
                             expected_version=p["expected_version"])
     elif action == "alert_ack":
         service.acknowledge_alert(p["alert_id"], actor=actor)
+    elif action in ("assignment_update", "assignment_transfer", "assignment_replace"):
+        service.apply_assignment_changes(p["changes"], token=token, actor=actor)
     else:
         raise ValidationError("지원하지 않는 작업입니다.")
     return f"{plan['summary']} — 저장했습니다."

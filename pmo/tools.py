@@ -103,6 +103,34 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          _obj({"person_id": PERSON, "account_id": STR}), handler=_plan("account_id")),
     Tool("prepare_alert_ack", "계약 종료 알림 확인 처리를 준비한다(저장 안 함). 알림 확인은 계약 갱신 완료가 아니다.",
          _obj({"person_id": PERSON}), handler=_plan("alert_ack")),
+    Tool("prepare_assignment_update", "투입 정보(매출귀속 프로젝트·등급·매입단가·시작일·종료일) 변경을 준비한다(저장 안 함). "
+         "특정 달만 바꾸면 month(YYYY-MM), 어느 날부터 바꾸면 effective_date를 넣는다. 기간 일부만 바뀌면 코드가 투입을 나눈다. "
+         "바꿀 값만 넣는다. 과제를 옮기면 prepare_assignment_transfer, 사람을 바꾸면 prepare_assignment_replace를 쓴다.",
+         _obj({"person_id": PERSON, "project": {"type": "string", "description": "투입이 여러 건일 때 대상 과제명"},
+               "month": {"type": "string", "description": "그 달만 바꿀 때 YYYY-MM"},
+               "effective_date": {"type": "string", "description": "그날부터 바꿀 때 YYYY-MM-DD"},
+               "revenue_project": STR, "grade": STR, "purchase_rate": {"type": "string", "description": "원/MM 금액"},
+               "start_date": DATE, "end_date": DATE}),
+         handler=_plan("assignment_update")),
+    Tool("prepare_assignment_transfer", "인력이 기존 과제에서 빠지고 다른 과제로 옮기는 것을 준비한다(저장 안 함). "
+         "기존 투입은 이동 전날 종료하고 새 과제 투입을 만든다.",
+         _obj({"person_id": PERSON, "to_project": {"type": "string", "description": "옮길 과제명"},
+               "start_date": {"type": "string", "description": "새 과제 시작일(이동일) YYYY-MM-DD"},
+               "from_project": {"type": "string", "description": "기존 과제명(투입이 여러 건일 때)"},
+               "end_date": {"type": "string", "description": "새 과제 종료일. 사용자가 말하지 않으면 비운다"},
+               "revenue_project": {"type": "string", "description": "새 과제의 매출귀속 프로젝트. 말하지 않으면 비운다"},
+               "purchase_rate": STR}, ("person_id", "to_project", "start_date")),
+         handler=_plan("assignment_transfer")),
+    Tool("prepare_assignment_replace", "과제의 인력 교체를 준비한다(저장 안 함). 기존 인력 투입은 교체 전날 종료하고 "
+         "교체 인력을 같은 과제에 투입하며, 기존 인력 계약 종료일과 교체 인력 계약(준비)도 함께 맞춘다.",
+         _obj({"person_id": {"type": "string", "description": "빠지는 기존 인력의 id 또는 이름"},
+               "new_person_id": {"type": "string", "description": "새로 들어오는 교체 인력의 id 또는 이름"},
+               "start_date": {"type": "string", "description": "교체 인력 투입 시작일 YYYY-MM-DD"},
+               "project": {"type": "string", "description": "과제명(기존 인력 투입이 여러 건일 때)"},
+               "grade": {"type": "string", "description": "교체 인력 등급(L7·L6·L5 등). 사용자가 말하지 않으면 비운다"},
+               "purchase_rate": STR, "revenue_project": STR, "end_date": DATE},
+              ("person_id", "new_person_id", "start_date")),
+         handler=_plan("assignment_replace")),
     # --- 구현 예정: 규칙 미확정 ---
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
          "구매 필요 판정 기준 미확정(TODO).",
@@ -129,6 +157,9 @@ TOOL_LABELS = {
     "prepare_contract_delete": "구매계약 삭제",
     "prepare_account_id": "계정 ID 입력",
     "prepare_alert_ack": "계약 종료 알림 확인",
+    "prepare_assignment_update": "투입 정보 변경",
+    "prepare_assignment_transfer": "다른 과제로 이동",
+    "prepare_assignment_replace": "인력 교체",
 }
 
 

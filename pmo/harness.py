@@ -92,6 +92,21 @@ def _attach_answer(row: dict, last: dict | None) -> bool:
     return bool(last["error"])
 
 
+def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
+    """optional 단계는 실제로 부른 만큼만 기대한다(교체처럼 find_people이 두 번 올 수 있을 때 하나만 불러도 됨)."""
+    from collections import Counter
+    spare = Counter(called)
+    spare.subtract(Counter(st["tool"] for st in steps if not st.get("optional")))
+    kept = []
+    for st in steps:
+        if st.get("optional"):
+            if spare[st["tool"]] <= 0:
+                continue
+            spare[st["tool"]] -= 1
+        kept.append(st)
+    return kept
+
+
 def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
         save: bool = True, on_result=None) -> dict:
     """on_result(row): 질문 하나가 끝날 때마다 호출된다(진행 상황 출력용)."""
@@ -128,7 +143,7 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                     on_result(row)
                 continue
             # optional 단계(예: 이름을 받는 도구 앞의 find_people)는 건너뛰어도 된다. 코드가 이름을 관리번호로 바꾼다.
-            steps = [st for st in q["steps"] if not st.get("optional") or st["tool"] in called]
+            steps = _expected_steps(q["steps"], called)
             problems = []
             if called != [st["tool"] for st in steps]:
                 want = [st["tool"] + ("(생략 가능)" if st.get("optional") else "") for st in q["steps"]]

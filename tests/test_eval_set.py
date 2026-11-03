@@ -49,3 +49,13 @@ def test_seed_eval_guards(tmp_path):
     seed_eval(service, TODAY)
     with pytest.raises(RuntimeError):
         seed_eval(service, TODAY)
+
+
+def test_optional_steps_count_what_was_called():
+    """교체처럼 find_people이 두 번 올 수 있는 질문: 한 번만 불러도, 두 번 불러도, 안 불러도 정답 순서로 본다."""
+    from pmo.harness import _expected_steps
+    steps = [{"tool": "find_people", "optional": True}, {"tool": "find_people", "optional": True},
+             {"tool": "prepare_assignment_replace"}]
+    for called in (["prepare_assignment_replace"], ["find_people", "prepare_assignment_replace"],
+                   ["find_people", "find_people", "prepare_assignment_replace"]):
+        assert [s["tool"] for s in _expected_steps(steps, called)] == called
