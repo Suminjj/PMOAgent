@@ -268,6 +268,8 @@
 7. [구현] LLM 평가: `python -m scripts.run_evals --model 모델1,모델2`로 질문별 도구 선택 정답·답변·응답 시간·성공 여부를 기록하고 모델을 비교.
    `--routing auto,category`로 자동(전체) 단일 Agent와 카테고리별 전문 Agent(질문의 `agent` 태그)를 비교.
    이름을 받는 도구 앞의 find_people은 `optional` 단계로 두어 생략해도 정답으로 본다(동명이인 질문은 생략 불가)
+   [제안] 질문별 토큰 수(Ollama 입력 prompt_eval_count·출력 eval_count, LLM 호출 전체 합)를 결과 JSON의 tokens와
+   요약(질문당 평균)에 남기고 실행 기록(run_log)에도 적는다. v4 Langfuse 전에도 버전별 시간·토큰을 비교하기 위함(11/03 담당자).
 8. [구현] 정확도 평가 세트(11/01 담당자, 기준일 2026-11-15 고정): 평가용 가상 데이터 `pmo/eval_data.py`(인력 22명, 1명 = 시험할 경우 1개,
    이름은 김정직·김협력·김컨설처럼 분류를 넣음 — 분류를 묻는 질문은 넣지 않음, 한 투입 과제 안에 매출귀속 프로젝트가 여러 개) + 질문 49개 `evals/eval_set.json` (질문마다 풀 버전 target 표시).
    11/03 담당자 추가 질문: 월마다 다른 매출귀속 프로젝트·미정·오타 되묻기·인력 교체·과제 이동·0.5MM(반 달 Full time vs 한 달 Part time).

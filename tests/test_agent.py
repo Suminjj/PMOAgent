@@ -173,7 +173,8 @@ def test_ollama_client_request_and_tool_call_parsing(fake_ollama):
     tools = [{"name": "find_people", "description": "찾기",
               "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}}}]
     reply = client.chat([{"role": "user", "content": "김가상"}], tools)
-    assert reply == {"content": "", "tool_calls": [{"name": "find_people", "arguments": {"name": "김가상"}}]}
+    assert reply == {"content": "", "tool_calls": [{"name": "find_people", "arguments": {"name": "김가상"}}],
+                     "usage": {"prompt_tokens": None, "completion_tokens": None}}
     path, body = FakeOllama.received[0]
     assert path == "/api/chat" and body["model"] == "qwen3:8b" and body["stream"] is False
     assert body["think"] is False  # 평가 결과로 정한 기본값: 추론 모드 끔
@@ -247,3 +248,20 @@ def test_missing_person_uses_recent_user_message_and_namesakes_still_ask(service
                                text("어느 김가상인가요?")])
     result = ask(service, "김가상 계정 신청 진행 중으로 바꿔줘", namesake)
     assert result["calls"][0]["ok"] is False and "2명" in result["calls"][0]["error"]
+
+
+def test_token_usage_is_recorded_for_answers_and_evals(fake_ollama, service):
+    """Ollama가 주는 입력·출력 토큰 수를 질문별로 합산해 답변·평가 결과에 남긴다(v1부터 토큰 비교용)."""
+    FakeOllama.reply = {"message": {"content": "답입니다"}, "prompt_eval_count": 1200, "eval_count": 35}
+    client = OllamaClient(model="m", base_url=fake_ollama)
+    assert client.chat([], [])["usage"] == {"prompt_tokens": 1200, "completion_tokens": 35}
+    result = ask(service, "안녕", client)
+    assert result["tokens"] == {"prompt": 1200, "completion": 35, "llm_calls": 1}
+    scripted = ask(service, "안녕", ScriptedClient([text("답")]))           # usage가 없는 클라이언트도 동작
+    assert scripted["ok"] and scripted["tokens"] == {"prompt": 0, "completion": 0, "llm_calls": 1}
+    from pmo.harness import token_summary
+    summary = token_summary([{"tokens": {"prompt": 1000, "completion": 30, "llm_calls": 2}},
+                             {"tokens": {"prompt": 3000, "completion": 50, "llm_calls": 3}}, {}])
+    assert summary == {"questions": 2, "prompt": 4000, "completion": 80, "avg_prompt": 2000,
+                       "avg_completion": 40, "avg_llm_calls": 2.5}
+    assert token_summary([{"id": "oracle"}]) is None
