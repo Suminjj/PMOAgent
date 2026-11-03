@@ -6,11 +6,11 @@ import pytest
 from pmo.access import AccessDenied, authenticate, create_user, users
 from pmo.agent import text_to_sql
 from pmo.db import connection
-from pmo.eval_data import VOUCHER, SOFTLAB, EVAL_PASSWORD, TODAY, seed_eval
+from pmo.eval_data import PEOPLE, VOUCHER, SOFTLAB, EVAL_PASSWORD, TODAY, seed_eval
 from pmo.service import Service
 from pmo.tools import call_tool
 
-SOFTLAB_PEOPLE = {"김정직", "이협력", "정협력", "강협력", "윤협력", "서협력"}
+SOFTLAB_PEOPLE = {"김정직", "이협력", "정협력", "강협력", "윤협력", "서협력", "신협력", "명협력"}
 
 
 @pytest.fixture(scope="module")
@@ -39,7 +39,7 @@ def test_login_checks_hashed_password(db):
 def test_pm_and_pmo_see_everything_and_can_write(db):
     for login in ("pmo", "pm"):
         s = as_user(db, login)
-        assert len(s.people()) == 16 and s.access.can_write
+        assert len(s.people()) == len(PEOPLE) and s.access.can_write
         assert len(s.history()) > 0
 
 
