@@ -380,6 +380,48 @@ class Service:
                          "months": values, "note": note, "assignment_id": a["id"]})
         return sorted(rows, key=lambda r: (r["company"] or "", r["name"] or "", r["start_date"]))
 
+    def inspection_contracts(self) -> list[dict]:
+        """검수 화면의 업체·계약번호 선택 목록. 계약번호가 있는 계약만, 같은 번호는 한 줄(인원 수·전체 기간)."""
+        groups: dict[tuple[str, str], dict] = {}
+        for c in self.contracts():
+            if not c.get("contract_no"):
+                continue
+            key = (c["company"].strip(), c["contract_no"].strip())
+            g = groups.setdefault(key, {"company": key[0], "contract_no": key[1], "start_date": c["start_date"],
+                                        "end_date": c["end_date"], "people": set()})
+            g["start_date"], g["end_date"] = min(g["start_date"], c["start_date"]), max(g["end_date"], c["end_date"])
+            g["people"].add(c["person_id"])
+        return sorted((dict(g, people=len(g["people"])) for g in groups.values()),
+                      key=lambda g: (g["company"], g["contract_no"]))
+
+    def inspection(self, company: str, contract_no: str, start_month: str, end_month: str) -> dict:
+        """업체·계약번호의 매출귀속 프로젝트별 검수 금액 (pmo/inspection.py 규칙).
+
+        계약 총액 = 계약 기간 전체, 검수 금액 = 조회 기간(start_month~end_month, 'YYYY-MM').
+        """
+        from pmo.contracts import month_range
+        from pmo.inspection import RULE, by_project, line_items
+        company, contract_no = required(company, "업체명"), required(contract_no, "계약번호")
+        rows = [c for c in self.contracts() if c.get("contract_no") and c["contract_no"].strip() == contract_no
+                and c["company"].strip().casefold() == company.casefold()]
+        if not rows:
+            raise ValidationError(f"{company}의 계약번호 {contract_no} 계약이 없습니다.")
+        try:
+            first = month_range(int(start_month[:4]), int(start_month[5:7]))[0]
+            last = month_range(int(end_month[:4]), int(end_month[5:7]))[1]
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("조회 기간을 'YYYY-MM' 형식으로 입력하세요.") from exc
+        if first > last:
+            raise ValidationError("조회 시작 월이 종료 월보다 늦습니다.")
+        assignments = self.assignments()
+        contract_period = (min(r["start_date"] for r in rows), max(r["end_date"] for r in rows))
+        contract_lines = line_items(rows, assignments, contract_period)
+        period_lines = line_items(rows, assignments, (first, last))
+        return {"company": company, "contract_no": contract_no, "contract_period": contract_period,
+                "period": (first, last), "people": len({r["person_id"] for r in rows}),
+                "contract": dict(by_project(contract_lines), lines=contract_lines),
+                "selected": dict(by_project(period_lines), lines=period_lines), "rule": RULE}
+
     def assignment_timeline(self, person_id: str, today: date | None = None) -> dict:
         """현재 투입·과거 투입·예정 투입을 구분해 돌려준다."""
         today_text = (today or self.clock()).isoformat()

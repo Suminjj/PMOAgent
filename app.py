@@ -720,6 +720,93 @@ elif page == "계약 등록·수정":
             stage("contract", input_data, current)
     confirm()
 
+elif page == "검수하기":
+    def won(value) -> str:
+        return "계산 불가" if value is None else f"{value:,}원"
+
+    def total_text(value) -> str:
+        return "계산 불가" if value is None else f"{value:,}"
+
+    choices = service.inspection_contracts()
+    if not choices:
+        st.info("계약번호가 있는 구매계약이 없습니다. '계약 등록·수정'에서 계약번호를 입력하세요.")
+        st.stop()
+    # 검색은 한 줄: 업체명 · 계약번호 · 월 (+ 세부 조회 토글) (10/25 담당자)
+    s1, s2, s3, s4 = st.columns([1.2, 1.6, 1, 0.8], vertical_alignment="bottom")
+    company = s1.selectbox("업체명", sorted({c["company"] for c in choices}), key="insp_company")
+    numbers = {c["contract_no"]: c for c in choices if c["company"] == company}
+    contract_no = s2.selectbox(
+        "계약번호", list(numbers), key=f"insp_no_{company}",
+        format_func=lambda n: f"{n} · {numbers[n]['start_date']}~{numbers[n]['end_date']} · {numbers[n]['people']}명")
+    chosen = numbers[contract_no]
+    months, cursor = [], date.fromisoformat(chosen["start_date"]).replace(day=1)
+    while cursor.isoformat()[:7] <= chosen["end_date"][:7]:
+        months.append(cursor.isoformat()[:7])
+        cursor = date(cursor.year + (cursor.month == 12), cursor.month % 12 + 1, 1)
+    # 기본은 이번 달 (계약 기간 밖이면 가장 가까운 달)
+    default = min(max(service.clock().isoformat()[:7], months[0]), months[-1])
+    label = lambda m: f"{m[:4]}년 {int(m[5:])}월"  # noqa: E731
+    key = f"{company}_{contract_no}"
+    detail = s4.toggle("세부 조회", key=f"insp_detail_{key}", help="시작 월과 종료 월을 골라 여러 달을 한 번에 봅니다.")
+    month = s3.selectbox("월", months, index=months.index(default), format_func=label,
+                         key=f"insp_month_{key}", disabled=detail)
+    start_month = end_month = month
+    if detail:
+        d1, d2, _ = st.columns([1.2, 1.6, 1.8])
+        start_month = d1.selectbox("시작 월", months, index=months.index(month), format_func=label,
+                                   key=f"insp_from_{key}")
+        end_month = d2.selectbox("종료 월", months, index=months.index(month), format_func=label,
+                                 key=f"insp_to_{key}")
+    try:
+        result = service.inspection(company, contract_no, start_month, end_month)
+    except ValidationError as exc:
+        st.error(str(exc))
+        st.stop()
+    period_label = label(start_month) if start_month == end_month else f"{label(start_month)} ~ {label(end_month)}"
+    theme.kpi_row([("계약 총액 (계약 기간 전체)", total_text(result["contract"]["total"]), "원", False),
+                   (f"검수 금액 · {period_label}", total_text(result["selected"]["total"]), "원", False),
+                   ("계약 인원", result["people"], "명", False),
+                   ("계산 불가 건", result["selected"]["incomplete"], "건", bool(result["selected"]["incomplete"]))])
+    st.subheader(f"매출귀속 프로젝트별 검수 금액 · {period_label}")
+    st.caption("'프로젝트 전체 금액'은 계약 기간 전체에서 그 프로젝트에 귀속되는 금액입니다. "
+               "구매시스템의 계약금액과 맞춰 볼 때 쓰세요.")
+    lines = result["selected"]["lines"]
+    if not lines and not result["contract"]["lines"]:
+        st.info("이 계약에 연결된 투입이 없습니다.")
+    else:
+        from pmo.inspection import report_rows
+        # 구매시스템에는 프로젝트 번호가 없어, 계약 금액 중 프로젝트 귀속 총액(계약 기간)과 이번 달 검수 금액을 함께 본다 (10/25)
+        amount_col, total_col = f"검수 금액 ({period_label})", "프로젝트 전체 금액 (계약 기간)"
+        rows = report_rows(lines, result["contract"]["lines"])
+
+        def amount_cell(row, key):
+            if key == "amount" and not row["in_period"]:
+                return ""                                   # 이 기간에 투입이 없는 인력
+            return won(row[key])                            # None이면 '계산 불가' (0원 아님)
+
+        frame = pd.DataFrame([{"인력명": r["name"], "매출귀속 프로젝트": r["revenue_project"],
+                               "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
+                               amount_col: amount_cell(r, "amount")} for r in rows])
+        kinds = [r["kind"] for r in rows]
+        shade = {"subtotal": "font-weight: 600; background-color: #F7F9FC",
+                 "total": "font-weight: 700; background-color: #E8EEFB"}
+
+        def style_row(row):
+            base = shade.get(kinds[row.name], "")
+            # 이번 달(조회 기간) 검수 금액은 굵게, 파란색으로 강조 (10/25 담당자)
+            return [f"{base}; font-weight: 700; color: #1D4ED8" if col == amount_col else base for col in row.index]
+
+        st.dataframe(frame.style.apply(style_row, axis=1), hide_index=True, use_container_width=True,
+                     column_config={c: st.column_config.TextColumn(alignment="right")
+                                    for c in ("MM", total_col, amount_col)})
+    incomplete = [l for l in lines + result["contract"]["lines"] if l["amount"] is None]
+    incomplete = list({(l["name"], l["note"]): l for l in incomplete}.values())
+    if incomplete:
+        st.warning(f"계산할 수 없는 {len(incomplete)}건은 합계에서 뺐습니다(0원으로 계산하지 않음). "
+                   + " · ".join(f"{l['name']}: {l['note']}" for l in incomplete))
+    st.caption(f"계산 규칙: {result['rule']}. 이 금액은 구매시스템의 실제 검수·승인과 별개이며, "
+               "구매시스템 계약금액과 대조해 규칙을 확정할 예정입니다.")
+
 elif page == "계약 종료 알림":
     st.subheader("계약 종료 알림")
     st.caption("계약 종료 14일 전부터 표시하며, 앱을 실행할 때마다 미처리 대상을 다시 확인합니다. "
