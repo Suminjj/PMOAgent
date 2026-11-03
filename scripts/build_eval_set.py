@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 from pmo.config import ROOT
-from pmo.eval_data import VOUCHER, SOFTLAB, PEOPLE, TODAY, seed_eval
+from pmo.eval_data import APC, VOUCHER, SOFTLAB, PEOPLE, TODAY, seed_eval
 from pmo.service import Service
 from pmo.tools import call_tool
 
@@ -114,6 +114,14 @@ def questions(s: Service) -> list[dict]:
     add("C10", "contract", "계약번호 미발급", "계약번호가 아직 안 나온 사람 있어?", None,
         must_include=sorted({c["name"] for c in s.contracts() if not c["contract_no"]}))
 
+    apc = {}
+    for a in s.assignments():
+        if a["project"] == APC and a["end_date"] >= TODAY.isoformat():
+            apc.setdefault(a["revenue_project"], set()).add(a["name"])
+    add("S11", "staff", "한 과제 · 여러 매출귀속 프로젝트", "APC Analysis 과제 인력을 매출귀속 프로젝트별로 알려줘.", None,
+        must_include=sorted(apc) + sorted(set().union(*apc.values())),
+        note="투입 과제와 매출귀속 프로젝트는 다르다: " + " / ".join(f"{k}: {', '.join(sorted(v))}" for k, v in sorted(apc.items())))
+
     # --- 근무 환경 준비 -----------------------------------------------------------
     add("E01", "environment", "준비 남은 투입", "근무 환경 준비가 남은 사람 알려줘.",
         [step("checklist_status", {})], must_include=preparing)
@@ -126,7 +134,8 @@ def questions(s: Service) -> list[dict]:
     # --- 검수 (도구 연결 전) -----------------------------------------------------
     add("I01", "inspection", "검수 금액 + 계산 불가", "감마테크 C-2026-202 11월 검수 금액 알려줘.", None,
         target="v3", hold_ok=True, must_include=[won(gamma["selected"]["total"]), "계산 불가"],
-        note=f"한협력은 매입단가가 없어 계산 불가. 계약 총액 {won(gamma['contract']['total'])}원.")
+        note=f"한협력은 매입단가가 없어 계산 불가. 계약 총액 {won(gamma['contract']['total'])}원. 매출귀속 프로젝트별: "
+             + ", ".join(f"{p['revenue_project']} {won(p['amount']) if p['amount'] is not None else '계산 불가'}" for p in gamma["selected"]["projects"]))
     add("I02", "inspection", "계약 총액", "알파솔루션 C-2026-103 계약 총액 얼마야?", None,
         target="v3", hold_ok=True, must_include=[won(alpha["contract"]["total"])],
         note="검수 Agent 도구 연결 전(추가 기능)에는 v3: 답변 보류 + '검수하기' 화면 안내.")
