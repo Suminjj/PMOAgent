@@ -144,7 +144,7 @@ def questions(s: Service) -> list[dict]:
     add("T03", "contract", "이름 오타 → 바로잡아 되묻기", "박헙력 구매계약 언제까지야?", None, target="v3",
         ask_back=True, must_include=["박협력"], note="'박헙력'은 없다. '박협력'이 맞는지 되묻는다(확인 전에 다른 사람 계약을 답하지 않음).")
     ryu = s.assignments("EV-19")[0]
-    add("X01", "staff", "인력 교체", "전표작성 자동화 류협력을 12월 1일부터 노협력으로 교체해줘.", None,
+    add("X01", "staff", "인력 교체", "전표작성 자동화 류협력을 12월 1일부터 노협력(L6)으로 교체해줘.", None,
         target="추가 기능", hold_ok=True, must_not_include=["교체했습니다", "변경되었습니다", "저장했습니다"],
         note=f"기대 동작(투입 등록·수정 Agent 도구 구현 후): 류협력 투입 종료일 {ryu['end_date']} → 2026-11-30, "
              f"노협력 신규 투입 {ryu['project']} 2026-12-01~{ryu['end_date']}(매출귀속 프로젝트 {ryu['revenue_project']}를 "
