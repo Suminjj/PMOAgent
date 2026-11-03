@@ -233,3 +233,36 @@ def test_planned_only_agent_answers_without_llm(service):
     assert [(c["tool"], c["ok"]) for c in result["calls"]] == [("inspection_amount_by_revenue_project", False)]
     assert "구현 예정" in result["calls"][0]["error"]
     assert all(not a.planned_notice for k, a in AGENTS.items() if k != "inspection")
+
+
+def test_revenue_project_questions_belong_to_staff():
+    """'월별 매출귀속 프로젝트' 질문을 자동은 검수 도구로, 인력관리는 구매계약으로 보내던 문제(11/03 v1 화면 확인)."""
+    from pmo.agent.prompts import SYSTEM_PROMPT
+    from pmo.tools import TOOLS
+    staff = system_prompt(AGENTS["staff"], "2026-11-15")
+    assert "매출귀속 프로젝트(월별 포함)" in staff and "## 맡는 질문" in staff     # 역할·지침 모두 전달
+    contract = system_prompt(AGENTS["contract"], "2026-11-15")
+    assert "인력관리: 인력 찾기, 투입 과제·기간·매출귀속 프로젝트" in contract     # 다른 Agent가 바르게 안내
+    assert "매출귀속 프로젝트" in TOOLS["get_assignment_timeline"].description
+    assert "검수 금액을 물을 때만" in TOOLS["inspection_amount_by_revenue_project"].description
+    assert "검수 금액(원)을 물을 때만" in SYSTEM_PROMPT
+
+
+def test_project_members_tool(tmp_path):
+    """'APC Analysis 과제 인력을 매출귀속 프로젝트별로' 질문에 모델이 과제명을 사람 이름으로 찾던 문제(11/03)."""
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.service import Service
+    from pmo.tools import call_tool
+    s = Service(tmp_path / "p.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    r = call_tool(s, "get_project_members", {"project": "apc analysis"})
+    assert r["ok"] and r["data"]["project"] == "APC Analysis"
+    groups = r["data"]["by_revenue_project"]
+    assert groups["30133686-D038"] == ["김협력", "정협력", "최협력"] and groups["미정(미입력)"] == ["문협력"]
+    assert "백협력" not in str(groups)                                              # 10월에 끝난 투입은 기본 제외
+    assert "백협력" in str(call_tool(s, "get_project_members", {"project": "APC Analysis", "include_past": True}))
+    typo = call_tool(s, "get_project_members", {"project": "Soft Lap 고도화"})
+    assert not typo["ok"] and "'Soft Lab 고도화'" in typo["error"]
+    wrong = call_tool(s, "get_assignment_timeline", {"person_id": "APC Analysis"})
+    assert not wrong["ok"] and "과제명" in wrong["error"] and "get_project_members" in wrong["error"]
+    assert "get_project_members" in AGENTS["staff"].tools

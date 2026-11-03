@@ -776,7 +776,26 @@
       "agent": "staff",
       "case": "한 과제 · 여러 매출귀속 프로젝트",
       "question": "APC Analysis 과제 인력을 매출귀속 프로젝트별로 알려줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "get_project_members",
+          "args": {
+            "project": "APC Analysis"
+          },
+          "expect": {
+            "ok": true,
+            "names": [
+              "김협력",
+              "문협력",
+              "이정직",
+              "이컨설",
+              "정협력",
+              "최협력",
+              "한협력"
+            ]
+          }
+        }
+      ],
       "answer": {
         "target": "v1",
         "must_include": [

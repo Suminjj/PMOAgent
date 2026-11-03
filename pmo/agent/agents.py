@@ -39,13 +39,16 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
         "이가상 ID카드 신청 진행 중으로 바꿔줘",
     )),
     AgentSpec("staff", "인력관리",
-              "너는 인력관리 담당 Agent다. 인력 찾기, 현재·과거·예정 투입 과제와 기간, 계정 ID 입력을 맡는다.",
-              ("find_people", "get_assignment_timeline", "query_database", "prepare_account_id"),
+              "너는 인력관리 담당 Agent다. 인력 찾기, 현재·과거·예정 투입의 과제·기간·매출귀속 프로젝트(월별 포함)·"
+              "등급·투입 Type·투입 MM 조회, 계정 ID 입력을 맡는다. 매출귀속 프로젝트를 묻는 질문은 네 업무다.",
+              ("find_people", "get_assignment_timeline", "get_project_members", "query_database", "prepare_account_id"),
               ("staff-assignment-lookup", "data-change"), (
                   "이가상 지금 무슨 과제에 투입되어 있어?",
                   "김가상의 CoE 전체 투입 과제와 기간을 알려줘.",
+                  "이가상 월별 매출귀속 프로젝트 알려줘",
+                  "Soft Lab 고도화 과제 인력을 매출귀속 프로젝트별로 알려줘",
                   "이가상 계정 ID lee.fake로 넣어줘",
-              ), "인력 찾기, 현재·과거·예정 투입 과제와 기간, 계정 ID 입력"),
+              ), "인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 계정 ID 입력"),
     AgentSpec("environment", "근무 환경 준비",
               "너는 근무 환경 준비 담당 Agent다. 방문예약·계정 신청·ID카드 신청·OA기기 신청의 현황 조회와 "
               "상태 변경 준비를 맡는다.",
@@ -71,7 +74,7 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
               ("inspection_amount_by_revenue_project",),
               ("inspection-amount",), (
                   "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
-              ), "업체별 월 검수 금액",
+              ), "업체별 월 검수 금액(원) 계산",
               "검수 금액 계산은 아직 구현 예정입니다. 매출귀속 프로젝트별 배분·반올림·부가세 규칙이 정해지지 않아 "
               "금액을 계산하거나 추정하지 않습니다. 다른 업무는 홈 화면에서 해당 카테고리를 골라 요청해 주세요."),
 ]}

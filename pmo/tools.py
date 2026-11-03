@@ -65,9 +65,16 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "이후 도구는 반드시 결과의 내부 관리번호(id)로 호출한다.",
          _obj({"name": STR}, ("name",)),
          handler=lambda s, a: s.find_people(a["name"])),
-    Tool("get_assignment_timeline", "인력의 현재 투입·과거 투입·예정 투입 과제와 기간을 조회한다.",
+    Tool("get_assignment_timeline", "인력의 현재·과거·예정 투입을 조회한다. 투입마다 과제, 매출귀속 프로젝트, 기간, 등급, "
+         "투입 Type(Full time·Part time), 투입 MM이 있다. 한 사람의 매출귀속 프로젝트(월별 포함)·등급·MM을 묻는 질문도 이 도구로 답한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: s.assignment_timeline(_pid(s, a["person_id"]))),
+    Tool("get_project_members", "과제(투입 과제, 예: APC Analysis)의 인력 목록을 조회한다. 사람마다 매출귀속 프로젝트·기간·"
+         "투입 Type·MM과, 매출귀속 프로젝트별로 묶은 이름(by_revenue_project)이 있다. 기본은 현재·예정 투입, "
+         "과거까지 보려면 include_past=true. 과제명은 사람 이름이 아니니 find_people에 넣지 않는다.",
+         _obj({"project": {"type": "string", "description": "과제명(사용자가 말한 그대로)"},
+               "include_past": {"type": "boolean"}}, ("project",)),
+         handler=lambda s, a: s.project_members(a["project"], include_past=bool(a.get("include_past")))),
     Tool("list_contracts", "인력의 구매계약(계약번호·기간·상태·연장 여부)을 조회한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: s.contracts(_pid(s, a["person_id"]))),
@@ -106,7 +113,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
          "구매 필요 판정 기준 미확정(TODO).",
          _obj({"year": INT, "month": INT}, ("year", "month")), status=PLANNED),
-    Tool("inspection_amount_by_revenue_project", "업체의 월 검수 금액을 매출귀속 프로젝트별로 계산한다. "
+    Tool("inspection_amount_by_revenue_project", "업체의 월 검수 금액(원)을 매출귀속 프로젝트별로 계산한다. 검수 금액을 물을 때만 쓴다. "
+         "인력의 매출귀속 프로젝트가 무엇인지 묻는 질문은 get_assignment_timeline으로 답한다. "
          "배분·반올림·부가세 규칙 미확정(TODO).",
          _obj({"company": STR, "year": INT, "month": INT}, ("company", "year", "month")), status=PLANNED),
 ]}
@@ -116,6 +124,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 TOOL_LABELS = {
     "find_people": "인력 찾기",
     "get_assignment_timeline": "투입 이력 조회",
+    "get_project_members": "과제 인력 조회",
     "list_contracts": "구매계약 조회",
     "contracts_ending": "월·업체별 계약 종료 예정",
     "pending_contract_alerts": "미확인 계약 종료 알림",
@@ -136,7 +145,13 @@ def _pid(service: Service, value: str) -> str:
 
     작은 모델이 find_people 없이 이름을 넣으면 빈 결과가 나오고, 모델이 '모두 완료'처럼 지어내 답하던 문제를 막는다.
     """
-    return _person(service, {"person_id": value})["id"]
+    try:
+        return _person(service, {"person_id": value})["id"]
+    except ValidationError:
+        given = str(value or "").strip().casefold().replace(" ", "")
+        if given and any(given == p.casefold().replace(" ", "") for p in service.project_names()):
+            raise ValidationError(f"'{value}'은(는) 사람이 아니라 과제명입니다. 과제 인력은 get_project_members로 조회하세요.")
+        raise
 
 
 def _checklist_status(service: Service, person_id: str | None) -> list[dict]:
