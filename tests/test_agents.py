@@ -233,3 +233,16 @@ def test_planned_only_agent_answers_without_llm(service):
     assert [(c["tool"], c["ok"]) for c in result["calls"]] == [("inspection_amount_by_revenue_project", False)]
     assert "구현 예정" in result["calls"][0]["error"]
     assert all(not a.planned_notice for k, a in AGENTS.items() if k != "inspection")
+
+
+def test_revenue_project_questions_belong_to_staff():
+    """'월별 매출귀속 프로젝트' 질문을 자동은 검수 도구로, 인력관리는 구매계약으로 보내던 문제(11/03 v1 화면 확인)."""
+    from pmo.agent.prompts import SYSTEM_PROMPT
+    from pmo.tools import TOOLS
+    staff = system_prompt(AGENTS["staff"], "2026-11-15")
+    assert "매출귀속 프로젝트(월별 포함)" in staff and "## 맡는 질문" in staff     # 역할·지침 모두 전달
+    contract = system_prompt(AGENTS["contract"], "2026-11-15")
+    assert "인력관리: 인력 찾기, 투입 과제·기간·매출귀속 프로젝트" in contract     # 다른 Agent가 바르게 안내
+    assert "매출귀속 프로젝트" in TOOLS["get_assignment_timeline"].description
+    assert "검수 금액을 물을 때만" in TOOLS["inspection_amount_by_revenue_project"].description
+    assert "검수 금액(원)을 물을 때만" in SYSTEM_PROMPT
