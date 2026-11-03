@@ -129,10 +129,21 @@ def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
 
 
 def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
-        save: bool = True, on_result=None) -> dict:
-    """on_result(row): 질문 하나가 끝날 때마다 호출된다(진행 상황 출력용)."""
+        save: bool = True, on_result=None, only: list[str] | None = None) -> dict:
+    """on_result(row): 질문 하나가 끝날 때마다 호출된다(진행 상황 출력용).
+
+    only: 질문 ID 또는 목표 버전(v1·v2·v3·추가 기능)만 골라 실행한다. 예: ["O04", "P01"] 또는 ["v2"].
+    """
     planner = planner or OraclePlanner()
     spec = json.loads(Path(questions_path).read_text(encoding="utf-8"))
+    if only:
+        wanted = {w.strip() for w in only if w.strip()}
+        picked = [q for q in spec["questions"]
+                  if q["id"] in wanted or (q.get("answer") or {}).get("target") in wanted]
+        unknown = wanted - {q["id"] for q in spec["questions"]} - {(q.get("answer") or {}).get("target") for q in spec["questions"]}
+        if unknown or not picked:
+            raise ValueError(f"없는 질문 ID·목표 버전입니다: {', '.join(sorted(unknown)) or ', '.join(sorted(wanted))}")
+        spec = dict(spec, questions=picked)
     today = date.fromisoformat(spec["today"])
     rows = []
     # ignore_cleanup_errors: Windows에서 다른 연결이 임시 DB를 잡고 있어도 평가 결과 저장까지 마친다(11/03 실행에서 결과 유실).
@@ -185,12 +196,13 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                 on_result(row)
     graded = [r for r in rows if r.get("graded", True)]
     report = {"planner": planner.name, "today": spec["today"], "questions": Path(questions_path).name,
-              "run_at": datetime.now(TIMEZONE).isoformat(),
+              "run_at": datetime.now(TIMEZONE).isoformat(), "only": sorted(only) if only else None,
               "passed": sum(bool(r["success"]) for r in graded), "total": len(graded),
               "ungraded": len(rows) - len(graded), "tokens": token_summary(rows), "results": rows}
     if save:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        out = RESULTS_DIR / f"{Path(questions_path).stem}-{planner.name}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
+        part = "-only-" + "_".join(sorted(only)).replace(" ", "") if only else ""   # 일부만 실행한 결과는 파일 이름으로 구분
+        out = RESULTS_DIR / f"{Path(questions_path).stem}-{planner.name}{part}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         report["saved_to"] = str(out)
     return report

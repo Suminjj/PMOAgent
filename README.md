@@ -113,6 +113,8 @@ python -m streamlit run app.py
 .venv\Scripts\python.exe -m scripts.build_eval_set                          # 평가 데이터를 고친 뒤 정답 다시 계산
 ```
 
+일부 질문만 실행: `--only O04,P01,P02`(질문 ID) 또는 `--only v2`(목표 버전). 결과 파일 이름에 `-only-…`가 붙습니다.
+
 모델로 평가하면 질문마다 응답 시간과 토큰 수(입력+출력, Ollama 기준)가 화면에 나오고, 결과 JSON의 `tokens`와 끝의 요약(질문당 평균)에 남습니다.
 
 화면에서 평가 데이터를 보려면 별도 DB에 넣고 기준일을 고정해 실행합니다(업무 DB에 넣지 마세요).

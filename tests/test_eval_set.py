@@ -59,3 +59,12 @@ def test_optional_steps_count_what_was_called():
     for called in (["prepare_assignment_replace"], ["find_people", "prepare_assignment_replace"],
                    ["find_people", "find_people", "prepare_assignment_replace"]):
         assert [s["tool"] for s in _expected_steps(steps, called)] == called
+
+
+def test_run_only_selected_questions():
+    """--only: 권한 질문만(ID 또는 목표 버전) 골라 빠르게 실행한다."""
+    by_id = run(OraclePlanner(), questions_path=EVAL_SET, save=False, only=["O04", "P01", "P02"])
+    by_target = run(OraclePlanner(), questions_path=EVAL_SET, save=False, only=["v2"])
+    assert [r["id"] for r in by_id["results"]] == [r["id"] for r in by_target["results"]] == ["O04", "P01", "P02"]
+    with pytest.raises(ValueError):
+        run(OraclePlanner(), questions_path=EVAL_SET, save=False, only=["X99"])
