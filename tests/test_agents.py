@@ -100,7 +100,8 @@ def test_auto_agent_keeps_all_tools(service):
     client = ScriptedClient([text("안녕하세요.")])
     result = ask(service, "안녕", client)
     assert result["agent"] == AUTO
-    assert {t["name"] for t in client.seen[0][1]} == set(TOOLS)
+    # 구현된 도구는 모두, '구현 예정' 도구는 빼고(v1.2: 검수 금액 도구를 매출귀속 프로젝트 조회에 고르던 문제)
+    assert {t["name"] for t in client.seen[0][1]} == {n for n, tool in TOOLS.items() if tool.status == "구현"}
 
 
 def test_eval_questions_are_tagged_with_existing_agents():
@@ -287,6 +288,13 @@ def test_find_people_summary_lets_small_models_answer(tmp_path):
     assert len(two) == 2 and all("summary" not in p for p in two)                  # 동명이인은 되묻기
     gamma = call_tool(s, "find_people", {"name": "김협력", "company": "감마테크"})["data"]
     assert len(gamma) == 1 and gamma[0]["company"] == "감마테크" and gamma[0]["summary"]["current"]
+    swapped = call_tool(s, "find_people", {"company": "조협력"})          # 이름을 업체 칸에 넣어도 찾음(v1.2 평가 C02)
+    assert swapped["ok"] and swapped["data"][0]["name"] == "조협력"
+    jung = call_tool(s, "find_people", {"name": "정협력"})["data"][0]["summary"]
+    soft = next(a for a in jung["past"] if a["project"] == "Soft Lab 고도화")
+    assert soft["monthly_mm"] == {"2026-07": "1", "2026-08": "0.25"} and soft["purchase_rate"] == "8,500,000 원/MM"
+    lee = call_tool(s, "find_people", {"name": "이협력"})["data"][0]["summary"]["current"][0]["monthly_mm"]
+    assert lee["2026-05"] == "0.737"
     timeline = call_tool(s, "get_assignment_timeline", {"person_id": "백협력"})["data"]
     assert "절반 기간만" in timeline["past"][0]["work_pattern"]
     # 채점: 인력 찾기 요약으로 답하면 조회 도구를 생략해도 정답, 아무 도구도 안 부르면 실패
