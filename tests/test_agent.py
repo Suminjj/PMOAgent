@@ -65,7 +65,7 @@ def test_agent_runs_tools_and_returns_answer(service):
 def test_agent_sees_planned_tools_and_gets_error(service):
     client = ScriptedClient([tool_call("monthly_purchase_needs", year=2026, month=11),
                              text("구매 필요 판정 기준이 아직 정해지지 않았습니다.")])
-    result = ask(service, "11월 구매 필요 인력", client)
+    result = ask(service, "11월 구매 필요 인력", client, agent="contract")   # 구현 예정 도구는 전문 Agent만 받는다
     names = {t["name"] for t in client.seen[0][1]}
     assert "monthly_purchase_needs" in names
     assert result["ok"] and result["calls"][0]["ok"] is False

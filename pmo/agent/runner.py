@@ -102,7 +102,9 @@ def ask(service: Service, question: str, client: ChatClient,
     day = today or service.clock()
     spec = agent if isinstance(agent, AgentSpec) else get_agent(agent)
     allowed = allowed_tools(spec)
-    tools = tool_specs(include_planned=True, names=allowed)
+    # 자동(전체)에는 '구현 예정' 도구를 주지 않는다: 이름이 비슷한 검수 금액 도구를 매출귀속 프로젝트 조회에 고르던 문제
+    # (v1·v1.2 평가 R01). 구현 예정 기능은 해당 전문 Agent(검수·구매계약)가 정해진 안내로 답한다.
+    tools = tool_specs(include_planned=allowed is not None, names=allowed)
     messages = [{"role": "system", "content": system_prompt(spec, day.isoformat())},
                 *[{"role": m["role"], "content": str(m["content"])}
                   for m in (history or [])[-MAX_HISTORY:] if m.get("role") in ("user", "assistant")],

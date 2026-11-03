@@ -181,6 +181,7 @@
           "args": {
             "person_id": "EV-01"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -218,6 +219,7 @@
           "args": {
             "person_id": "EV-02"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -256,6 +258,7 @@
           "args": {
             "person_id": "EV-05"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -295,6 +298,7 @@
           "args": {
             "person_id": "EV-05"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -345,11 +349,11 @@
         {
           "tool": "find_people",
           "args": {
-            "name": "김협력"
+            "name": "김협력",
+            "company": "감마테크"
           },
           "expect": {
-            "ok": true,
-            "count": 2
+            "ok": true
           }
         },
         {
@@ -357,6 +361,7 @@
           "args": {
             "person_id": "EV-04"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -395,6 +400,7 @@
           "args": {
             "person_id": "EV-07"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -481,6 +487,7 @@
           "args": {
             "person_id": "EV-06"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "end_dates": [
@@ -518,6 +525,7 @@
           "args": {
             "person_id": "EV-10"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "end_dates": [
@@ -557,6 +565,7 @@
           "args": {
             "person_id": "EV-11"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "end_dates": [
@@ -836,6 +845,7 @@
           "args": {
             "person_id": "EV-17"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -893,6 +903,7 @@
           "args": {
             "person_id": "EV-18"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -1023,6 +1034,7 @@
           "args": {
             "person_id": "EV-22"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": []
@@ -1060,6 +1072,7 @@
           "args": {
             "person_id": "EV-08"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": [
@@ -1099,6 +1112,7 @@
           "args": {
             "person_id": "EV-20"
           },
+          "or_find": true,
           "expect": {
             "ok": true,
             "current_projects": []

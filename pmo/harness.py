@@ -104,6 +104,30 @@ def token_summary(rows: list[dict]) -> dict | None:
             "avg_llm_calls": round(sum(u["llm_calls"] for u in used) / len(used), 2)}
 
 
+FIND_TOOL = "find_people"
+
+
+def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
+    """채점할 기대 도구 순서.
+
+    - optional 단계(예: 이름을 받는 도구 앞의 find_people)는 실제로 부른 횟수만큼만 기대한다.
+    - or_find 단계(투입·계약 조회)는 find_people을 불렀으면 생략해도 된다. find_people 결과의 summary로 답할 수 있다(v1.2).
+    """
+    from collections import Counter
+    spare = Counter(called)
+    spare.subtract(Counter(st["tool"] for st in steps if not st.get("optional")))
+    kept = []
+    for st in steps:
+        if st.get("or_find") and st["tool"] not in called and FIND_TOOL in called:
+            continue
+        if st.get("optional"):
+            if spare[st["tool"]] <= 0:
+                continue
+            spare[st["tool"]] -= 1
+        kept.append(st)
+    return kept
+
+
 def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
         save: bool = True, on_result=None) -> dict:
     """on_result(row): 질문 하나가 끝날 때마다 호출된다(진행 상황 출력용)."""
@@ -134,7 +158,7 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                     on_result(row)
                 continue
             # optional 단계(예: 이름을 받는 도구 앞의 find_people)는 건너뛰어도 된다. 코드가 이름을 관리번호로 바꾼다.
-            steps = [st for st in q["steps"] if not st.get("optional") or st["tool"] in called]
+            steps = _expected_steps(q["steps"], called)
             problems = []
             if called != [st["tool"] for st in steps]:
                 want = [st["tool"] + ("(생략 가능)" if st.get("optional") else "") for st in q["steps"]]
