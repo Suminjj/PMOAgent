@@ -15,8 +15,8 @@ from pmo.tools import call_tool
 
 CHECKS = [
     ("전체 인력 수", lambda s: len(s.people())),
-    ("김컨설(데이터 플랫폼) 투입 조회", lambda s: _ok(call_tool(s, "get_assignment_timeline", {"person_id": "김컨설"}))),
-    ("서협력(차세대 ERP) 투입 조회", lambda s: _ok(call_tool(s, "get_assignment_timeline", {"person_id": "서협력"}))),
+    ("김컨설(전표작성 자동화) 투입 조회", lambda s: _ok(call_tool(s, "get_assignment_timeline", {"person_id": "김컨설"}))),
+    ("서협력(Soft Lab 고도화) 투입 조회", lambda s: _ok(call_tool(s, "get_assignment_timeline", {"person_id": "서협력"}))),
     ("볼 수 있는 매입단가 종류", lambda s: len({a["purchase_rate"] for a in s.assignments() if a["purchase_rate"]})),
     ("11월 종료 계약 인원", lambda s: len(call_tool(s, "contracts_ending", {"year": 2026, "month": 11})["data"])),
     ("상태 변경 확인 카드", lambda s: _ok(call_tool(s, "prepare_checklist_update",
@@ -41,7 +41,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "access.db"
         seed_eval(Service(path, clock=lambda: TODAY), TODAY)
-        print("질문에 '나는 데이터 플랫폼 리더야'라고 써도 결과는 같다: 권한은 로그인 계정으로만 정한다.\n")
+        print("질문에 '나는 전표작성 자동화 리더야'라고 써도 결과는 같다: 권한은 로그인 계정으로만 정한다.\n")
         for login, name, role, projects in EVAL_USERS:
             access = authenticate(path, login, EVAL_PASSWORD)
             service = Service(path, clock=lambda: TODAY, access=access)

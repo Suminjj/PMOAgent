@@ -102,7 +102,7 @@ python -m streamlit run app.py
   기존 DB는 바꾸기 전에 `pmo.db.backup-v6-*.db`로 백업됩니다.
 - 다른 사용자는 PMO·PM이 왼쪽 메뉴 '사용자 관리'에서 만듭니다. 과제 리더는 담당 과제(투입 과제)를 지정합니다.
 - 과제 리더는 담당 과제의 인력·단가만 보고, 수정은 '수정 요청'으로 남깁니다. PM·PMO가 요청을 처리합니다.
-- 권한 검증표: `.venv\Scripts\python.exe -m scripts.check_access` (평가 데이터의 계정: pmo · pm · leader-erp · leader-data,
+- 권한 검증표: `.venv\Scripts\python.exe -m scripts.check_access` (평가 데이터의 계정: pmo · pm · leader-softlab · leader-voucher,
   비밀번호 `eval-pass-1115`, 가상 데이터 전용)
 
 ### 정확도 평가 세트 (가상 데이터, 기준일 2026-11-15)

@@ -251,7 +251,7 @@
   - 변경 이력·실행 기록·사용자 관리는 PMO·PM만. 과제 리더 메뉴: 홈·전체 인력 조회·과제 투입 관리(조회)·근무 환경 준비(조회)·
     전체 계약 조회·검수하기·계약 종료 알림(확인 버튼 없음)·수정 요청.
   - Service(access=None)은 명령어·테스트·평가처럼 로그인하지 않는 내부 실행용(전체 접근)이다. 화면은 항상 로그인 사용자로 연다.
-- 별도 검증: `tests/test_access.py`, 검증표 `python -m scripts.check_access`, 평가 세트 v2 질문은 leader-erp 계정으로 실행.
+- 별도 검증: `tests/test_access.py`, 검증표 `python -m scripts.check_access`, 평가 세트 v2 질문은 leader-softlab 계정으로 실행.
 
 ## 6. 코드 구성 원칙
 
