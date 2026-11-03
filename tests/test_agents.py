@@ -266,3 +266,31 @@ def test_project_members_tool(tmp_path):
     wrong = call_tool(s, "get_assignment_timeline", {"person_id": "APC Analysis"})
     assert not wrong["ok"] and "과제명" in wrong["error"] and "get_project_members" in wrong["error"]
     assert "get_project_members" in AGENTS["staff"].tools
+
+
+def test_find_people_summary_lets_small_models_answer(tmp_path):
+    """v1.2: 인력 찾기 뒤 조회를 부르지 않고 멈추거나 지어내던 문제(11/03 v1 평가)."""
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.harness import _expected_steps
+    from pmo.service import Service
+    from pmo.tools import call_tool
+    s = Service(tmp_path / "f.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    one = call_tool(s, "find_people", {"name": "이협력 차장"})["data"]             # 직함이 붙어도 찾음
+    assert len(one) == 1 and one[0]["summary"]["current"][0]["project"] == "Soft Lab 고도화"
+    assert one[0]["summary"]["upcoming"][0]["revenue_project"] == "30133686-D043"
+    assert call_tool(s, "find_people", {"name": "노협력"})["data"][0]["summary"]["current"] == "현재 투입 없음"
+    assert call_tool(s, "find_people", {"name": "문협력"})["data"][0]["summary"]["current"][0]["revenue_project"] == "미정(미입력)"
+    choi = call_tool(s, "find_people", {"name": "최협력"})["data"][0]["summary"]["current"][0]
+    assert choi["assignment_type"] == "Part time" and "한 달 내내 절반씩" in choi["work_pattern"]
+    two = call_tool(s, "find_people", {"name": "김협력"})["data"]
+    assert len(two) == 2 and all("summary" not in p for p in two)                  # 동명이인은 되묻기
+    gamma = call_tool(s, "find_people", {"name": "김협력", "company": "감마테크"})["data"]
+    assert len(gamma) == 1 and gamma[0]["company"] == "감마테크" and gamma[0]["summary"]["current"]
+    timeline = call_tool(s, "get_assignment_timeline", {"person_id": "백협력"})["data"]
+    assert "절반 기간만" in timeline["past"][0]["work_pattern"]
+    # 채점: 인력 찾기 요약으로 답하면 조회 도구를 생략해도 정답, 아무 도구도 안 부르면 실패
+    steps = [{"tool": "find_people", "optional": True}, {"tool": "get_assignment_timeline", "or_find": True}]
+    assert [x["tool"] for x in _expected_steps(steps, ["find_people"])] == ["find_people"]
+    assert [x["tool"] for x in _expected_steps(steps, ["get_assignment_timeline"])] == ["get_assignment_timeline"]
+    assert [x["tool"] for x in _expected_steps(steps, [])] == ["get_assignment_timeline"]

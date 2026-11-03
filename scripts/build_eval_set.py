@@ -51,11 +51,16 @@ def questions(s: Service) -> list[dict]:
     alpha = s.inspection("알파솔루션", "C-2026-103", "2026-11", "2026-11")
     month_mm = {r["start_date"]: r["months"] for r in s.monthly_mm(2026) if r["name"] in ("정협력", "한협력")}
 
-    def step(tool, args, optional=False):
-        return {"tool": tool, "args": args, **({"optional": True} if optional else {})}
+    def step(tool, args, optional=False, or_find=False):
+        return {"tool": tool, "args": args, **({"optional": True} if optional else {}),
+                **({"or_find": True} if or_find else {})}
+
+    # 투입·계약 조회는 find_people 결과의 summary로도 답할 수 있다(v1.2): 인력 찾기를 불렀으면 조회 도구를 생략해도 정답.
+    SUMMARY_TOOLS = ("get_assignment_timeline", "list_contracts")
 
     def person(name, pid, tool, extra=None):
-        return [step(FIND, {"name": name}, optional=True), step(tool, {"person_id": pid, **(extra or {})})]
+        return [step(FIND, {"name": name}, optional=True),
+                step(tool, {"person_id": pid, **(extra or {})}, or_find=tool in SUMMARY_TOOLS)]
 
     q = []
 
@@ -76,7 +81,8 @@ def questions(s: Service) -> list[dict]:
     add("S05", "staff", "동명이인 → 되물음", "김협력 지금 무슨 과제야?",
         [step(FIND, {"name": "김협력"})], ask_back=True, must_include=["알파솔루션", "감마테크"])
     add("S06", "staff", "동명이인 + 업체로 특정", "감마테크 김협력 투입 기간 알려줘.",
-        [step(FIND, {"name": "김협력"}), step("get_assignment_timeline", {"person_id": "EV-04"})],
+        [dict(step(FIND, {"name": "김협력", "company": "감마테크"}), loose=True),
+         step("get_assignment_timeline", {"person_id": "EV-04"}, or_find=True)],
         must_include=["2026-10-01", "2026-12-31"])
     add("S07", "staff", "과제 교체 + 투입 MM", "정협력 투입 과제별 MM 알려줘.",
         person("정협력", "EV-07", "get_assignment_timeline"),
@@ -227,6 +233,8 @@ def build() -> dict:
             for st in q["steps"] or []:
                 result = call_tool(service, st["tool"], st["args"])
                 st["expect"] = expect_of(st["tool"], result)
+                if st.pop("loose", False):      # 업체를 넣었는지에 따라 후보 수가 달라지므로 건수는 보지 않는다
+                    st["expect"].pop("count", None)
     return {"about": __doc__.strip().splitlines()[0],
             "seed": "eval", "today": TODAY.isoformat(),
             "people": [{"id": p[0], "name": p[1], "company": p[2], "category": p[3], "case": p[4]} for p in PEOPLE],

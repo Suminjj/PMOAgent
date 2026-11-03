@@ -62,13 +62,15 @@ INT = {"type": "integer"}
 
 TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("find_people", "이름 일부로 인력 후보를 찾는다. 동명이인이 있으면 여러 명이 나온다. "
-         "이후 도구는 반드시 결과의 내부 관리번호(id)로 호출한다.",
-         _obj({"name": STR}, ("name",)),
-         handler=lambda s, a: s.find_people(a["name"])),
+         "1명이면 summary에 그 사람의 현재·예정·과거 투입(과제·기간·매출귀속 프로젝트·투입 Type·MM)과 구매계약 요약이 함께 온다. "
+         "summary로 답할 수 있으면 바로 답하고, 이후 도구는 결과의 내부 관리번호(id)로 호출한다.",
+         _obj({"name": STR, "company": {"type": "string", "description": "질문에 업체가 있으면 업체명(예: 감마테크)"}},
+              ("name",)),
+         handler=lambda s, a: _find_people(s, a["name"], a.get("company"))),
     Tool("get_assignment_timeline", "인력의 현재·과거·예정 투입을 조회한다. 투입마다 과제, 매출귀속 프로젝트, 기간, 등급, "
          "투입 Type(Full time·Part time), 투입 MM이 있다. 한 사람의 매출귀속 프로젝트(월별 포함)·등급·MM을 묻는 질문도 이 도구로 답한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
-         handler=lambda s, a: s.assignment_timeline(_pid(s, a["person_id"]))),
+         handler=lambda s, a: _timeline(s, _pid(s, a["person_id"]))),
     Tool("get_project_members", "과제(투입 과제, 예: APC Analysis)의 인력 목록을 조회한다. 사람마다 매출귀속 프로젝트·기간·"
          "투입 Type·MM과, 매출귀속 프로젝트별로 묶은 이름(by_revenue_project)이 있다. 기본은 현재·예정 투입, "
          "과거까지 보려면 include_past=true. 과제명은 사람 이름이 아니니 find_people에 넣지 않는다.",
@@ -152,6 +154,61 @@ def _pid(service: Service, value: str) -> str:
         if given and any(given == p.casefold().replace(" ", "") for p in service.project_names()):
             raise ValidationError(f"'{value}'은(는) 사람이 아니라 과제명입니다. 과제 인력은 get_project_members로 조회하세요.")
         raise
+
+
+# 투입 Type의 뜻. 0.5MM를 '반 달'로 잘못 해석하던 문제(11/03 v1 평가 H01·H02)로 도구 결과에 함께 담는다.
+WORK_PATTERN = {
+    "Full time": "Full time: 이 기간의 근무일에 전부 근무(MM은 기간 길이로 계산, 0.5MM면 한 달 중 절반 기간만 근무)",
+    "Part time": "Part time: 이 기간 내내 다른 업무와 나눠 근무(MM은 기간 전체 투입량, 0.5MM면 한 달 내내 절반씩)",
+}
+_TITLES = ("차장", "과장", "대리", "부장", "사원", "주임", "책임", "선임", "수석", "님", "씨")
+
+
+def _work(row: dict) -> dict:
+    return dict(row, work_pattern=WORK_PATTERN.get(row.get("assignment_type"), "투입 Type 미입력"))
+
+
+def _brief(a: dict) -> dict:
+    return {"project": a["project"] or "미입력", "revenue_project": a["revenue_project"] or "미정(미입력)",
+            "start_date": a["start_date"], "end_date": a["end_date"], "assignment_type": a["assignment_type"],
+            "mm": a["mm"], "grade": a["grade"], "work_pattern": WORK_PATTERN.get(a["assignment_type"], "투입 Type 미입력")}
+
+
+def _timeline(service: Service, person_id: str) -> dict:
+    t = service.assignment_timeline(person_id)
+    return {k: ([_work(r) for r in v] if isinstance(v, list) else v) for k, v in t.items()}
+
+
+def _find_people(service: Service, name: str, company: str | None = None) -> list[dict]:
+    """인력 후보. 1명이면 투입·계약 요약(summary)을 붙인다.
+
+    작은 모델이 인력 찾기 뒤 투입·계약 조회를 부르지 않고 멈추거나 지어내던 문제(11/03 v1 평가 S02·S04·C02·N01·R01·R03)를
+    막기 위해, 찾은 결과만으로도 답할 수 있게 한다. 동명이인(2명 이상)이면 요약 없이 목록만 준다(되물어야 하므로).
+    """
+    value = str(name or "").strip()
+    found = service.find_people(value)
+    if not found:
+        for word in _TITLES:                      # "이협력 차장"처럼 직함이 붙어 오면 떼고 다시 찾는다
+            value = value.removesuffix(word).strip()
+        found = service.find_people(value) if value else []
+    company = str(company or "").strip()
+    if company and len(found) > 1:                # "감마테크 김협력"처럼 업체로 동명이인을 가린다
+        found = [p for p in found if company in (p["company"] or "")] or found
+    if len(found) != 1:
+        return found
+    person = found[0]
+    t = service.assignment_timeline(person["id"])
+    contracts = [{"contract_no": c["contract_no"] or "미발급", "company": c["company"], "start_date": c["start_date"],
+                  "end_date": c["end_date"], "status": c["status"], "state": c["label"],
+                  "extension_registered": bool(c["has_successor"])} for c in service.contracts(person["id"])]
+    summary = {
+        "today": t["today"],
+        "current": [_brief(a) for a in t["current"]] or "현재 투입 없음",
+        "upcoming": [_brief(a) for a in t["upcoming"]],
+        "past": [_brief(a) for a in t["past"][:3]],
+        "contracts": contracts or ("구매계약 대상 아님(정 분류)" if person["category"] == "정" else "등록된 구매계약 없음"),
+    }
+    return [dict(person, summary=summary)]
 
 
 def _checklist_status(service: Service, person_id: str | None) -> list[dict]:
