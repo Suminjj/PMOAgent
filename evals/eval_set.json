@@ -114,6 +114,48 @@
       "company": "베타컨설팅",
       "category": "컨설팅",
       "case": "계약 종료 10일 전 (종료 예정)"
+    },
+    {
+      "id": "EV-17",
+      "name": "신협력",
+      "company": "알파솔루션",
+      "category": "협력",
+      "case": "같은 과제에서 월마다 매출귀속 프로젝트가 다름 (10월 D036·11월 D045·12월 D046)"
+    },
+    {
+      "id": "EV-18",
+      "name": "문협력",
+      "company": "감마테크",
+      "category": "협력",
+      "case": "매출귀속 프로젝트 미정 · 계약 종료 14일 전(11/29, 알림 시작일) · 계약이 투입보다 먼저 끝남"
+    },
+    {
+      "id": "EV-19",
+      "name": "류협력",
+      "company": "알파솔루션",
+      "category": "협력",
+      "case": "교체 대상: 전표작성 자동화 → 12월부터 노협력으로 교체 요청"
+    },
+    {
+      "id": "EV-20",
+      "name": "노협력",
+      "company": "알파솔루션",
+      "category": "협력",
+      "case": "교체 투입 예정 인력: 등록만 됨 · 투입·계약·계정 ID 없음"
+    },
+    {
+      "id": "EV-21",
+      "name": "명협력",
+      "company": "감마테크",
+      "category": "협력",
+      "case": "과제 이동 대상: Soft Lab 고도화 → 12월부터 APC Analysis로 이동 요청"
+    },
+    {
+      "id": "EV-22",
+      "name": "백협력",
+      "company": "감마테크",
+      "category": "협력",
+      "case": "Full time 10/1~10/16 = 0.5MM(반 달 근무) · 만료 후에도 알림 미확인"
     }
   ],
   "questions": [
@@ -578,9 +620,10 @@
           },
           "expect": {
             "ok": true,
-            "count": 6,
+            "count": 7,
             "names": [
               "강협력",
+              "문협력",
               "박협력",
               "이컨설",
               "이협력",
@@ -594,6 +637,7 @@
         "target": "v1",
         "must_include": [
           "강협력",
+          "문협력",
           "박협력",
           "이컨설",
           "이협력",
@@ -616,9 +660,10 @@
           },
           "expect": {
             "ok": true,
-            "count": 3,
+            "count": 4,
             "names": [
               "김협력",
+              "신협력",
               "정협력",
               "한협력"
             ]
@@ -629,6 +674,7 @@
         "target": "v1",
         "must_include": [
           "김협력",
+          "신협력",
           "정협력",
           "한협력"
         ]
@@ -645,10 +691,12 @@
           "args": {},
           "expect": {
             "ok": true,
-            "count": 4,
+            "count": 6,
             "names": [
               "강협력",
+              "문협력",
               "박협력",
+              "백협력",
               "이컨설",
               "조협력"
             ]
@@ -659,7 +707,9 @@
         "target": "v1",
         "must_include": [
           "강협력",
+          "문협력",
           "박협력",
+          "백협력",
           "이컨설",
           "조협력"
         ],
@@ -679,10 +729,12 @@
         "hold_ok": true,
         "must_include": [
           "강협력",
+          "문협력",
           "박협력",
           "이컨설"
         ],
         "must_not_include": [
+          "백협력",
           "윤협력",
           "이협력",
           "조협력",
@@ -731,14 +783,410 @@
           "30133686-D038",
           "30133686-D040",
           "30133686-D044",
+          "미정",
           "김협력",
+          "문협력",
           "이정직",
           "이컨설",
           "정협력",
           "최협력",
           "한협력"
         ],
-        "note": "투입 과제와 매출귀속 프로젝트는 다르다: 30133686-D038: 김협력, 정협력, 최협력 / 30133686-D040: 이정직, 한협력 / 30133686-D044: 이컨설"
+        "note": "투입 과제와 매출귀속 프로젝트는 다르다: 30133686-D038: 김협력, 정협력, 최협력 / 30133686-D040: 이정직, 한협력 / 30133686-D044: 이컨설 / 미정: 문협력"
+      }
+    },
+    {
+      "id": "R01",
+      "agent": "staff",
+      "case": "월마다 다른 매출귀속 프로젝트",
+      "question": "신협력 월별 매출귀속 프로젝트 알려줘.",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "신협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "get_assignment_timeline",
+          "args": {
+            "person_id": "EV-17"
+          },
+          "expect": {
+            "ok": true,
+            "current_projects": [
+              "Soft Lab 고도화"
+            ]
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "30133686-D036",
+          "30133686-D045",
+          "30133686-D046"
+        ],
+        "note": "2026-10 30133686-D036 / 2026-11 30133686-D045 / 2026-12 30133686-D046 (같은 과제 Soft Lab 고도화)"
+      }
+    },
+    {
+      "id": "R02",
+      "agent": "staff",
+      "case": "월 하나만 매출귀속 프로젝트 변경",
+      "question": "신협력 12월 매출귀속 프로젝트를 30133686-D047로 바꿔줘.",
+      "steps": null,
+      "answer": {
+        "target": "추가 기능",
+        "hold_ok": true,
+        "must_not_include": [
+          "변경되었습니다",
+          "저장했습니다",
+          "바꿨습니다"
+        ],
+        "note": "기대 동작(투입 수정 Agent 도구 구현 후): 12월 투입(2026-12-01~2026-12-31)만 30133686-D046 → 30133686-D047 확인 카드. 10·11월 투입은 그대로. 도구 구현 전(v1~v3): 지어내지 말고 '과제 투입 관리' 화면 안내."
+      }
+    },
+    {
+      "id": "R03",
+      "agent": "staff",
+      "case": "매출귀속 프로젝트 미정",
+      "question": "문협력 매출귀속 프로젝트 어디야?",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "문협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "get_assignment_timeline",
+          "args": {
+            "person_id": "EV-18"
+          },
+          "expect": {
+            "ok": true,
+            "current_projects": [
+              "APC Analysis"
+            ]
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_not_include": [
+          "30133686"
+        ],
+        "note": "미입력(미정)이라고 답해야 한다. 다른 인력·과제의 코드를 가져다 쓰면 안 된다."
+      }
+    },
+    {
+      "id": "R04",
+      "agent": "staff",
+      "case": "미정 인력 찾기",
+      "question": "매출귀속 프로젝트가 아직 정해지지 않은 인력 알려줘.",
+      "steps": null,
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "문협력"
+        ]
+      }
+    },
+    {
+      "id": "T01",
+      "agent": "staff",
+      "case": "이름 오타 → 바로잡아 되묻기",
+      "question": "김졍직 지금 무슨 과제에 있어?",
+      "steps": null,
+      "answer": {
+        "target": "v3",
+        "ask_back": true,
+        "must_include": [
+          "김정직"
+        ],
+        "note": "'김졍직'은 없다. 비슷한 이름 '김정직'을 제안하고 맞는지 되묻는다."
+      }
+    },
+    {
+      "id": "T02",
+      "agent": "staff",
+      "case": "과제명 오타 → 바로잡아 되묻기",
+      "question": "Soft Lap 고도화 과제 인력 알려줘.",
+      "steps": null,
+      "answer": {
+        "target": "v3",
+        "ask_back": true,
+        "must_include": [
+          "Soft Lab 고도화"
+        ],
+        "note": "'Soft Lap'은 없다. 'Soft Lab 고도화'가 맞는지 되묻는다."
+      }
+    },
+    {
+      "id": "T03",
+      "agent": "contract",
+      "case": "이름 오타 → 바로잡아 되묻기",
+      "question": "박헙력 구매계약 언제까지야?",
+      "steps": null,
+      "answer": {
+        "target": "v3",
+        "ask_back": true,
+        "must_include": [
+          "박협력"
+        ],
+        "note": "'박헙력'은 없다. '박협력'이 맞는지 되묻는다(확인 전에 다른 사람 계약을 답하지 않음)."
+      }
+    },
+    {
+      "id": "X01",
+      "agent": "staff",
+      "case": "인력 교체",
+      "question": "전표작성 자동화 류협력을 12월 1일부터 노협력으로 교체해줘.",
+      "steps": null,
+      "answer": {
+        "target": "추가 기능",
+        "hold_ok": true,
+        "must_not_include": [
+          "교체했습니다",
+          "변경되었습니다",
+          "저장했습니다"
+        ],
+        "note": "기대 동작(투입 등록·수정 Agent 도구 구현 후): 류협력 투입 종료일 2027-01-31 → 2026-11-30, 노협력 신규 투입 전표작성 자동화 2026-12-01~2027-01-31(매출귀속 프로젝트 30133686-D047를 이어받을지 확인), 류협력 계약 C-2026-108 종료일 변경·노협력 계약 등록 필요 안내. 한 확인 카드로 함께 보여준다."
+      }
+    },
+    {
+      "id": "X02",
+      "agent": "staff",
+      "case": "다른 과제로 이동",
+      "question": "명협력 12월 1일부터 APC Analysis로 옮겨줘.",
+      "steps": null,
+      "answer": {
+        "target": "추가 기능",
+        "hold_ok": true,
+        "must_not_include": [
+          "옮겼습니다",
+          "변경되었습니다",
+          "저장했습니다"
+        ],
+        "note": "기대 동작(투입 등록·수정 Agent 도구 구현 후): Soft Lab 고도화 투입 종료일 2027-02-28 → 2026-11-30, APC Analysis 신규 투입 2026-12-01~2027-02-28. 새 투입의 매출귀속 프로젝트는 되묻거나 미정으로, 계약 C-2026-206의 연결 투입 처리 안내."
+      }
+    },
+    {
+      "id": "H01",
+      "agent": "staff",
+      "case": "0.5MM = 반 달 근무 (Full time)",
+      "question": "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "백협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "get_assignment_timeline",
+          "args": {
+            "person_id": "EV-22"
+          },
+          "expect": {
+            "ok": true,
+            "current_projects": []
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "2026-10-01",
+          "2026-10-16"
+        ],
+        "note": "Full time 2026-10-01~2026-10-16 = 0.5MM: 10월 근무일 20일 중 10일만 근무(반 달). 한 달 내내 반씩 일한 것이 아니다."
+      }
+    },
+    {
+      "id": "H02",
+      "agent": "staff",
+      "case": "0.5MM = 한 달 병행 (Part time)",
+      "question": "최협력 11월 0.5MM는 반 달만 일하는 거야?",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "최협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "get_assignment_timeline",
+          "args": {
+            "person_id": "EV-08"
+          },
+          "expect": {
+            "ok": true,
+            "current_projects": [
+              "APC Analysis"
+            ]
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "2026-11-01",
+          "2026-11-30"
+        ],
+        "note": "Part time 2026-11-01~2026-11-30 = 0.5MM: 한 달 내내 다른 업무와 반씩 병행. 반 달만 일하는 것이 아니다."
+      }
+    },
+    {
+      "id": "N01",
+      "agent": "staff",
+      "case": "등록만 되고 투입 없음",
+      "question": "노협력 지금 무슨 과제야?",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "노협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "get_assignment_timeline",
+          "args": {
+            "person_id": "EV-20"
+          },
+          "expect": {
+            "ok": true,
+            "current_projects": []
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "없"
+        ],
+        "must_not_include": [
+          "Soft Lab 고도화",
+          "전표작성 자동화",
+          "APC Analysis"
+        ]
+      }
+    },
+    {
+      "id": "A01",
+      "agent": "staff",
+      "case": "계정 ID 미발급",
+      "question": "계정 ID가 아직 없는 사람 알려줘.",
+      "steps": null,
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "노협력",
+          "서협력",
+          "오협력"
+        ]
+      }
+    },
+    {
+      "id": "A02",
+      "agent": "staff",
+      "case": "계정 ID 입력 제안(저장 안 함)",
+      "question": "서협력 계정 ID evuser14로 등록해줘.",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "서협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "prepare_account_id",
+          "args": {
+            "person_id": "EV-14",
+            "account_id": "evuser14"
+          },
+          "expect": {
+            "ok": true,
+            "action": "account_id"
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_include": [
+          "evuser14"
+        ],
+        "must_not_include": [
+          "저장했습니다",
+          "등록했습니다"
+        ]
+      }
+    },
+    {
+      "id": "K01",
+      "agent": "contract",
+      "case": "만료 후 미확인 알림 확인 제안",
+      "question": "백협력 계약 만료 알림 확인 처리해줘.",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "백협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "prepare_alert_ack",
+          "args": {
+            "person_id": "EV-22"
+          },
+          "expect": {
+            "ok": true,
+            "action": "alert_ack"
+          }
+        }
+      ],
+      "answer": {
+        "target": "v1",
+        "must_not_include": [
+          "확인 처리했습니다",
+          "저장했습니다"
+        ]
       }
     },
     {
@@ -937,6 +1385,7 @@
         "must_not_include": [
           "김컨설",
           "김협력",
+          "류협력",
           "박협력",
           "오협력",
           "이정직",

@@ -26,7 +26,9 @@ def rp(n: int) -> str:
 # 매출귀속 프로젝트는 과제가 아니라 인력(투입)마다 정해진다. 한 과제에 매출귀속 프로젝트가 여러 개다(11/03 담당자).
 # Soft Lab 고도화: D036(김정직·이협력·강협력) · D039(정협력·윤협력) · D042(서협력)
 # 전표작성 자동화: D037(이정직·김협력·박협력) · D043(조협력·오협력·이협력 12월~) · D041(김컨설)
-# APC Analysis:    D038(김협력·정협력·최협력) · D040(이정직·한협력) · D044(이컨설)
+# APC Analysis:    D038(김협력·정협력·최협력) · D040(이정직·한협력) · D044(이컨설) · D049(백협력)
+# 같은 과제에서 월마다 다른 프로젝트: 신협력(Soft Lab 고도화) 10월 D036 · 11월 D045 · 12월 D046
+# 미정: 문협력 (매출귀속 프로젝트 미입력). 류협력 D047, 명협력 D048.
 
 # (관리번호, 이름, 업체, 분류, 시험할 경우)
 PEOPLE = [
@@ -46,7 +48,18 @@ PEOPLE = [
     ("EV-14", "서협력", "감마테크", "협력", "신규 투입 예정(11/23) · 준비 항목 모두 미진행"),
     ("EV-15", "김컨설", "베타컨설팅", "컨설팅", "컨설팅 · 등급 없음"),
     ("EV-16", "이컨설", "베타컨설팅", "컨설팅", "계약 종료 10일 전 (종료 예정)"),
+    # --- 11/03 담당자 추가 질문용 ---
+    ("EV-17", "신협력", "알파솔루션", "협력", "같은 과제에서 월마다 매출귀속 프로젝트가 다름 (10월 D036·11월 D045·12월 D046)"),
+    ("EV-18", "문협력", "감마테크", "협력", "매출귀속 프로젝트 미정 · 계약 종료 14일 전(11/29, 알림 시작일) · 계약이 투입보다 먼저 끝남"),
+    ("EV-19", "류협력", "알파솔루션", "협력", "교체 대상: 전표작성 자동화 → 12월부터 노협력으로 교체 요청"),
+    ("EV-20", "노협력", "알파솔루션", "협력", "교체 투입 예정 인력: 등록만 됨 · 투입·계약·계정 ID 없음"),
+    ("EV-21", "명협력", "감마테크", "협력", "과제 이동 대상: Soft Lab 고도화 → 12월부터 APC Analysis로 이동 요청"),
+    ("EV-22", "백협력", "감마테크", "협력", "Full time 10/1~10/16 = 0.5MM(반 달 근무) · 만료 후에도 알림 미확인"),
 ]
+
+# 계정 ID: 아직 근무를 시작하지 않은 서협력·오협력·노협력만 없음 (가상 ID)
+NO_ACCOUNT = ("EV-13", "EV-14", "EV-20")
+JOB_ROLES = {"정": "IT프로젝트관리", "협력": "응용SW개발자", "컨설팅": "컨설턴트"}
 
 
 def _token() -> str:
@@ -60,7 +73,9 @@ def seed_eval(service: Service, today: date = TODAY) -> dict:
     if service.people():
         raise RuntimeError("이미 데이터가 있는 DB에는 평가 데이터를 넣지 않습니다. 빈 DB 경로를 지정하세요.")
     for pid, name, company, category, _case in PEOPLE:
-        service.save_person(dict(id=pid, name=name, company=company, category=category, job_role=None),
+        account = None if pid in NO_ACCOUNT else f"evuser{pid[3:]}"
+        service.save_person(dict(id=pid, name=name, company=company, category=category,
+                                 job_role=JOB_ROLES[category], account_id=account),
                             token=_token(), actor=ACTOR)
 
     def assign(pid, project, revenue, start, end, rate=None, grade="L6", kind="Full time", mm=None):
@@ -114,6 +129,27 @@ def seed_eval(service: Service, today: date = TODAY) -> dict:
     a["EV-16"] = assign("EV-16", APC, rp(44), "2026-09-01", "2026-11-25", rate="11000000", grade=None)
     contract("EV-16", "베타컨설팅", "C-2026-302", "2026-09-01", "2026-11-25", a["EV-16"])
 
+    # --- 11/03 담당자 추가 질문용 ---
+    # 신협력: 같은 과제(Soft Lab 고도화)에서 월마다 매출귀속 프로젝트가 다르다 → 투입을 달마다 나눠 둔다.
+    # 계약은 투입과 연결하지 않아 세 투입 모두를 덮는다. "12월만 D047로" 요청 시 12월 투입만 바뀌어야 한다.
+    shin = [assign("EV-17", SOFTLAB, rp(36), "2026-10-01", "2026-10-31", rate="8000000"),
+            assign("EV-17", SOFTLAB, rp(45), "2026-11-01", "2026-11-30", rate="8000000"),
+            assign("EV-17", SOFTLAB, rp(46), "2026-12-01", "2026-12-31", rate="8000000")]
+    contract("EV-17", "알파솔루션", "C-2026-107", "2026-10-01", "2026-12-31")
+    # 문협력: 매출귀속 프로젝트 미정. 계약은 11/29 종료(기준일 14일 전 = 알림 시작일)로 투입(1/31)보다 먼저 끝난다.
+    a["EV-18"] = assign("EV-18", APC, None, "2026-11-02", "2027-01-31", rate="7500000")
+    contract("EV-18", "감마테크", "C-2026-205", "2026-11-02", "2026-11-29", a["EV-18"])
+    # 류협력 → 노협력 교체 요청용. 노협력은 등록만 되어 있다.
+    a["EV-19"] = assign("EV-19", VOUCHER, rp(47), "2026-08-03", "2027-01-31", rate="8500000")
+    contract("EV-19", "알파솔루션", "C-2026-108", "2026-08-03", "2027-01-31", a["EV-19"])
+    # 명협력: Soft Lab 고도화에 2/28까지 투입 중 → 12/1부터 APC Analysis로 이동 요청용.
+    a["EV-21"] = assign("EV-21", SOFTLAB, rp(48), "2026-09-01", "2027-02-28", rate="8000000")
+    contract("EV-21", "감마테크", "C-2026-206", "2026-09-01", "2027-02-28", a["EV-21"])
+    # 백협력: Full time 10/1~10/16 → 10월 근무일 20일 중 10일(10/5 개천절 대체휴일·10/9 한글날 제외) = 0.5MM (반 달 근무).
+    # 최협력의 Part time 0.5MM(11월 한 달 내내 다른 업무와 병행)과 대비. 계약 만료 후 알림을 확인하지 않았다.
+    a["EV-22"] = assign("EV-22", APC, rp(49), "2026-10-01", "2026-10-16", rate="7000000")
+    contract("EV-22", "감마테크", "C-2026-207", "2026-10-01", "2026-10-16", a["EV-22"])
+
     # 만료된 윤협력 계약의 알림은 이미 확인한 상태(미확인 알림 목록에서 빠짐)
     for alert in service.pending_alerts(today):
         if alert["contract_id"] == expired:
@@ -125,9 +161,7 @@ def seed_eval(service: Service, today: date = TODAY) -> dict:
         service.update_checklist_item(aid, item, status, reason, actual_done=status == "완료",
                                       token=_token(), actor=ACTOR, expected_version=row["version"])
 
-    for pid, aid in a.items():
-        if pid in ("EV-13", "EV-14"):
-            continue
+    for aid in [aid for pid, aid in a.items() if pid not in ("EV-13", "EV-14")] + shin:
         for item in ITEMS:
             set_item(aid, item, "완료")
     set_item(a["EV-13"], "방문예약", "완료")
