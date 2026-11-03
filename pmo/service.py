@@ -425,6 +425,8 @@ class Service:
         for row in rows:
             row.update(expiry_state(row["end_date"], day))
             row["has_successor"] = bool(row["has_successor"])
+            # 계약 종료 예정 = 종료 14일 전 ~ 종료일 당일, 연장 계약 미등록 (전체 계약 조회의 붉은 줄·필터)
+            row["ending_soon"] = row["in_window"] and row["days_left"] >= 0 and not row["has_successor"]
         return rows
 
     @logged("save_contract")

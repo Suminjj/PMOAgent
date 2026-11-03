@@ -63,9 +63,10 @@ def test_assignment_page_shows_monthly_columns(monkeypatch, tmp_path):
     seed_demo(Service(path), today())
     monkeypatch.setenv("PMO_DB_PATH", str(path))
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=30).run()
-    app.button(key="nav_2").click().run()                       # 왼쪽 메뉴 '투입 관리'
+    from ui.theme import PAGES
+    app.button(key=f"nav_{PAGES.index('전체 인력 조회')}").click().run()   # 인력 관리 › 전체 인력 조회
     assert not app.exception
-    table = app.dataframe[0].value
+    table = app.dataframe[1].value                                # [0]은 인력 목록, [1]이 월별 MM
     months = ["4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월", "1월", "2월", "3월"]
     assert list(table.columns) == ["이름", "업체명", *months, "투입 MM", "투입 Type", "투입 시작일", "투입 종료일"]
     assert "관리번호" not in " ".join(table.columns)
