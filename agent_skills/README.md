@@ -7,7 +7,7 @@
 
 | 지침 | 업무 | 주입되는 Agent | 서비스 연결 |
 | --- | --- | --- | --- |
-| [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회, 계정 ID 입력 | 인력관리 | 연결 |
+| [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회, 계정 ID 입력, 투입 변경·과제 이동·인력 교체 | 인력관리 | 연결 |
 | [work-environment-checklist](work-environment-checklist/SKILL.md) | 근무 환경 준비 현황 조회·상태 변경 | 근무 환경 준비 | 연결 |
 | [contract-expiry](contract-expiry/SKILL.md) | 구매계약 기간·종료 예정·만료 알림, 계약 등록·수정·삭제·알림 확인 | 구매계약 | 연결 (구매 필요 판정은 구현 예정) |
 | [inspection-amount](inspection-amount/SKILL.md) | 매출귀속 프로젝트별 검수 금액 | 검수 | 미사용 (도구 구현 예정이라 정해진 안내로 답함) |

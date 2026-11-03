@@ -51,6 +51,9 @@ def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> d
 GROUNDED_FIELDS = {
     "prepare_account_id": {"account_id": "계정 ID"},
     "prepare_contract_save": {"contract_no": "계약번호"},
+    "prepare_assignment_update": {"revenue_project": "매출귀속 프로젝트", "grade": "등급", "purchase_rate": "매입단가"},
+    "prepare_assignment_transfer": {"revenue_project": "매출귀속 프로젝트", "purchase_rate": "매입단가"},
+    "prepare_assignment_replace": {"grade": "등급", "revenue_project": "매출귀속 프로젝트", "purchase_rate": "매입단가"},
 }
 
 
@@ -65,7 +68,9 @@ def _ungrounded(service: Service, tool: str, args: dict, texts: list[str]) -> st
         value = str(args.get(field) or "").strip()
         if not value:
             continue
-        if value in names or not any(value.casefold() in t.casefold() for t in texts):
+        # 코드 앞부분(30133686-)·금액 쉼표를 붙이거나 뗀 경우도 사용자 값으로 본다
+        forms = {value, value.split("-")[-1], value.replace(",", "")}
+        if value in names or not any(f.casefold() in t.casefold().replace(",", "") for f in forms for t in texts):
             return (f"{label} '{value}'은(는) 사용자가 말한 값이 아닙니다. 값을 지어내지 마세요. "
                     "사용자가 요청한 작업이 이 도구로 할 일이 맞는지 다시 보고, 맞으면 값을 물어보세요.")
     return None
