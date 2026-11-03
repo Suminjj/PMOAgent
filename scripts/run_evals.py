@@ -20,7 +20,9 @@ def print_row(row: dict) -> None:
     mark = "답변" if row.get("graded") is False else ("PASS" if row["success"] else "FAIL")
     ms = row.get("agent_ms", row["duration_ms"])
     who = f" [{row['agent_used']}]" if row.get("agent_used") else ""
-    print(f"[{mark}] {row['id']}{who} {ms:>6}ms  {row['question']}")
+    tok = row.get("tokens")
+    used = f"  토큰 {tok['prompt']:,}+{tok['completion']:,}" if tok else ""
+    print(f"[{mark}] {row['id']}{who} {ms:>6}ms{used}  {row['question']}")
     print(f"        도구: {' → '.join(row['tools']) or '(호출 없음)'}")
     if row.get("answer"):
         print("        답변: " + row["answer"].replace("\n", " ")[:160])
@@ -33,6 +35,10 @@ def report(result: dict) -> None:
     times = [r.get("agent_ms", r["duration_ms"]) for r in result["results"]]
     print(f"{result['passed']}/{result['total']} 통과 (답변 채점 대기 {result.get('ungraded', 0)}개) · 평균 {sum(times) // max(len(times), 1)}ms"
           f" · 결과 파일: {result.get('saved_to')}")
+    if result.get("tokens"):
+        t = result["tokens"]
+        print(f"토큰: 질문당 평균 입력 {t['avg_prompt']:,} · 출력 {t['avg_completion']:,} (LLM 호출 평균 {t['avg_llm_calls']}회), "
+              f"전체 입력 {t['prompt']:,} · 출력 {t['completion']:,}")
 
 
 def main() -> int:
@@ -71,7 +77,9 @@ def main() -> int:
         print("\n=== 비교 ===")
         for r in results:
             times = [x.get("agent_ms", x["duration_ms"]) for x in r["results"]]
-            print(f"{r['planner']:<30} {r['passed']}/{r['total']} 통과 · 평균 {sum(times) // len(times)}ms")
+            tok = r.get("tokens") or {}
+            extra = f" · 토큰 평균 {tok['avg_prompt']:,}+{tok['avg_completion']:,}" if tok else ""
+            print(f"{r['planner']:<30} {r['passed']}/{r['total']} 통과 · 평균 {sum(times) // len(times)}ms{extra}")
     return 0 if all(r["passed"] == r["total"] for r in results) else 1
 
 

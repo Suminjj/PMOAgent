@@ -19,7 +19,10 @@ class ChatClient(Protocol):
         ...
 
     def chat(self, messages: list[dict], tools: list[dict]) -> dict:
-        """대화와 도구 목록을 보내고 {"content": str, "tool_calls": [{"name", "arguments"}]}를 돌려준다."""
+        """대화와 도구 목록을 보내고 {"content": str, "tool_calls": [{"name", "arguments"}]}를 돌려준다.
+
+        "usage": {"prompt_tokens", "completion_tokens"}가 있으면 토큰 수를 기록한다(없어도 된다).
+        """
         ...
 
 
@@ -98,7 +101,10 @@ class OllamaClient:
             payload.pop("think", None)
             body = self._post(payload)
         message = body.get("message") or {}
+        # Ollama가 응답마다 주는 입력(prompt_eval_count)·출력(eval_count) 토큰 수. 평가·실행 기록용.
+        usage = {"prompt_tokens": body.get("prompt_eval_count"), "completion_tokens": body.get("eval_count")}
         return {
+            "usage": usage,
             "content": _THINK.sub("", message.get("content") or "").strip(),
             "tool_calls": [{"name": (c.get("function") or {}).get("name", ""),
                             "arguments": _arguments((c.get("function") or {}).get("arguments"))}

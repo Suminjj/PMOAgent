@@ -95,6 +95,7 @@ def ask(service: Service, question: str, client: ChatClient,
     history: 이전 대화 [{"role": "user"|"assistant", "content": str}] (최근 MAX_HISTORY개만 사용)
     agent: 전문 Agent(AgentSpec 또는 키). 없으면 자동(전체)
     반환: {"ok", "answer", "calls": [{"tool","arguments","ok","data","error"}], "error", "duration_ms",
+          "tokens": {"prompt", "completion", "llm_calls"} (LLM 호출 전체 합),
           "model", "agent", "agent_label"}
     """
     t0, started = time.perf_counter(), datetime.now(TIMEZONE).isoformat()
@@ -108,6 +109,7 @@ def ask(service: Service, question: str, client: ChatClient,
                 {"role": "user", "content": question}]
     calls: list[dict] = []
     answer, error = "", None
+    tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
     if spec.planned_notice:
         # 쓸 수 있는 도구가 모두 구현 예정인 Agent: 도구 상태만 확인해 기록하고 정해진 안내로 답한다.
         for name in spec.tools or ():
@@ -118,6 +120,10 @@ def ask(service: Service, question: str, client: ChatClient,
     try:
         for _ in range(max_steps):
             reply = client.chat(messages, tools)
+            usage = reply.get("usage") or {}
+            tokens["llm_calls"] += 1
+            tokens["prompt"] += int(usage.get("prompt_tokens") or 0)
+            tokens["completion"] += int(usage.get("completion_tokens") or 0)
             if not reply["tool_calls"]:
                 answer = _clean_answer(reply["content"])
                 break
@@ -150,7 +156,8 @@ def ask(service: Service, question: str, client: ChatClient,
     if error is None and not answer:
         error = "LLM이 빈 답변을 돌려주었습니다."
     service.record_run(f"agent:{getattr(client, 'name', 'llm')}", (question,), {"agent": spec.key}, ok,
-                       f"도구 {len(calls)}회" if ok else None, error, t0, started)
+                       f"도구 {len(calls)}회 · 토큰 {tokens['prompt']}+{tokens['completion']}" if ok else None,
+                       error, t0, started)
     return {"ok": ok, "answer": answer, "calls": calls, "error": error,
-            "duration_ms": duration, "model": getattr(client, "name", "llm"),
+            "duration_ms": duration, "model": getattr(client, "name", "llm"), "tokens": tokens,
             "agent": spec.key, "agent_label": spec.label}

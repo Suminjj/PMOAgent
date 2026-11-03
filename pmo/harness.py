@@ -89,8 +89,19 @@ def _attach_answer(row: dict, last: dict | None) -> bool:
     if not last:
         return False
     row.update(answer=last["answer"], agent_error=last["error"],
-               agent_ms=last["duration_ms"], agent_used=last.get("agent"))
+               agent_ms=last["duration_ms"], agent_used=last.get("agent"), tokens=last.get("tokens"))
     return bool(last["error"])
+
+
+def token_summary(rows: list[dict]) -> dict | None:
+    """질문별 토큰 수 합계·평균(LLM으로 실행했을 때만). 입력 = 시스템 지시문·도구 설명·대화·도구 결과."""
+    used = [r["tokens"] for r in rows if r.get("tokens")]
+    if not used:
+        return None
+    prompt, completion = sum(u["prompt"] for u in used), sum(u["completion"] for u in used)
+    return {"questions": len(used), "prompt": prompt, "completion": completion,
+            "avg_prompt": prompt // len(used), "avg_completion": completion // len(used),
+            "avg_llm_calls": round(sum(u["llm_calls"] for u in used) / len(used), 2)}
 
 
 def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
@@ -144,7 +155,7 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
     report = {"planner": planner.name, "today": spec["today"], "questions": Path(questions_path).name,
               "run_at": datetime.now(TIMEZONE).isoformat(),
               "passed": sum(bool(r["success"]) for r in graded), "total": len(graded),
-              "ungraded": len(rows) - len(graded), "results": rows}
+              "ungraded": len(rows) - len(graded), "tokens": token_summary(rows), "results": rows}
     if save:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         out = RESULTS_DIR / f"{Path(questions_path).stem}-{planner.name}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
