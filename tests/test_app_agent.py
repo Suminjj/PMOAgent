@@ -141,5 +141,7 @@ def test_category_selector_limits_agent_tools(app):
 def test_auto_category_keeps_all_tools(app):
     REPLIES[:] = [say("안녕하세요.")]
     app.chat_input[0].set_value("안녕").run()
-    assert len(RECEIVED[0]["tools"]) == 14
+    from pmo.tools import TOOLS
+    # 자동(전체)은 구현된 도구 전부를 받는다. '구현 예정' 도구는 v1.2부터 전문 Agent만(검수 금액 도구를 잘못 고르던 문제)
+    assert len(RECEIVED[0]["tools"]) == sum(1 for tool in TOOLS.values() if tool.status == "구현")
     assert any(c.value == "🤖 자동(전체) Agent" for c in app.caption)
