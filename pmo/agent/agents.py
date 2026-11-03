@@ -41,11 +41,12 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
     AgentSpec("staff", "인력관리",
               "너는 인력관리 담당 Agent다. 인력 찾기, 현재·과거·예정 투입의 과제·기간·매출귀속 프로젝트(월별 포함)·"
               "등급·투입 Type·투입 MM 조회, 계정 ID 입력을 맡는다. 매출귀속 프로젝트를 묻는 질문은 네 업무다.",
-              ("find_people", "get_assignment_timeline", "query_database", "prepare_account_id"),
+              ("find_people", "get_assignment_timeline", "get_project_members", "query_database", "prepare_account_id"),
               ("staff-assignment-lookup", "data-change"), (
                   "이가상 지금 무슨 과제에 투입되어 있어?",
                   "김가상의 CoE 전체 투입 과제와 기간을 알려줘.",
                   "이가상 월별 매출귀속 프로젝트 알려줘",
+                  "Soft Lab 고도화 과제 인력을 매출귀속 프로젝트별로 알려줘",
                   "이가상 계정 ID lee.fake로 넣어줘",
               ), "인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 계정 ID 입력"),
     AgentSpec("environment", "근무 환경 준비",

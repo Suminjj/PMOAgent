@@ -246,3 +246,23 @@ def test_revenue_project_questions_belong_to_staff():
     assert "매출귀속 프로젝트" in TOOLS["get_assignment_timeline"].description
     assert "검수 금액을 물을 때만" in TOOLS["inspection_amount_by_revenue_project"].description
     assert "검수 금액(원)을 물을 때만" in SYSTEM_PROMPT
+
+
+def test_project_members_tool(tmp_path):
+    """'APC Analysis 과제 인력을 매출귀속 프로젝트별로' 질문에 모델이 과제명을 사람 이름으로 찾던 문제(11/03)."""
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.service import Service
+    from pmo.tools import call_tool
+    s = Service(tmp_path / "p.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    r = call_tool(s, "get_project_members", {"project": "apc analysis"})
+    assert r["ok"] and r["data"]["project"] == "APC Analysis"
+    groups = r["data"]["by_revenue_project"]
+    assert groups["30133686-D038"] == ["김협력", "정협력", "최협력"] and groups["미정(미입력)"] == ["문협력"]
+    assert "백협력" not in str(groups)                                              # 10월에 끝난 투입은 기본 제외
+    assert "백협력" in str(call_tool(s, "get_project_members", {"project": "APC Analysis", "include_past": True}))
+    typo = call_tool(s, "get_project_members", {"project": "Soft Lap 고도화"})
+    assert not typo["ok"] and "'Soft Lab 고도화'" in typo["error"]
+    wrong = call_tool(s, "get_assignment_timeline", {"person_id": "APC Analysis"})
+    assert not wrong["ok"] and "과제명" in wrong["error"] and "get_project_members" in wrong["error"]
+    assert "get_project_members" in AGENTS["staff"].tools

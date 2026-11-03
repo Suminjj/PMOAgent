@@ -118,7 +118,8 @@ def questions(s: Service) -> list[dict]:
     for a in s.assignments():
         if a["project"] == APC and a["end_date"] >= TODAY.isoformat():
             apc.setdefault(a["revenue_project"] or "미정", set()).add(a["name"])
-    add("S11", "staff", "한 과제 · 여러 매출귀속 프로젝트", "APC Analysis 과제 인력을 매출귀속 프로젝트별로 알려줘.", None,
+    add("S11", "staff", "한 과제 · 여러 매출귀속 프로젝트", "APC Analysis 과제 인력을 매출귀속 프로젝트별로 알려줘.",
+        [step("get_project_members", {"project": "APC Analysis"})],
         must_include=sorted(apc) + sorted(set().union(*apc.values())),
         note="투입 과제와 매출귀속 프로젝트는 다르다: " + " / ".join(f"{k}: {', '.join(sorted(v))}" for k, v in sorted(apc.items())))
 
@@ -238,6 +239,8 @@ def expect_of(tool: str, result: dict) -> dict:
     data = result["data"]
     if tool == FIND:
         return {"ok": True, "count": len(data)}
+    if tool == "get_project_members":
+        return {"ok": True, "names": sorted({m["name"] for m in data["members"]})}
     if tool == "get_assignment_timeline":
         return {"ok": True, "current_projects": sorted(r["project"] for r in data["current"])}
     if tool == "list_contracts":

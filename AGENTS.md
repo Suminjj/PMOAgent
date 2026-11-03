@@ -225,7 +225,7 @@
 - [확정] 10/20 담당자: 홈 챗봇 이름은 '🤖 PMO Agent'. 카테고리는 라디오 대신 이모티콘을 붙인 큰 버튼
   (🤖 자동·👤 인력관리·💻 근무 환경 준비·📄 구매계약·💰 검수, `ui/theme.py` AGENT_ICONS). 고른 버튼은 파란색.
 - [제안] 각 전문 Agent는 맡은 업무의 도구만 받는다. 정의는 `pmo/agent/agents.py`의 `AGENTS`다.
-  - 인력관리: find_people, get_assignment_timeline, query_database, prepare_account_id
+  - 인력관리: find_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id
   - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
   - 구매계약: find_people, list_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
   - 검수: inspection_amount_by_revenue_project(구현 예정). 도구가 모두 구현 예정이라 LLM 없이 정해진 안내로 답한다
@@ -237,6 +237,9 @@
 - [제안] 매출귀속 프로젝트·등급·투입 Type·MM 조회는 인력관리 업무다(역할·담당 업무 한 줄·업무 지침 '맡는 질문' 절·공통 규칙 13).
   검수 도구는 검수 '금액'을 물을 때만 쓴다. 11/03 v1 화면 확인에서 "신협력 월별 매출귀속 프로젝트"를 자동은 검수 도구로,
   인력관리는 구매계약으로, 구매계약은 인력관리로 보내 답하지 못해서 고침.
+- [제안] 과제 인력 조회 도구 `get_project_members`(`Service.project_members`): 과제의 인력과 매출귀속 프로젝트별 묶음.
+  기본은 현재·예정 투입, include_past면 과거 포함. 과제명은 대소문자·띄어쓰기를 무시해 맞추고, 오타면 비슷한 과제명을 되묻는다.
+  모델이 과제명을 사람 이름으로 넣으면(투입 이력 조회 등) "과제명이니 과제 인력 조회를 쓰라"는 오류를 돌려준다.
 - [제안] query_database는 세 Agent에 모두 주고, 볼 수 있는 테이블은 공통(SAFE_TABLES)이다. Agent별 테이블 제한은 필요하면 추가한다.
 - [TODO] 질문을 보고 Agent를 자동으로 고르는 라우터 Agent, 한 질문이 여러 업무에 걸칠 때의 협업 방식
 

@@ -1,4 +1,5 @@
 """Validated business operations shared by forms and future LLM tools."""
+import difflib
 import functools
 import hashlib
 import json
@@ -162,6 +163,46 @@ class Service:
             params = (person_id,)
         with connection(self.path) as con:
             return [dict(r) for r in con.execute(sql + " ORDER BY a.start_date, a.id", params)]
+
+    def project_names(self) -> list[str]:
+        with connection(self.path) as con:
+            return [r[0] for r in con.execute(
+                "SELECT DISTINCT project FROM assignments WHERE project IS NOT NULL ORDER BY project")]
+
+    def match_project(self, name: str) -> str:
+        """과제명을 등록된 과제명과 맞춘다(대소문자·띄어쓰기 무시). 없으면 비슷한 과제명을 알려 주는 오류."""
+        given = required(name, "과제명")
+        known = self.project_names()
+        folded = {k.casefold().replace(" ", ""): k for k in known}
+        key = given.casefold().replace(" ", "")
+        if key in folded:
+            return folded[key]
+        partial = [k for k in known if key in k.casefold().replace(" ", "")]
+        if len(partial) == 1:
+            return partial[0]
+        close = difflib.get_close_matches(given, known, n=1, cutoff=0.6)
+        if close:
+            raise ValidationError(f"'{given}' 과제는 없습니다. '{close[0]}' 과제가 맞는지 사용자에게 확인하세요.")
+        raise ValidationError(f"'{given}' 과제는 없습니다. 등록된 과제: {', '.join(known)}")
+
+    def project_members(self, project: str, today: date | None = None, include_past: bool = False) -> dict:
+        """과제(투입 과제)의 인력과 투입별 매출귀속 프로젝트. 기본은 현재·예정 투입, include_past면 과거 포함."""
+        name = self.match_project(project)
+        day = (today or self.clock()).isoformat()
+        rows = [a for a in self.assignments() if a["project"] == name and (include_past or a["end_date"] >= day)]
+        members = [{"name": a["name"], "company": a["company"], "category": a["category"],
+                    "revenue_project": a["revenue_project"] or "미정(미입력)",
+                    "start_date": a["start_date"], "end_date": a["end_date"],
+                    "state": "현재" if a["start_date"] <= day else "예정" if a["end_date"] >= day else "과거",
+                    "assignment_type": a["assignment_type"], "mm": a["mm"], "grade": a["grade"]} for a in rows]
+        groups: dict[str, list[str]] = {}
+        for m in members:
+            names = groups.setdefault(m["revenue_project"], [])
+            if m["name"] not in names:
+                names.append(m["name"])
+        groups = {k: sorted(groups[k]) for k in sorted(groups, key=lambda k: (k.startswith("미정"), k))}
+        return {"project": name, "today": day, "include_past": include_past, "count": len(members),
+                "by_revenue_project": groups, "members": members}
 
     def history(self) -> list[dict]:
         with connection(self.path) as con:
