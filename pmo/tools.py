@@ -69,8 +69,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("find_people", "이름 일부로 인력 후보를 찾는다. 동명이인이 있으면 여러 명이 나온다. "
          "1명이면 summary에 그 사람의 현재·예정·과거 투입(과제·기간·매출귀속 프로젝트·투입 Type·MM)과 구매계약 요약이 함께 온다. "
          "summary로 답할 수 있으면 바로 답하고, 이후 도구는 결과의 내부 관리번호(id)로 호출한다.",
-         _obj({"name": {"type": "string", "description": "사람 이름(예: 조협력). 직함은 빼도 된다"},
-               "company": {"type": "string", "description": "질문에 업체명이 따로 있을 때만(예: '감마테크 김협력'의 감마테크). 이름을 넣지 않는다"}}),
+         _obj({"name": {"type": "string", "description": "사람 이름(예: 이가상). 직함은 빼도 된다"},
+               "company": {"type": "string", "description": "질문에 업체명이 따로 있을 때만(예: '가상솔루션 이가상'의 가상솔루션). 이름을 넣지 않는다"}}),
          # name을 스키마 필수로 두지 않는다: 이름을 company에 넣는 실수를 코드에서 바로잡기 위함(빈 이름은 _find_people이 거절)
          handler=lambda s, a: _find_people(s, a.get("name"), a.get("company"))),
     Tool("get_assignment_timeline", "인력의 현재·과거·예정 투입을 조회한다. 투입마다 과제, 매출귀속 프로젝트, 기간, 등급, "

@@ -56,6 +56,7 @@ ANSWERS = {
                     "예: '김정직 지금 무슨 과제에 투입되어 있어?'",
     "redirect": "이 요청은 {here} 카테고리에서 처리할 수 없습니다. 홈 화면에서 '{there}'를 골라 다시 요청해 주세요.",
     "hold": "조회 결과로 확인되지 않은 인력({names})이 답변에 들어가 답변을 보류합니다. 대상 인력의 이름을 확인해 다시 요청해 주세요.",
+    "ask_target": "누구의 일인지 알 수 없습니다. 대상 인력의 이름을 알려 주세요.",
 }
 
 
@@ -198,6 +199,7 @@ def date_said(value: str, texts: list[str]) -> bool:
 # 사용자가 말해야 쓰는 선택 날짜(말하지 않으면 도구가 기존 종료일을 쓴다). v2 평가 X01: 모델이 종료일을 지어내 '시작일보다 빠름' 오류
 OPTIONAL_DATES = {"prepare_assignment_update": ("end_date",), "prepare_assignment_transfer": ("end_date",),
                   "prepare_assignment_replace": ("end_date",)}
+_GRADE = re.compile(r"(?<![A-Za-z])(L\d)(?!\d)")
 _DAY = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _MONTH = re.compile(r"(\d{1,2})\s*월")
 
@@ -213,6 +215,11 @@ def tidy_args(tool: str, args: dict, question: str, texts: list[str], today: dat
     for field in OPTIONAL_DATES.get(tool, ()):
         if args.get(field) and not date_said(args[field], texts):
             args = {k: v for k, v in args.items() if k != field}
+    if tool == "prepare_assignment_replace" and not args.get("grade"):
+        # '노협력(L6)으로 교체'의 등급을 모델이 빠뜨림(v3 평가 X01 전문). 사용자 문장에 등급이 하나뿐일 때만 채운다
+        grades = set(_GRADE.findall(question))
+        if len(grades) == 1:
+            args = dict(args, grade=grades.pop())
     if tool == "prepare_assignment_update" and not args.get("month") and not args.get("effective_date"):
         # 사용자가 '12월'(그 달만)·'12월 1일부터'(그날부터)를 말했는데 모델이 빠뜨리면 채운다(v2 평가 R02 투입 2건 되물음)
         day = _DAY.search(question)
@@ -231,6 +238,16 @@ def seen_text(calls: list[dict]) -> list[str]:
     """이번 턴 도구 결과(성공 데이터와 오류 문장). 오류의 '김정직을 말씀하신 건지' 같은 제안도 근거로 본다(v3 평가 T01·T03)."""
     return [json.dumps(c.get("data") if c.get("ok") else c.get("error"), ensure_ascii=False, default=str)
             for c in calls if not c.get("blocked")]
+
+
+CHANGE_WORDS = ("바꿔", "변경", "수정", "삭제", "등록", "처리해", "옮겨", "교체", "넣어")
+
+
+def hold_answer(service, question: str, names: list[str]) -> tuple[str, str]:
+    """답변 보류 문장. 대상 없이 변경을 요청했으면 지어낸 이름 대신 대상을 묻는다(v3 평가 G02 전문)."""
+    if not mentioned_people(service, question) and any(w in question for w in CHANGE_WORDS):
+        return ANSWERS["ask_target"], "ask_target"
+    return ANSWERS["hold"].format(names=", ".join(names)), "hold"
 
 
 def mentioned_people(service, text: str) -> list[str]:

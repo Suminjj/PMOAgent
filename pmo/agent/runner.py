@@ -263,7 +263,7 @@ def ask(service: Service, question: str, client: ChatClient,
             if retry and not guardrails.ungrounded_names_in_answer(service, retry, texts, guardrails.seen_text(calls)):
                 answer, guardrail = retry, "hold_retry"
             else:
-                answer, guardrail = guardrails.ANSWERS["hold"].format(names=", ".join(made_up)), "hold"
+                answer, guardrail = guardrails.hold_answer(service, question, made_up)
             if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
                 answer = _not_saved_yet(answer)
     return _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail)

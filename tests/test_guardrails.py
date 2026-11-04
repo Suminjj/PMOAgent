@@ -58,6 +58,17 @@ def test_redirect_twice_does_not_send_to_wrong_category(service):
     assert result["guardrail"] == "redirect_failed" and "'검수'" not in result["answer"]
 
 
+def test_grade_and_target_fallbacks(service):
+    """v3 3차 평가 X01(전문): '노협력(L6)'의 등급을 빠뜨림 / G02(전문): 다시 시켜도 '김협력'을 지어냄 → 대상을 묻는다."""
+    q = "전표작성 자동화 류협력을 12월 1일부터 노협력(L6)으로 교체해줘."
+    assert guardrails.tidy_args("prepare_assignment_replace", {"person_id": "류협력"}, q, [q], TODAY)["grade"] == "L6"
+    q = "류협력을 L5나 L6 인력으로 교체해줘."
+    assert "grade" not in guardrails.tidy_args("prepare_assignment_replace", {}, q, [q], TODAY)    # 둘 이상이면 채우지 않음
+    made_up = text("김협력의 계약 종료일을 바꿀까요?")
+    result = ask(service, "계약 종료일 12월 31일로 바꿔줘.", ScriptedClient([made_up, made_up]), agent="contract")
+    assert result["guardrail"] == "ask_target" and "김협력" not in result["answer"]
+
+
 def test_replace_with_swapped_people_is_corrected(service):
     """v3 평가 X01(전문): 기존·교체 인력을 바꿔 넣음(노협력은 투입 없음) → 자리를 바로잡아 카드를 만든다."""
     result = call_tool(service, "prepare_assignment_replace", {"person_id": "노협력", "new_person_id": "류협력",
