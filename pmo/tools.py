@@ -10,6 +10,7 @@
   `call_tool()`로 실행하면 된다.
 """
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -84,6 +85,22 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("list_contracts", "인력의 구매계약(계약번호·기간·상태·연장 여부)을 조회한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: s.contracts(_pid(s, a["person_id"]))),
+    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: C-2026-202에 묶인 인력), 업체, 상태(준비·확정), "
+         "계약번호 미발급(without_number=true). 계약번호를 사람 이름 칸에 넣지 않고 이 도구를 쓴다.",
+         _obj({"contract_no": STR, "company": STR, "status": _enum(CONTRACT_STATUSES),
+               "without_number": {"type": "boolean", "description": "계약번호가 아직 없는 계약만"}}),
+         handler=lambda s, a: [{k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date",
+                                                   "status", "label")} | {"contract_no": c["contract_no"] or "미발급"}
+                               for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"),
+                                                           bool(a.get("without_number")))]),
+    Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true). "
+         "이름을 모를 때 쓴다. 이름이 있으면 find_people.",
+         _obj({"company": STR, "category": _enum(("정", "협력", "컨설팅")), "job_role": STR,
+               "without_account": {"type": "boolean", "description": "계정 ID가 아직 없는 사람만"}}),
+         handler=lambda s, a: [{k: p[k] for k in ("name", "company", "category", "job_role")}
+                               | {"account_id": p["account_id"] or "미발급"}
+                               for p in s.search_people(a.get("company"), a.get("category"), a.get("job_role"),
+                                                        bool(a.get("without_account")))]),
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
          handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
@@ -159,6 +176,8 @@ TOOL_LABELS = {
     "find_people": "인력 찾기",
     "get_assignment_timeline": "투입 이력 조회",
     "get_project_members": "과제 인력 조회",
+    "search_contracts": "조건으로 계약 찾기",
+    "search_people": "조건으로 인력 찾기",
     "list_contracts": "구매계약 조회",
     "contracts_ending": "월·업체별 계약 종료 예정",
     "pending_contract_alerts": "미확인 계약 종료 알림",
@@ -177,6 +196,20 @@ TOOL_LABELS = {
 }
 
 
+_CONTRACT_NO = re.compile(r"^[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}$")
+
+
+def _not_a_name(value) -> str | None:
+    """사람 이름 자리에 계약번호·조건 문장이 들어왔으면 맞는 도구를 알려 준다(v2 평가 C09·C10)."""
+    text = str(value or "").strip()
+    if _CONTRACT_NO.match(text.replace(" ", "")):
+        return f"'{text}'은(는) 사람이 아니라 계약번호입니다. 계약번호로 인력을 찾으려면 search_contracts(contract_no)를 쓰세요."
+    if len(text) > 8 or " " in text:
+        return (f"'{text}'은(는) 사람 이름이 아닙니다. 조건으로 찾으려면 계약은 search_contracts"
+                "(계약번호·업체·상태·계약번호 미발급), 인력은 search_people(업체·분류·직무·계정 ID 미발급)을 쓰세요.")
+    return None
+
+
 def _pid(service: Service, value: str) -> str:
     """조회 도구에 이름이 들어와도 관리번호로 바꾼다. 없거나 동명이인이면 되물을 오류를 낸다.
 
@@ -188,6 +221,9 @@ def _pid(service: Service, value: str) -> str:
         given = str(value or "").strip().casefold().replace(" ", "")
         if given and any(given == p.casefold().replace(" ", "") for p in service.project_names()):
             raise ValidationError(f"'{value}'은(는) 사람이 아니라 과제명입니다. 과제 인력은 get_project_members로 조회하세요.")
+        hint = _not_a_name(value)
+        if hint:
+            raise ValidationError(hint)
         raise
 
 
@@ -252,6 +288,10 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
         found = service.find_people(value) if value else []
     if company and len(found) > 1:                # "감마테크 김협력"처럼 업체로 동명이인을 가린다
         found = [p for p in found if company in (p["company"] or "")] or found
+    if not found:
+        hint = _not_a_name(value)
+        if hint:
+            raise ValidationError(hint)
     if len(found) != 1:
         return found
     person = found[0]

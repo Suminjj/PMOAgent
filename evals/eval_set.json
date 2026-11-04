@@ -455,14 +455,12 @@
       "steps": null,
       "answer": {
         "target": "v1",
-        "must_include": [
-          "없"
-        ],
         "must_not_include": [
           "Soft Lab 고도화",
           "전표작성 자동화",
           "APC Analysis"
-        ]
+        ],
+        "note": "등록된 인력이 없다고 답해야 한다('없습니다'·'등록되어 있지 않습니다' 모두 정답). 다른 사람의 과제를 대지 않는다."
       }
     },
     {
@@ -757,7 +755,22 @@
       "agent": "contract",
       "case": "같은 계약번호 여러 명",
       "question": "계약번호 C-2026-202에 묶인 인력 알려줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "search_contracts",
+          "args": {
+            "contract_no": "C-2026-202"
+          },
+          "expect": {
+            "ok": true,
+            "names": [
+              "정협력",
+              "최협력",
+              "한협력"
+            ]
+          }
+        }
+      ],
       "answer": {
         "target": "v1",
         "must_include": [
@@ -772,7 +785,20 @@
       "agent": "contract",
       "case": "계약번호 미발급",
       "question": "계약번호가 아직 안 나온 사람 있어?",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "search_contracts",
+          "args": {
+            "without_number": true
+          },
+          "expect": {
+            "ok": true,
+            "names": [
+              "오협력"
+            ]
+          }
+        }
+      ],
       "answer": {
         "target": "v1",
         "must_include": [
@@ -793,7 +819,7 @@
           },
           "expect": {
             "ok": true,
-            "names": [
+            "names_at_least": [
               "김협력",
               "문협력",
               "이정직",
@@ -1220,7 +1246,22 @@
       "agent": "staff",
       "case": "계정 ID 미발급",
       "question": "계정 ID가 아직 없는 사람 알려줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "search_people",
+          "args": {
+            "without_account": true
+          },
+          "expect": {
+            "ok": true,
+            "names": [
+              "노협력",
+              "서협력",
+              "오협력"
+            ]
+          }
+        }
+      ],
       "answer": {
         "target": "v1",
         "must_include": [

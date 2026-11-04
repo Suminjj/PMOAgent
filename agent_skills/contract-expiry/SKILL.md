@@ -38,6 +38,7 @@ status: 연결 (도구 연결, 이 지침 본문은 구매계약 Agent 프롬프
 | `find_people` | 구현 | 인력 확정 |
 | `list_contracts` | 구현 | 인력의 계약 목록(상태·기간·연장 여부·만료 상태) |
 | `contracts_ending` | 구현 | 월·업체별 종료 예정 |
+| `search_contracts` | 구현 | 조건으로 계약 찾기: 계약번호(그 계약에 묶인 인력), 업체, 상태, 계약번호 미발급 |
 | `pending_contract_alerts` | 구현 | 미확인 만료 알림 |
 | `monthly_purchase_needs` | 구현 예정 | 구매 필요 판정 (기준 TODO) |
 | `query_database` | 구현 | 그 밖의 조건 조회·건수 집계 (SELECT만) |

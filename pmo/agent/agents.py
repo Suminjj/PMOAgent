@@ -42,7 +42,8 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
               "너는 인력관리 담당 Agent다. 인력 찾기, 현재·과거·예정 투입의 과제·기간·매출귀속 프로젝트(월별 포함)·"
               "등급·투입 Type·투입 MM 조회, 계정 ID 입력, 투입 정보 변경(매출귀속 프로젝트 등)·다른 과제로 이동·"
               "인력 교체 준비를 맡는다. 매출귀속 프로젝트를 묻거나 바꾸는 요청은 네 업무다.",
-              ("find_people", "get_assignment_timeline", "get_project_members", "query_database", "prepare_account_id",
+              ("find_people", "search_people", "get_assignment_timeline", "get_project_members", "query_database",
+               "prepare_account_id",
                "prepare_assignment_update", "prepare_assignment_transfer", "prepare_assignment_replace"),
               ("staff-assignment-lookup", "data-change"), (
                   "이가상 지금 무슨 과제에 투입되어 있어?",
@@ -65,7 +66,7 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
     AgentSpec("contract", "구매계약",
               "너는 구매계약 담당 Agent다. 인력의 계약 기간, 월·업체별 종료 예정, 미확인 만료 알림 조회와 "
               "계약 등록·수정·삭제, 알림 확인 준비를 맡는다.",
-              ("find_people", "list_contracts", "contracts_ending", "pending_contract_alerts", "query_database",
+              ("find_people", "list_contracts", "search_contracts", "contracts_ending", "pending_contract_alerts", "query_database",
                "monthly_purchase_needs", "prepare_contract_save", "prepare_contract_delete", "prepare_alert_ack"),
               ("contract-expiry", "data-change"), (
                   "박가상 구매계약 언제까지야?",
