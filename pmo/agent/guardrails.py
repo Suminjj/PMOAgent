@@ -47,6 +47,8 @@ INJECTION = re.compile(r"(지시|규칙|프롬프트|명령|설정)\S{0,3}\s*(�
 UNSUPPORTED = re.compile(r"연봉|급여|월급|보너스|성과급|연락처|전화번호|휴대폰|핸드폰|주소|주민등록|생년월일|인사\s*평가|평가\s*결과")
 
 ANSWERS = {
+    "scope": "'{project}' 과제는 조회할 수 있는 과제가 아닙니다. 담당 과제({mine})만 조회할 수 있습니다.",
+    "redirect_failed": "이 요청은 {here} 업무인데 처리하지 못했습니다. 인력 이름과 기간 등을 넣어 다시 요청해 주세요.",
     "injection": "이전 지시를 무시하거나 바꾸라는 요청은 따를 수 없습니다. 인력·투입·구매계약·근무 환경 준비 업무를 요청해 주세요.",
     "unsupported": "이 서비스는 인력의 {what} 정보를 관리하지 않아 답할 수 없습니다. "
                    "투입 과제·기간, 구매계약, 근무 환경 준비 정보만 조회할 수 있습니다.",
@@ -69,6 +71,16 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
              history: list[dict] | None = None, inspection_ready: bool = False) -> dict | None:
     """LLM을 부르기 전에 답이 정해진 요청이면 {"kind", "answer"}를 돌려준다. 아니면 None."""
     q = question.strip()
+    access = getattr(service, "access", None)
+    if access is not None and not access.all_projects:
+        # 과제 리더가 담당 밖 과제를 물으면(질문 속 '나는 ○○ 리더야'와 무관하게) 정해진 문장으로 답한다(v3 평가 P01:
+        # 모델이 질문 속 담당 과제 이름을 대신 조회해 엉뚱한 목록을 보여줌). 문장은 없는 과제와 같아 존재를 알리지 않는다.
+        from pmo.service import Service
+        everyone = Service(service.path, clock=service.clock).project_names()
+        asked = [p for p in everyone if _fold(p) in _fold(q) and not access.sees_project(p)]
+        if asked:
+            return {"kind": "scope", "answer": ANSWERS["scope"].format(project=asked[0],
+                                                                       mine=", ".join(service.project_names()) or "없음")}
     if INJECTION.search(q):
         return {"kind": "injection", "answer": ANSWERS["injection"]}
     m = UNSUPPORTED.search(q)
@@ -216,4 +228,23 @@ def tidy_args(tool: str, args: dict, question: str, texts: list[str], today: dat
 
 
 def seen_text(calls: list[dict]) -> list[str]:
-    return [json.dumps(c.get("data"), ensure_ascii=False, default=str) for c in calls if c.get("ok")]
+    """이번 턴 도구 결과(성공 데이터와 오류 문장). 오류의 '김정직을 말씀하신 건지' 같은 제안도 근거로 본다(v3 평가 T01·T03)."""
+    return [json.dumps(c.get("data") if c.get("ok") else c.get("error"), ensure_ascii=False, default=str)
+            for c in calls if not c.get("blocked")]
+
+
+def mentioned_people(service, text: str) -> list[str]:
+    """문장에 나온 등록 인력 이름(볼 수 있는 인력만, 긴 이름 우선)."""
+    names = sorted({p["name"] for p in service.people() if p.get("name") and len(p["name"]) >= 2}, key=len, reverse=True)
+    found = [n for n in names if n in text]
+    return [n for n in found if not any(n != m and n in m for m in found)]
+
+
+# 대상(인력·계약)이 있어야 하는 저장 준비 도구. 모델이 대상 없이 부르면 실행하지 않고 되묻게 한다(v3 평가 G02).
+TARGET_FIELDS = ("person_id", "contract_id", "contract_no")
+
+
+def missing_target(tool: str, args: dict) -> str | None:
+    if tool.startswith("prepare_") and not any(str(args.get(f) or "").strip() for f in TARGET_FIELDS):
+        return "누구의 일인지 알 수 없습니다. 도구를 부르지 말고 대상 인력의 이름을 사용자에게 물어보세요."
+    return None

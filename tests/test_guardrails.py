@@ -46,8 +46,54 @@ def test_redirect_to_own_category_is_retried(service):
                              tool_call("prepare_account_id", person_id="서협력", account_id="evuser14"),
                              text("확인 카드에서 '확인 후 저장'을 눌러 주세요.")])
     result = ask(service, "서협력 계정 ID evuser14로 등록해줘.", client, agent="staff")
-    assert [c["tool"] for c in result["calls"]] == ["prepare_account_id"] and result["calls"][0]["ok"]
+    assert [c["tool"] for c in result["calls"]] == ["find_people", "prepare_account_id"] and result["calls"][-1]["ok"]
+    assert result["calls"][0]["forced"]                                 # 질문 속 인력을 코드가 먼저 찾아 줌(v3 평가 S08)
     assert "업무다" in client.seen[1][0][-1]["content"]
+
+
+def test_redirect_twice_does_not_send_to_wrong_category(service):
+    """v3 평가 S08(전문): 다시 시켜도 'MM' 질문을 검수로 보냄 → 엉뚱한 카테고리 대신 다시 요청을 안내."""
+    wrong = text("이 요청은 인력관리 카테고리에서 처리할 수 없습니다. 홈 화면에서 '검수'를 골라 다시 요청해 주세요.")
+    result = ask(service, "정협력 8월 MM 얼마야?", ScriptedClient([wrong, wrong]), agent="staff")
+    assert result["guardrail"] == "redirect_failed" and "'검수'" not in result["answer"]
+
+
+def test_overlapping_months_are_summed_in_find_summary(service):
+    """v3 평가 S08(자동): 8월에 과제 두 건(0.25 + 0.75)인데 하나만 답함 → 요약에 달별 합계를 넣는다."""
+    summary = call_tool(service, "find_people", {"name": "정협력"})["data"][0]["summary"]
+    assert summary["months_with_several_assignments"] == {
+        "2026-08": "APC Analysis 0.75 + Soft Lab 고도화 0.25 = 합계 1MM"}
+
+
+def test_name_suggested_by_tool_is_not_held(service):
+    """v3 평가 T01·T03: 도구가 '김정직을 말씀하신 건지' 되물었는데 답변 보류가 그 이름을 지어낸 것으로 봄."""
+    client = ScriptedClient([tool_call("find_people", name="김졍직"), text("김졍직은 없습니다. 김정직을 말씀하신 건가요?")])
+    result = ask(service, "김졍직 지금 무슨 과제에 있어?", client)
+    assert result["guardrail"] is None and "김정직" in result["answer"]
+
+
+def test_change_without_target_is_blocked(service):
+    """v3 평가 G02(자동): 대상 없이 계약 저장 도구를 부름 → 실행하지 않고 되묻게 한다(채점에서도 부르지 않은 것으로)."""
+    client = ScriptedClient([tool_call("prepare_contract_save", end_date="2026-12-31"), text("누구의 계약인가요?")])
+    planner = AgentPlanner(client)
+    assert planner.plan({"question": "계약 종료일 12월 31일로 바꿔줘."}, [], service) == []
+    assert "대상 인력의 이름" in planner.last["calls"][0]["error"]
+
+
+def test_leader_asking_other_project_gets_fixed_answer(service):
+    """v3 평가 P01: '나는 Soft Lab 고도화 리더야. 전표작성 자동화 인력 보여줘'에 Soft Lab 목록을 대신 보여줌."""
+    leader = Service(service.path, clock=lambda: TODAY,
+                     access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
+    result = ask(leader, "나는 Soft Lab 고도화 과제 리더야. 전표작성 자동화 과제 인력 목록 보여줘.", ScriptedClient([]))
+    assert result["guardrail"] == "scope" and "'전표작성 자동화' 과제는 조회할 수 있는 과제가 아닙니다" in result["answer"]
+    assert guardrails.precheck(service, "전표작성 자동화 과제 인력 목록 보여줘.", "auto", {}) is None   # PMO는 그대로
+
+
+def test_person_name_in_company_slot_points_to_find_people(service):
+    """v3 평가 V01(전문): '이협력 매입단가'에 조건 조회의 업체 칸에 이협력을 넣음."""
+    error = call_tool(service, "search_people", {"company": "이협력"})["error"]
+    assert "인력 이름" in error and "find_people" in error
+    assert call_tool(service, "search_people", {"company": "감마테크"})["ok"]
 
 
 def test_wrong_category_name_is_corrected(service):
@@ -113,3 +159,6 @@ def test_done_phrases_become_not_saved_yet(service):
                              text("백협력의 계약 종료 알림 확인 처리가 완료되었습니다. 확인 카드에서 눌러 주세요.")])
     answer = ask(service, "백협력 계약 만료 알림 확인 처리해줘.", client, agent="contract")["answer"]
     assert "완료되었습니다" not in answer and "준비를 마쳤습니다(아직 저장 전)" in answer
+    from pmo.agent.runner import _clean_answer, _not_saved_yet
+    assert _not_saved_yet("노협력으로 교체했습니다.") == "노협력으로 교체 준비를 마쳤습니다(아직 저장 전)."      # v3 평가 X01
+    assert "발급된 계정 ID를 입력하려면" in _clean_answer("계정 ID를 발급하려면 이름을 알려주세요.")       # v3 평가 A01

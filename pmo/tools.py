@@ -90,15 +90,15 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "계약번호 미발급(without_number=true). 계약번호를 사람 이름 칸에 넣지 않고 이 도구를 쓴다.",
          _obj({"contract_no": STR, "company": STR, "status": _enum(CONTRACT_STATUSES),
                "without_number": {"type": "boolean", "description": "계약번호가 아직 없는 계약만"}}),
-         handler=lambda s, a: [{k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date",
-                                                   "status", "label")} | {"contract_no": c["contract_no"] or "미발급"}
-                               for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"),
-                                                           bool(a.get("without_number")))]),
+         handler=lambda s, a: _company_is_not_a_person(s, a) or [
+             {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "status", "label")}
+             | {"contract_no": c["contract_no"] or "미발급"}
+             for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"), bool(a.get("without_number")))]),
     Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true). "
          "이름을 모를 때 쓴다. 이름이 있으면 find_people.",
          _obj({"company": STR, "category": _enum(("정", "협력", "컨설팅")), "job_role": STR,
                "without_account": {"type": "boolean", "description": "계정 ID가 아직 없는 사람만"}}),
-         handler=lambda s, a: [{k: p[k] for k in ("name", "company", "category", "job_role")}
+         handler=lambda s, a: _company_is_not_a_person(s, a) or [{k: p[k] for k in ("name", "company", "category", "job_role")}
                                | {"account_id": p["account_id"] or "미발급"}
                                for p in s.search_people(a.get("company"), a.get("category"), a.get("job_role"),
                                                         bool(a.get("without_account")))]),
@@ -198,6 +198,14 @@ TOOL_LABELS = {
 
 
 _CONTRACT_NO = re.compile(r"^[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}$")
+
+
+def _company_is_not_a_person(service: Service, args: dict) -> None:
+    """조건 조회의 업체 칸에 사람 이름을 넣으면 find_people을 쓰라고 알려 준다(v3 평가 V01: '이협력' 업체로 검색)."""
+    company = str(args.get("company") or "").strip()
+    if company and not any(company in (p["company"] or "") for p in service.people()) and service.find_people(company):
+        raise ValidationError(f"'{company}'은(는) 업체가 아니라 인력 이름입니다. 사람의 정보는 find_people(name)로 찾으세요.")
+    return None
 
 
 def _not_a_name(value) -> str | None:
@@ -314,7 +322,25 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
         "past": [_brief(a) for a in t["past"][:3]],
         "contracts": contracts or ("구매계약 대상 아님(정 분류)" if person["category"] == "정" else "등록된 구매계약 없음"),
     }
+    shared = _months_with_several(t["current"] + t["upcoming"] + t["past"])
+    if shared:
+        summary["months_with_several_assignments"] = shared
     return [dict(person, summary=summary)]
+
+
+def _months_with_several(rows: list[dict]) -> dict:
+    """한 달에 Full time 투입이 2건 이상이면 과제별 MM과 합계(v3 평가 S08: 8월 0.25+0.75 중 하나만 답함)."""
+    months: dict[str, list[tuple[str, Decimal]]] = {}
+    for a in rows:
+        values = _monthly_mm(a)
+        if isinstance(values, dict):
+            for month, mm in values.items():
+                months.setdefault(month, []).append((a["project"] or "과제 미입력", Decimal(mm)))
+    return {m: " + ".join(f"{p} {format(v.normalize(), 'f')}" for p, v in parts)
+               + f" = 합계 {format(sum(v for _, v in parts).normalize(), 'f')}MM"
+            for m, parts in sorted(months.items()) if len(parts) > 1}
+
+
 
 
 def _query_database(service: Service, question: str) -> dict:

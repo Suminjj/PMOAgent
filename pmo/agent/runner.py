@@ -82,10 +82,12 @@ def _clean_answer(answer: str) -> str:
     for name in sorted(TOOL_LABELS, key=len, reverse=True):
         answer = answer.replace(f"`{name}`", f"'{TOOL_LABELS[name]}'").replace(name, f"'{TOOL_LABELS[name]}'")
     answer = re.sub(r"`?prepare_\*`?\s*도구", "변경 준비 기능", answer)
+    # Agent는 계정 ID를 발급하지 않고 입력만 한다(v3 평가 A01 '계정 ID를 발급하려면')
+    answer = re.sub(r"계정 ID(를|를 새로)? 발급(하시려면|하려면|을 진행하시려면)", "발급된 계정 ID를 입력하려면", answer)
     return re.sub(r"`?ok\s*:\s*false`?", "실패", answer)
 
 
-_DONE_WORDS = re.compile(r"(변경|저장|삭제|등록|수정|입력|반영)(되었습니다|됐습니다|했습니다)")
+_DONE_WORDS = re.compile(r"(변경|저장|삭제|등록|수정|입력|반영|교체|이동)(되었습니다|됐습니다|했습니다)")
 # v3: '확인 처리가 완료되었습니다'(v2 평가 K01)처럼 '완료·처리'로 말하는 경우
 _DONE_PHRASE = re.compile(r"\s*(?:처리)?\s*(?:가|를|이|을)?\s*(?:완료(?:되었|됐|했)|처리(?:되었|됐|했))습니다")
 
@@ -165,15 +167,27 @@ def ask(service: Service, question: str, client: ChatClient,
             tokens["completion"] += int(usage.get("completion_tokens") or 0)
             if not reply["tool_calls"]:
                 answer = _clean_answer(reply["content"])
-                if allowed is not None and guardrails.is_redirect(answer) and not calls:
+                if allowed is not None and guardrails.is_redirect(answer) and not any(not c.get("forced") for c in calls):
                     if guardrails.owner_of(question) == spec.key and not nudged:
-                        # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다
+                        # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다.
+                        # 질문에 등록 인력이 한 명이면 인력 찾기를 코드가 먼저 실행해 결과를 쥐여 준다(v3 평가 S08 'MM'을 검수로 보냄)
                         nudged, guardrail = True, "redirect_retry"
-                        messages += [{"role": "assistant", "content": reply["content"]},
-                                     {"role": "system", "content": f"이 요청은 {spec.label} 업무다. 다른 카테고리로 안내하지 말고 "
-                                                                   "맡은 도구를 호출해 처리하라."}]
+                        messages.append({"role": "assistant", "content": reply["content"]})
+                        people = guardrails.mentioned_people(service, question)
+                        if len(people) == 1 and (allowed is None or "find_people" in allowed):
+                            result = call_tool(service, "find_people", {"name": people[0]})
+                            calls.append({"tool": "find_people", "arguments": {"name": people[0]}, "ok": result["ok"],
+                                          "data": result.get("data"), "error": result.get("error"), "forced": True})
+                            messages += [{"role": "assistant", "content": "", "tool_calls": [
+                                {"function": {"name": "find_people", "arguments": {"name": people[0]}}}]},
+                                _tool_message("find_people", result)]
+                        messages.append({"role": "system", "content": f"이 요청은 {spec.label} 업무다. 다른 카테고리로 안내하지 말고 "
+                                                                      "도구 결과로 답하거나 맡은 도구를 호출해 처리하라."})
                         answer = ""
                         continue
+                    if guardrails.owner_of(question) == spec.key:
+                        answer, guardrail = guardrails.ANSWERS["redirect_failed"].format(here=spec.label), "redirect_failed"
+                        break
                     fixed = guardrails.fix_redirect(answer, question, spec.key, LABELS)
                     if fixed != answer:
                         answer, guardrail = fixed, "redirect_fixed"
@@ -184,7 +198,8 @@ def ask(service: Service, question: str, client: ChatClient,
             for call in reply["tool_calls"]:
                 args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
                 call["arguments"] = _fill_person(service, call["name"], args, user_texts)
-                problem = (_ungrounded(service, call["name"], call["arguments"], user_texts)
+                problem = (guardrails.missing_target(call["name"], call["arguments"])
+                           or _ungrounded(service, call["name"], call["arguments"], user_texts)
                            or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
                                                            guardrails.seen_text(calls)))
                 blocked = True
