@@ -89,7 +89,8 @@ def questions(s: Service) -> list[dict]:
         must_include=[mm(t7["past"][0]["mm"]), mm(t7["current"][0]["mm"])])
     add("S08", "staff", "월별 MM (도구 없음)", "정협력 8월 MM 얼마야?", None, target="v3", hold_ok=True,
         must_include=[mm(month_mm["2026-07-01"]["2026-08"]), mm(month_mm["2026-08-10"]["2026-08"])],
-        note="월별 MM 조회 도구가 없다(추가 기능). v3: 지어내지 말고 답변 보류 + 화면(전체 인력 조회) 안내.")
+        note="8월에 과제가 두 건이라 과제별 MM(0.25·0.75)과 합계(1MM)를 함께 답해야 정답. 합계만(1MM)·한 건만(0.75)은 부분 정답. "
+             "v1.2부터 인력 찾기 요약의 월별 MM, v3부터 한 달 여러 투입의 합계(months_with_several_assignments)로 답할 수 있다.")
     add("S09", "staff", "월별 MM (도구 없음)", "한협력 9월 MM 얼마야?", None, target="v3", hold_ok=True,
         must_include=[mm(month_mm["2026-09-15"]["2026-09"])])
     add("S10", "staff", "없는 인력", "홍길동 투입 과제 알려줘.", None,

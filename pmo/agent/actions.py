@@ -63,8 +63,9 @@ def typo_message(service, given: str) -> str:
     from pmo.agent.guardrails import similar_names
     close = similar_names(service, given)
     if close:
+        # 작은 모델이 오류 문장을 그대로 옮기므로 사용자에게 바로 보여줄 수 있는 문장으로 쓴다(v3 평가 T01·T03)
         return (f"'{given}'에 해당하는 인력이 없습니다. " + " 또는 ".join(f"'{n}'" for n in close)
-                + "을(를) 말씀하신 건지 사용자에게 확인하세요. 확인 전에는 조회·변경하지 마세요.")
+                + "을(를) 말씀하신 건가요?")
     return f"'{given}'에 해당하는 인력이 없습니다. 이름을 확인하세요."
 
 
@@ -483,6 +484,10 @@ def _plan_assignment_replace(service, values: dict) -> dict:
     new_person = _person(service, {"person_id": values["new_person_id"]})
     if new_person["id"] == old_person["id"]:
         raise ValidationError("기존 인력과 교체 인력이 같습니다. 사용자에게 확인하세요.")
+    if not service.assignments(old_person["id"]) and service.assignments(new_person["id"]):
+        # 모델이 기존·교체 인력을 바꿔 넣음(v3 평가 X01 전문): 투입이 없는 사람을 교체할 수는 없으니 자리를 바로잡는다.
+        # 결과는 확인 카드로 사용자가 보고 확정한다.
+        old_person, new_person = new_person, old_person
     start = _day(values.get("start_date"), "교체일(교체 인력 투입 시작일)")
     a = _pick_assignment(service, old_person, project=values.get("project"), on=start)
     if start.isoformat() <= a["start_date"]:

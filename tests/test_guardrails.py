@@ -58,11 +58,27 @@ def test_redirect_twice_does_not_send_to_wrong_category(service):
     assert result["guardrail"] == "redirect_failed" and "'검수'" not in result["answer"]
 
 
+def test_replace_with_swapped_people_is_corrected(service):
+    """v3 평가 X01(전문): 기존·교체 인력을 바꿔 넣음(노협력은 투입 없음) → 자리를 바로잡아 카드를 만든다."""
+    result = call_tool(service, "prepare_assignment_replace", {"person_id": "노협력", "new_person_id": "류협력",
+                                                               "start_date": "2026-12-01", "grade": "L6"})
+    assert result["ok"], result.get("error")
+    assert "류협력" in str(result["data"]["plan"]["rows"][0]) or "류협력" in str(result["data"]["plan"])
+
+
+def test_typo_hint_is_a_user_ready_question(service):
+    """v3 평가 T01: 모델이 오류 문장('확인 전에는 조회·변경하지 마세요')을 사용자에게 그대로 전함."""
+    error = call_tool(service, "find_people", {"name": "김졍직"})["error"]
+    assert error == "'김졍직'에 해당하는 인력이 없습니다. '김정직'을(를) 말씀하신 건가요?"
+
+
 def test_overlapping_months_are_summed_in_find_summary(service):
     """v3 평가 S08(자동): 8월에 과제 두 건(0.25 + 0.75)인데 하나만 답함 → 요약에 달별 합계를 넣는다."""
     summary = call_tool(service, "find_people", {"name": "정협력"})["data"][0]["summary"]
     assert summary["months_with_several_assignments"] == {
         "2026-08": "APC Analysis 0.75 + Soft Lab 고도화 0.25 = 합계 1MM"}
+    timeline = call_tool(service, "get_assignment_timeline", {"person_id": "정협력"})["data"]
+    assert timeline["months_with_several_assignments"] == summary["months_with_several_assignments"]
 
 
 def test_name_suggested_by_tool_is_not_held(service):
@@ -91,9 +107,9 @@ def test_leader_asking_other_project_gets_fixed_answer(service):
 
 def test_person_name_in_company_slot_points_to_find_people(service):
     """v3 평가 V01(전문): '이협력 매입단가'에 조건 조회의 업체 칸에 이협력을 넣음."""
-    error = call_tool(service, "search_people", {"company": "이협력"})["error"]
-    assert "인력 이름" in error and "find_people" in error
-    assert call_tool(service, "search_people", {"company": "감마테크"})["ok"]
+    data = call_tool(service, "search_people", {"company": "이협력"})["data"]         # 인력 찾기 결과를 대신 돌려줌
+    assert "인력 이름" in data["note"] and data["people"][0]["name"] == "이협력" and data["people"][0]["summary"]
+    assert isinstance(call_tool(service, "search_people", {"company": "감마테크"})["data"], list)
 
 
 def test_wrong_category_name_is_corrected(service):
@@ -116,9 +132,15 @@ def test_made_up_person_is_blocked_and_not_graded(service):
 
 def test_answer_with_people_not_in_results_is_held(service):
     """v2 평가 C08(전문): 도구 결과에 없는 인력을 답변에 지어냄 → 답변 보류."""
-    client = ScriptedClient([tool_call("pending_contract_alerts"), text("연장이 필요한 인력은 김정직, 백협력입니다.")])
+    made_up = text("연장이 필요한 인력은 김정직, 백협력입니다.")
+    client = ScriptedClient([tool_call("pending_contract_alerts"), made_up, made_up])      # 다시 시켜도 지어냄 → 보류
     result = ask(service, "처리 안 한 계약 만료 알림 있어?", client)
     assert result["guardrail"] == "hold" and "김정직" in result["answer"] and "보류" in result["answer"]
+    assert "지어내지 말고" in client.seen[2][0][-1]["content"]
+    # v3 평가 C08·G02(전문): 다시 시키면 되묻기로 바뀜 → 그 답을 쓴다
+    client = ScriptedClient([text("김협력의 계약 종료일을 바꿀까요?"), text("누구의 계약인지 알려 주세요.")])
+    result = ask(service, "계약 종료일 12월 31일로 바꿔줘.", client, agent="contract")
+    assert result["guardrail"] == "hold_retry" and result["answer"] == "누구의 계약인지 알려 주세요."
     client = ScriptedClient([tool_call("pending_contract_alerts"), text("백협력 알림이 남아 있습니다.")])
     assert ask(service, "처리 안 한 계약 만료 알림 있어?", client)["guardrail"] is None
 

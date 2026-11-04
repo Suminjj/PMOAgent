@@ -115,6 +115,48 @@ def _finish(service, client, spec, question, t0, started, answer, calls, error, 
             "agent": spec.key, "agent_label": spec.label, "guardrail": guardrail}
 
 
+def _execute(service, call, allowed, spec, question, user_texts, texts, day, calls) -> dict:
+    """도구 호출 하나를 가드레일을 거쳐 실행하고 calls에 남긴다. LLM에게 돌려줄 tool 메시지를 반환한다."""
+    args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
+    call["arguments"] = _fill_person(service, call["name"], args, user_texts)
+    problem = (guardrails.missing_target(call["name"], call["arguments"])
+               or _ungrounded(service, call["name"], call["arguments"], user_texts)
+               or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
+                                               guardrails.seen_text(calls)))
+    blocked = True
+    if allowed is not None and call["name"] not in allowed:
+        result = {"ok": False, "tool": call["name"],
+                  "error": f"{spec.label} Agent가 쓸 수 없는 도구입니다. 맡은 업무 밖이면 다른 카테고리를 안내하세요."}
+    elif problem:
+        result = {"ok": False, "tool": call["name"], "error": problem}
+    else:
+        result, blocked = call_tool(service, call["name"], call["arguments"]), False
+    # blocked: 코드가 막아 실행하지 않은 호출(평가의 도구 순서 채점에서 뺀다)
+    calls.append({"tool": call["name"], "arguments": call["arguments"], "ok": result["ok"],
+                  "data": result.get("data"), "error": result.get("error"),
+                  **({"blocked": True} if blocked else {})})
+    return _tool_message(call["name"], result)
+
+
+def _continue(service, client, messages, tools, tokens, calls, allowed, spec, question, user_texts, texts, day,
+              max_steps: int) -> str:
+    """가드레일이 다시 시킬 때 쓰는 짧은 실행 루프. 최종 답변(없으면 빈 문자열)을 돌려준다."""
+    for _ in range(max_steps):
+        reply = client.chat(messages, tools)
+        usage = reply.get("usage") or {}
+        tokens["llm_calls"] += 1
+        tokens["prompt"] += int(usage.get("prompt_tokens") or 0)
+        tokens["completion"] += int(usage.get("completion_tokens") or 0)
+        if not reply["tool_calls"]:
+            return _clean_answer(reply["content"])
+        messages.append({"role": "assistant", "content": reply["content"],
+                         "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
+                                        for c in reply["tool_calls"]]})
+        for call in reply["tool_calls"]:
+            messages.append(_execute(service, call, allowed, spec, question, user_texts, texts, day, calls))
+    return ""
+
+
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
         history: list[dict] | None = None, agent: AgentSpec | str | None = None) -> dict:
@@ -196,25 +238,7 @@ def ask(service: Service, question: str, client: ChatClient,
                              "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
                                             for c in reply["tool_calls"]]})
             for call in reply["tool_calls"]:
-                args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
-                call["arguments"] = _fill_person(service, call["name"], args, user_texts)
-                problem = (guardrails.missing_target(call["name"], call["arguments"])
-                           or _ungrounded(service, call["name"], call["arguments"], user_texts)
-                           or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
-                                                           guardrails.seen_text(calls)))
-                blocked = True
-                if allowed is not None and call["name"] not in allowed:
-                    result = {"ok": False, "tool": call["name"],
-                              "error": f"{spec.label} Agent가 쓸 수 없는 도구입니다. 맡은 업무 밖이면 다른 카테고리를 안내하세요."}
-                elif problem:
-                    result = {"ok": False, "tool": call["name"], "error": problem}
-                else:
-                    result, blocked = call_tool(service, call["name"], call["arguments"]), False
-                # blocked: 코드가 막아 실행하지 않은 호출(평가의 도구 순서 채점에서 뺀다)
-                calls.append({"tool": call["name"], "arguments": call["arguments"], "ok": result["ok"],
-                              "data": result.get("data"), "error": result.get("error"),
-                              **({"blocked": True} if blocked else {})})
-                messages.append(_tool_message(call["name"], result))
+                messages.append(_execute(service, call, allowed, spec, question, user_texts, texts, day, calls))
         else:
             if not answer:
                 error = f"{max_steps}번 안에 답을 마치지 못했습니다."
@@ -223,8 +247,23 @@ def ask(service: Service, question: str, client: ChatClient,
     if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
         answer = _not_saved_yet(answer)
     if answer and not spec.planned_notice:
-        # 근거 없는 인력 이름이 답변에 있으면 답변 보류(v2 평가 C08 '김협력')
+        # 근거 없는 인력 이름이 답변에 있으면 한 번 다시 시키고, 그래도 있으면 답변 보류(v2 평가 C08 '김협력').
+        # v3 평가 C08·G02(전문): 도구 없이 이름을 지어냄 → 다시 시키면 도구를 부르거나 대상을 되물을 기회가 생긴다.
         made_up = guardrails.ungrounded_names_in_answer(service, answer, texts, guardrails.seen_text(calls))
-        if made_up:
-            answer, guardrail = guardrails.ANSWERS["hold"].format(names=", ".join(made_up)), "hold"
+        if made_up and error is None:
+            messages += [{"role": "assistant", "content": answer},
+                         {"role": "system", "content": f"답변의 인력({', '.join(made_up)})은 도구 결과에 없다. 인력 이름을 지어내지 말고, "
+                                                       "도구를 호출해 확인하거나 대상이 없으면 누구의 일인지 사용자에게 물어라."}]
+            try:
+                retry = _continue(service, client, messages, tools, tokens, calls, allowed, spec, question, user_texts,
+                                  texts, day, max_steps=3)
+            except LLMError as exc:
+                retry = ""
+                error = str(exc)
+            if retry and not guardrails.ungrounded_names_in_answer(service, retry, texts, guardrails.seen_text(calls)):
+                answer, guardrail = retry, "hold_retry"
+            else:
+                answer, guardrail = guardrails.ANSWERS["hold"].format(names=", ".join(made_up)), "hold"
+            if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
+                answer = _not_saved_yet(answer)
     return _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail)

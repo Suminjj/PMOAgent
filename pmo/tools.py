@@ -200,11 +200,15 @@ TOOL_LABELS = {
 _CONTRACT_NO = re.compile(r"^[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}$")
 
 
-def _company_is_not_a_person(service: Service, args: dict) -> None:
-    """조건 조회의 업체 칸에 사람 이름을 넣으면 find_people을 쓰라고 알려 준다(v3 평가 V01: '이협력' 업체로 검색)."""
+def _company_is_not_a_person(service: Service, args: dict):
+    """조건 조회의 업체 칸에 사람 이름을 넣으면 그 사람의 인력 찾기 결과를 대신 돌려준다.
+
+    v3 평가 V01: '이협력' 업체로 검색. 처음엔 오류로 알렸더니 모델이 다시 부르지 않고 '인력 찾기를 호출하세요'를 사용자에게 전함.
+    """
     company = str(args.get("company") or "").strip()
     if company and not any(company in (p["company"] or "") for p in service.people()) and service.find_people(company):
-        raise ValidationError(f"'{company}'은(는) 업체가 아니라 인력 이름입니다. 사람의 정보는 find_people(name)로 찾으세요.")
+        return {"note": f"'{company}'은(는) 업체가 아니라 인력 이름이라 인력 찾기 결과를 돌려줍니다.",
+                "people": _find_people(service, company)}
     return None
 
 
@@ -281,7 +285,11 @@ def _brief(a: dict) -> dict:
 
 def _timeline(service: Service, person_id: str) -> dict:
     t = service.assignment_timeline(person_id)
-    return {k: ([_work(r) for r in v] if isinstance(v, list) else v) for k, v in t.items()}
+    result = {k: ([_work(r) for r in v] if isinstance(v, list) else v) for k, v in t.items()}
+    shared = _months_with_several(t["current"] + t["upcoming"] + t["past"])
+    if shared:
+        result["months_with_several_assignments"] = shared      # v3 평가 S08: 투입 이력 조회 후에도 달별 합계를 보게
+    return result
 
 
 def _find_people(service: Service, name: str, company: str | None = None) -> list[dict]:
