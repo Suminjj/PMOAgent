@@ -702,6 +702,44 @@ class Service:
             rows = [dict(r) for r in con.execute(sql + " ORDER BY c.end_date, p.name, c.id", params)]
         return self._with_state(self._filter_contracts(rows), today)
 
+    def search_contracts(self, contract_no: str | None = None, company: str | None = None,
+                         status: str | None = None, without_number: bool = False,
+                         today: date | None = None) -> list[dict]:
+        """조건으로 구매계약을 찾는다(계약번호·업체·상태·계약번호 미발급). 권한 범위 안에서만.
+
+        v2.1: '계약번호 C-2026-202에 묶인 인력', '계약번호가 아직 안 나온 사람' 같은 조건 조회(v2 평가 C09·C10).
+        """
+        number = str(contract_no or "").strip().casefold().replace(" ", "")
+        company = str(company or "").strip()
+        rows = self.contracts(today=today)
+        if number:
+            rows = [c for c in rows if (c["contract_no"] or "").casefold().replace(" ", "") == number]
+        if company:
+            rows = [c for c in rows if company in (c["company"] or "")]
+        if status:
+            rows = [c for c in rows if c["status"] == status]
+        if without_number:
+            rows = [c for c in rows if not c["contract_no"]]
+        return rows
+
+    def search_people(self, company: str | None = None, category: str | None = None,
+                      job_role: str | None = None, without_account: bool = False) -> list[dict]:
+        """조건으로 인력을 찾는다(업체·분류·직무·계정 ID 미발급). 권한 범위 안에서만.
+
+        v2.1: '계정 ID가 아직 없는 사람' 같은 조건 조회(v2 평가 A01).
+        """
+        company, job_role = str(company or "").strip(), str(job_role or "").strip()
+        rows = self.people()
+        if company:
+            rows = [p for p in rows if company in (p["company"] or "")]
+        if category:
+            rows = [p for p in rows if p["category"] == category]
+        if job_role:
+            rows = [p for p in rows if job_role in (p["job_role"] or "")]
+        if without_account:
+            rows = [p for p in rows if not p["account_id"]]
+        return rows
+
     def contracts_ending(self, year: int, month: int, company: str | None = None,
                          today: date | None = None) -> list[dict]:
         """특정 월(·업체)에 계약이 종료되는 인력 목록."""

@@ -20,6 +20,7 @@ status: 연결 (도구 연결, 이 지침 본문은 인력관리 Agent 프롬프
 - 과제 인력을 매출귀속 프로젝트별로 물으면 `get_project_members` 결과의 by_revenue_project 순서대로 프로젝트마다 이름을 적는다.
 - 월별 매출귀속 프로젝트: 투입이 달마다 나뉘어 있으면 투입별 기간과 매출귀속 프로젝트를 차례로 보여준다.
 - 매출귀속 프로젝트가 비어 있으면 '미정(미입력)'이라고 답한다. 다른 투입의 코드를 가져다 쓰지 않는다.
+- 계정 ID가 없는 사람 찾기와 계정 ID 입력도 이 Agent가 맡는다(`search_people`, `prepare_account_id`). 다른 카테고리로 보내지 않는다.
 - 계약 기간·계약 변경은 구매계약, 검수 금액(원)은 검수 카테고리가 맡는다.
 
 ## 필수 입력
@@ -44,6 +45,7 @@ status: 연결 (도구 연결, 이 지침 본문은 인력관리 Agent 프롬프
 | `find_people` | 구현 | 이름 일부로 후보 조회 |
 | `get_assignment_timeline` | 구현 | 현재·과거·예정 투입 조회 |
 | `get_project_members` | 구현 | 과제의 인력·매출귀속 프로젝트별 묶음 (기본 현재·예정, include_past로 과거 포함) |
+| `search_people` | 구현 | 조건으로 인력 찾기: 업체, 분류, 직무, 계정 ID 미발급 |
 | `query_database` | 구현 | 그 밖의 조건 조회·건수 집계 (SELECT만) |
 | `prepare_account_id` | 구현 | 발급된 계정 ID 입력 확인 카드 준비 (저장 안 함) |
 | `prepare_assignment_update` | 구현 | 투입 값(매출귀속 프로젝트·등급·매입단가·기간) 변경 확인 카드. 그 달만 바꾸면 투입을 나눔 |

@@ -93,7 +93,8 @@ def questions(s: Service) -> list[dict]:
     add("S09", "staff", "월별 MM (도구 없음)", "한협력 9월 MM 얼마야?", None, target="v3", hold_ok=True,
         must_include=[mm(month_mm["2026-09-15"]["2026-09"])])
     add("S10", "staff", "없는 인력", "홍길동 투입 과제 알려줘.", None,
-        must_include=["없"], must_not_include=["Soft Lab 고도화", "전표작성 자동화", "APC Analysis"])
+        must_not_include=["Soft Lab 고도화", "전표작성 자동화", "APC Analysis"],
+        note="등록된 인력이 없다고 답해야 한다('없습니다'·'등록되어 있지 않습니다' 모두 정답). 다른 사람의 과제를 대지 않는다.")
 
     # --- 구매계약 ---------------------------------------------------------------
     add("C01", "contract", "계약 종료일", "박협력 구매계약 언제까지야?",
@@ -115,9 +116,11 @@ def questions(s: Service) -> list[dict]:
         target="v3", hold_ok=True, must_include=soon, must_not_include=not_soon,
         note="종료 14일 전~당일, 연장 미등록. 조협력(연장 등록)·15일 전(경계) 인력은 빠져야 한다. "
              "전용 도구가 없으면(추가 기능) v3: 답변 보류 + '전체 계약 조회' 화면 안내.")
-    add("C09", "contract", "같은 계약번호 여러 명", "계약번호 C-2026-202에 묶인 인력 알려줘.", None,
+    add("C09", "contract", "같은 계약번호 여러 명", "계약번호 C-2026-202에 묶인 인력 알려줘.",
+        [step("search_contracts", {"contract_no": "C-2026-202"})],
         must_include=sorted({c["name"] for c in s.contracts() if c["contract_no"] == "C-2026-202"}))
-    add("C10", "contract", "계약번호 미발급", "계약번호가 아직 안 나온 사람 있어?", None,
+    add("C10", "contract", "계약번호 미발급", "계약번호가 아직 안 나온 사람 있어?",
+        [step("search_contracts", {"without_number": True})],
         must_include=sorted({c["name"] for c in s.contracts() if not c["contract_no"]}))
 
     apc = {}
@@ -178,7 +181,8 @@ def questions(s: Service) -> list[dict]:
     add("N01", "staff", "등록만 되고 투입 없음", "노협력 지금 무슨 과제야?",
         person("노협력", "EV-20", "get_assignment_timeline"), must_include=["없"],
         must_not_include=["Soft Lab 고도화", "전표작성 자동화", "APC Analysis"])
-    add("A01", "staff", "계정 ID 미발급", "계정 ID가 아직 없는 사람 알려줘.", None,
+    add("A01", "staff", "계정 ID 미발급", "계정 ID가 아직 없는 사람 알려줘.",
+        [step("search_people", {"without_account": True})],
         must_include=sorted(p["name"] for p in s.people() if not p["account_id"]))
     add("A02", "staff", "계정 ID 입력 제안(저장 안 함)", "서협력 계정 ID evuser14로 등록해줘.",
         person("서협력", "EV-14", "prepare_account_id", {"account_id": "evuser14"}),
@@ -252,7 +256,10 @@ def expect_of(tool: str, result: dict) -> dict:
     if tool == FIND:
         return {"ok": True, "count": len(data)}
     if tool == "get_project_members":
-        return {"ok": True, "names": sorted({m["name"] for m in data["members"]})}
+        # 과거 투입까지 함께 보여줘도 정답(include_past). 현재·예정 인력이 모두 들어 있으면 된다(v2.1).
+        return {"ok": True, "names_at_least": sorted({m["name"] for m in data["members"]})}
+    if tool in ("search_contracts", "search_people"):
+        return {"ok": True, "names": sorted({r["name"] for r in data})}
     if tool == "get_assignment_timeline":
         return {"ok": True, "current_projects": sorted(r["project"] for r in data["current"])}
     if tool == "list_contracts":

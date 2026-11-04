@@ -50,6 +50,7 @@
 | --- | --- | --- | --- |
 | v1 | 기본 기능 구현: 핵심 업무가 동작한다 | 메뉴 화면, PMO Agent, 조회·저장 계획 도구, 확인 카드, 전문 Agent | 평가 세트 v1 질문 |
 | v2 | 데이터 접근 권한: 허용된 데이터만 조회 | 사용자 식별(로그인), 역할·담당 과제별 권한, 데이터 분류, 조회 시 권한 필터 | **별도 검증**: 과제 리더가 다른 과제 인력을 요청해도 조회되지 않음 |
+| v2.1 | 조건 조회·채점 기준 정리 | 조건으로 계약·인력 찾기 도구, 이름 자리에 조건이 들어오면 맞는 도구 안내, 채점 기준 정리 | 평가 C09·C10·A01 도구 채점 |
 | v3 | Agent별 가드레일: 허용된 범위에서 답변 | Agent별 업무 범위, 범위 밖 거절, 정보 부족 시 되묻기, 근거 없으면 답변 보류, 개인정보 최소 제공 | 범위 밖·근거 부족·개인정보 요청에 정해진 방식으로 대응 |
 | v4 | 평가와 모니터링: 품질과 실행 과정 확인 | 평가 데이터·채점 기준, LLM-as-a-Judge, 사람 검토, Langfuse 실행 추적 | 답변별 평가 결과, 호출 과정, 처리 시간, 토큰 사용량 |
 
@@ -212,6 +213,11 @@
   v1.2 1차 평가(11/04, 자동 24/29) 후 보완: 요약에 매입단가(단위 포함)·월별 MM(Full time, 계산 근거의 달별 값)을 넣고
   (S08·S09 '8월 MM'에 합계를 답함, P02 단가를 '미입력'이라 답함), 이름을 업체 칸에 넣어도 찾게 하고(C02·C03),
   자동(전체) Agent에는 '구현 예정' 도구를 주지 않는다(R01에서 검수 금액 도구를 다시 고름).
+- [제안] v2.1(11/04) 조건 조회 도구: 계약은 search_contracts(계약번호·업체·상태·계약번호 미발급), 인력은 search_people
+  (업체·분류·직무·계정 ID 미발급). `Service.search_contracts`·`search_people`은 `contracts()`·`people()` 위에 만들어 권한 필터를 그대로 따른다.
+  계약번호는 대소문자·띄어쓰기를 무시한다. 결과에 내부 관리번호는 넣지 않는다. v2 평가에서 작은 모델이 계약번호·조건 문장을
+  사람 이름 자리에 넣어(C09·C10·A01) 빈 결과로 답해서, 이름 자리에 계약번호나 긴 문장이 오면 맞는 도구를 알려 주는 오류를 돌려준다(`tools._not_a_name`).
+  공통 규칙 7: 조건 조회는 이 도구를 query_database보다 먼저 쓴다.
 - [제안] 확인 카드만 만든 턴에 모델이 '변경되었습니다'처럼 답하면 코드가 '변경 준비를 마쳤습니다(아직 저장 전)'로 고친다.
 - [제안] 사용자만 알 수 있는 값(계정 ID, 새 계약번호)은 사용자 문장(이번 질문·최근 사용자 메시지)에 그대로 있어야 카드를 만든다.
   모델이 할 수 없는 요청을 다른 저장 도구로 대신 처리하며 값을 지어내는 것을 막는다(`runner.GROUNDED_FIELDS`).
@@ -246,10 +252,10 @@
 - [확정] 10/20 담당자: 홈 챗봇 이름은 '🤖 PMO Agent'. 카테고리는 라디오 대신 이모티콘을 붙인 큰 버튼
   (🤖 자동·👤 인력관리·💻 근무 환경 준비·📄 구매계약·💰 검수, `ui/theme.py` AGENT_ICONS). 고른 버튼은 파란색.
 - [제안] 각 전문 Agent는 맡은 업무의 도구만 받는다. 정의는 `pmo/agent/agents.py`의 `AGENTS`다.
-  - 인력관리: find_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id,
+  - 인력관리: find_people, search_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id,
     prepare_assignment_update, prepare_assignment_transfer, prepare_assignment_replace
   - 근무 환경 준비: find_people, checklist_status, query_database, prepare_checklist_update
-  - 구매계약: find_people, list_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
+  - 구매계약: find_people, list_contracts, search_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
   - 검수: inspection_amount_by_revenue_project(구현 예정). 도구가 모두 구현 예정이라 LLM 없이 정해진 안내로 답한다
     (평가에서 작은 모델이 도구를 부르지 않고 엉뚱한 카테고리를 안내해서). 규칙이 확정되어 도구를 구현하면 LLM을 쓴다.
   - 자동(전체): 구현된 모든 도구('구현 예정' 도구 제외, v1.2), 업무 지침 미주입 (기존 단일 Agent, 비교 기준)
@@ -318,6 +324,8 @@
    v1 브랜치(도구 없음)에서는 답변 채점(화면 안내가 정답). find_people 같은 optional 단계는 실제로 부른 횟수만큼만 기대한다.
    정답은 손으로 쓰지 않고 `python -m scripts.build_eval_set`이 데이터에서 계산한다(테스트가 파일과 일치 확인).
    질문 종류: 도구 자동 채점 / 거절(도구를 부르면 안 됨) / 답변 채점(맞는 도구가 없거나 답변이 핵심 → answer 키를 v4 저지가 채점).
+   v2.1 채점 정리: C09·C10·A01은 조건 조회 도구로 자동 채점, S11(과제 인력)은 현재·예정 인력이 모두 있으면 정답(과거 인력을 함께 보여줘도 됨),
+   S10(없는 인력)은 '없습니다'·'등록되어 있지 않습니다' 모두 정답(답변 채점).
    실행: `python -m scripts.run_evals --set eval --model qwen3:8b`. 화면 확인: `scripts.seed_demo --eval` + PMO_TODAY=2026-11-15.
 9. [TODO] v4: 답변 채점 저지(여러 LLM)·사람 검토, 토큰·시간 tracing(Langfuse 자체 설치). v2 권한 질문은 사용자 계정별 실행 필요
 

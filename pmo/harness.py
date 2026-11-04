@@ -73,6 +73,10 @@ def check(expect: dict, result: dict) -> list[str]:
     rows = data["members"] if isinstance(data, dict) and "members" in data else data   # 과제 인력 조회
     if "names" in expect and sorted({r["name"] for r in rows}) != sorted(expect["names"]):
         problems.append(f"인력 {sorted({r['name'] for r in rows})} (기대 {sorted(expect['names'])})")
+    if "names_at_least" in expect:
+        missing = sorted(set(expect["names_at_least"]) - {r["name"] for r in rows})
+        if missing:
+            problems.append(f"빠진 인력 {missing}")
     if "end_dates" in expect and sorted(r["end_date"] for r in data) != sorted(expect["end_dates"]):
         problems.append(f"종료일 {[r['end_date'] for r in data]} (기대 {expect['end_dates']})")
     if "action" in expect and (data or {}).get("plan", {}).get("action") != expect["action"]:
