@@ -18,11 +18,19 @@ CHECKS = [
     ("김컨설(전표작성 자동화) 투입 조회", lambda s: _ok(call_tool(s, "get_assignment_timeline", {"person_id": "김컨설"}))),
     ("서협력(Soft Lab 고도화) 투입 조회", lambda s: _ok(call_tool(s, "get_assignment_timeline", {"person_id": "서협력"}))),
     ("볼 수 있는 매입단가 종류", lambda s: len({a["purchase_rate"] for a in s.assignments() if a["purchase_rate"]})),
+    ("이협력 단가(인력 찾기 요약)", lambda s: _rate_of(s, "이협력")),
+    ("검수 금액 조회", lambda s: _try(lambda: s.inspection_contracts())),
     ("11월 종료 계약 인원", lambda s: len(call_tool(s, "contracts_ending", {"year": 2026, "month": 11})["data"])),
     ("상태 변경 확인 카드", lambda s: _ok(call_tool(s, "prepare_checklist_update",
                                                {"person_id": "서협력", "item": "ID카드 신청", "status": "진행 중"}))),
     ("변경 이력 조회", lambda s: _try(s.history)),
 ]
+
+
+def _rate_of(s, name: str) -> str:
+    found = call_tool(s, "find_people", {"name": name})["data"]
+    current = found[0]["summary"]["current"] if found else []
+    return current[0]["purchase_rate"] if isinstance(current, list) and current else "-"
 
 
 def _ok(result: dict) -> str:

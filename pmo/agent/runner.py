@@ -8,7 +8,8 @@ import time
 from datetime import date, datetime
 
 from pmo.agent.llm import ChatClient, LLMError
-from pmo.agent.agents import AgentSpec, allowed_tools, get_agent, system_prompt
+from pmo.agent import guardrails
+from pmo.agent.agents import AGENTS, AgentSpec, allowed_tools, get_agent, system_prompt
 from pmo.config import TIMEZONE
 from pmo.service import Service
 from pmo.tools import TOOL_LABELS, call_tool, tool_specs
@@ -85,11 +86,31 @@ def _clean_answer(answer: str) -> str:
 
 
 _DONE_WORDS = re.compile(r"(변경|저장|삭제|등록|수정|입력|반영)(되었습니다|됐습니다|했습니다)")
+# v3: '확인 처리가 완료되었습니다'(v2 평가 K01)처럼 '완료·처리'로 말하는 경우
+_DONE_PHRASE = re.compile(r"\s*(?:처리)?\s*(?:가|를|이|을)?\s*(?:완료(?:되었|됐|했)|처리(?:되었|됐|했))습니다")
 
 
 def _not_saved_yet(answer: str) -> str:
     """확인 카드만 만든 턴에 '변경되었습니다'처럼 저장된 것처럼 말하면 고친다(저장은 사용자가 확인해야 함)."""
-    return _DONE_WORDS.sub(r"\1 준비를 마쳤습니다(아직 저장 전)", answer)
+    answer = _DONE_WORDS.sub(r"\1 준비를 마쳤습니다(아직 저장 전)", answer)
+    return _DONE_PHRASE.sub(" 준비를 마쳤습니다(아직 저장 전)", answer)
+
+
+LABELS = {key: spec.label for key, spec in AGENTS.items()}
+
+
+def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:
+    duration = round((time.perf_counter() - t0) * 1000)
+    ok = error is None and bool(answer)
+    if error is None and not answer:
+        error = "LLM이 빈 답변을 돌려주었습니다."
+    note = f"도구 {len(calls)}회 · 토큰 {tokens['prompt']}+{tokens['completion']}"
+    service.record_run(f"agent:{getattr(client, 'name', 'llm')}", (question,), {"agent": spec.key}, ok,
+                       (note + (f" · 가드레일 {guardrail}" if guardrail else "")) if ok else None,
+                       error, t0, started)
+    return {"ok": ok, "answer": answer, "calls": calls, "error": error,
+            "duration_ms": duration, "model": getattr(client, "name", "llm"), "tokens": tokens,
+            "agent": spec.key, "agent_label": spec.label, "guardrail": guardrail}
 
 
 def ask(service: Service, question: str, client: ChatClient,
@@ -117,6 +138,13 @@ def ask(service: Service, question: str, client: ChatClient,
     calls: list[dict] = []
     answer, error = "", None
     tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
+    # v3 사전 검사: 지시 무시·관리하지 않는 정보·업무 범위 밖·다른 카테고리·검수 금액은 LLM 없이 정해진 방식으로 답한다
+    early = guardrails.precheck(service, question, spec.key, LABELS, history)
+    if early:
+        answer = early["answer"] or AGENTS["inspection"].planned_notice
+        return _finish(service, client, spec, question, t0, started, answer, [], None, tokens, early["kind"])
+    texts = [question] + [str(m.get("content") or "") for m in reversed(history or [])]
+    guardrail = None
     if spec.planned_notice:
         # 쓸 수 있는 도구가 모두 구현 예정인 Agent: 도구 상태만 확인해 기록하고 정해진 안내로 답한다.
         for name in spec.tools or ():
@@ -124,8 +152,12 @@ def ask(service: Service, question: str, client: ChatClient,
             calls.append({"tool": name, "arguments": {}, "ok": result["ok"],
                           "data": result.get("data"), "error": result.get("error")})
         max_steps, answer = 0, spec.planned_notice
+    user_texts = [question] + [str(m.get("content") or "") for m in reversed(history or []) if m.get("role") == "user"]
+    nudged = False
     try:
-        for _ in range(max_steps):
+        steps = 0
+        while steps < max_steps:
+            steps += 1
             reply = client.chat(messages, tools)
             usage = reply.get("usage") or {}
             tokens["llm_calls"] += 1
@@ -133,23 +165,40 @@ def ask(service: Service, question: str, client: ChatClient,
             tokens["completion"] += int(usage.get("completion_tokens") or 0)
             if not reply["tool_calls"]:
                 answer = _clean_answer(reply["content"])
+                if allowed is not None and guardrails.is_redirect(answer) and not calls:
+                    if guardrails.owner_of(question) == spec.key and not nudged:
+                        # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다
+                        nudged, guardrail = True, "redirect_retry"
+                        messages += [{"role": "assistant", "content": reply["content"]},
+                                     {"role": "system", "content": f"이 요청은 {spec.label} 업무다. 다른 카테고리로 안내하지 말고 "
+                                                                   "맡은 도구를 호출해 처리하라."}]
+                        answer = ""
+                        continue
+                    fixed = guardrails.fix_redirect(answer, question, spec.key, LABELS)
+                    if fixed != answer:
+                        answer, guardrail = fixed, "redirect_fixed"
                 break
             messages.append({"role": "assistant", "content": reply["content"],
                              "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
                                             for c in reply["tool_calls"]]})
-            texts = [question] + [m["content"] for m in reversed(history or []) if m.get("role") == "user"]
             for call in reply["tool_calls"]:
-                call["arguments"] = _fill_person(service, call["name"], call["arguments"] or {}, texts)
-                problem = _ungrounded(service, call["name"], call["arguments"], texts)
+                args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
+                call["arguments"] = _fill_person(service, call["name"], args, user_texts)
+                problem = (_ungrounded(service, call["name"], call["arguments"], user_texts)
+                           or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
+                                                           guardrails.seen_text(calls)))
+                blocked = True
                 if allowed is not None and call["name"] not in allowed:
                     result = {"ok": False, "tool": call["name"],
                               "error": f"{spec.label} Agent가 쓸 수 없는 도구입니다. 맡은 업무 밖이면 다른 카테고리를 안내하세요."}
                 elif problem:
                     result = {"ok": False, "tool": call["name"], "error": problem}
                 else:
-                    result = call_tool(service, call["name"], call["arguments"])
+                    result, blocked = call_tool(service, call["name"], call["arguments"]), False
+                # blocked: 코드가 막아 실행하지 않은 호출(평가의 도구 순서 채점에서 뺀다)
                 calls.append({"tool": call["name"], "arguments": call["arguments"], "ok": result["ok"],
-                              "data": result.get("data"), "error": result.get("error")})
+                              "data": result.get("data"), "error": result.get("error"),
+                              **({"blocked": True} if blocked else {})})
                 messages.append(_tool_message(call["name"], result))
         else:
             if not answer:
@@ -158,13 +207,9 @@ def ask(service: Service, question: str, client: ChatClient,
         error = str(exc)
     if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
         answer = _not_saved_yet(answer)
-    duration = round((time.perf_counter() - t0) * 1000)
-    ok = error is None and bool(answer)
-    if error is None and not answer:
-        error = "LLM이 빈 답변을 돌려주었습니다."
-    service.record_run(f"agent:{getattr(client, 'name', 'llm')}", (question,), {"agent": spec.key}, ok,
-                       f"도구 {len(calls)}회 · 토큰 {tokens['prompt']}+{tokens['completion']}" if ok else None,
-                       error, t0, started)
-    return {"ok": ok, "answer": answer, "calls": calls, "error": error,
-            "duration_ms": duration, "model": getattr(client, "name", "llm"), "tokens": tokens,
-            "agent": spec.key, "agent_label": spec.label}
+    if answer and not spec.planned_notice:
+        # 근거 없는 인력 이름이 답변에 있으면 답변 보류(v2 평가 C08 '김협력')
+        made_up = guardrails.ungrounded_names_in_answer(service, answer, texts, guardrails.seen_text(calls))
+        if made_up:
+            answer, guardrail = guardrails.ANSWERS["hold"].format(names=", ".join(made_up)), "hold"
+    return _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail)

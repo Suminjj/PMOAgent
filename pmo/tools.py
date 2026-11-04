@@ -17,7 +17,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Callable
 
-from pmo.agent.actions import _person, build_plan
+from pmo.agent.actions import _person, build_plan, typo_message
+from pmo.agent.guardrails import similar_names
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
 from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES as CHECKLIST_STATUSES
@@ -246,7 +247,12 @@ def _monthly_mm(row: dict) -> dict | str:
         return "계산 근거 없음"
 
 
+RATE_HIDDEN = "권한 없음(단가는 PM·PMO만 조회)"
+
+
 def _rate(row: dict) -> str:
+    if row.get("rate_hidden"):
+        return RATE_HIDDEN
     rate = row.get("purchase_rate")
     if rate in (None, ""):
         return "미입력"
@@ -292,6 +298,8 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
         hint = _not_a_name(value)
         if hint:
             raise ValidationError(hint)
+        if similar_names(service, value):          # v3: 오타면 비슷한 이름을 되묻게 한다(빈 결과로 '없다'고 끝내지 않음)
+            raise ValidationError(typo_message(service, value))
     if len(found) != 1:
         return found
     person = found[0]

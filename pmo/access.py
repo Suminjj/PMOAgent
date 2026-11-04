@@ -45,6 +45,11 @@ class Access:
     def can_write(self) -> bool:
         return self.role in WRITE_ROLES
 
+    @property
+    def sees_rates(self) -> bool:
+        """단가(매출·매입)는 개인정보로 PMO·PM만 본다. 과제 리더는 담당 과제 인력이라도 못 본다(v3, 11/04 담당자)."""
+        return self.role in WRITE_ROLES
+
     def sees_project(self, project: str | None) -> bool:
         return self.all_projects or (project is not None and project in self.projects)
 

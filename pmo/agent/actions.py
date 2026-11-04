@@ -58,6 +58,16 @@ def resolve_person(service, value: str | None) -> tuple[str | None, list[dict]]:
     return None, [{k: c[k] for k in ("id", "name", "company", "category")} for c in candidates]
 
 
+def typo_message(service, given: str) -> str:
+    """없는 이름이면 비슷한 이름을 되묻게 한다(v3, v2 평가 T01 김졍직·T03 박헙력). 볼 수 있는 인력 중에서만 제안."""
+    from pmo.agent.guardrails import similar_names
+    close = similar_names(service, given)
+    if close:
+        return (f"'{given}'에 해당하는 인력이 없습니다. " + " 또는 ".join(f"'{n}'" for n in close)
+                + "을(를) 말씀하신 건지 사용자에게 확인하세요. 확인 전에는 조회·변경하지 마세요.")
+    return f"'{given}'에 해당하는 인력이 없습니다. 이름을 확인하세요."
+
+
 def _person(service, values: dict, categories=None) -> dict:
     given = values.get("person_id")
     if not given:
@@ -68,7 +78,7 @@ def _person(service, values: dict, categories=None) -> dict:
                               + "; ".join(_person_label(c) for c in candidates)
                               + ". 어느 분인지 사용자에게 확인하세요.")
     if not pid:
-        raise ValidationError(f"'{given}'에 해당하는 인력이 없습니다. 이름을 확인하세요.")
+        raise ValidationError(typo_message(service, given))
     person = next(p for p in service.people() if p["id"] == pid)
     if categories and person["category"] not in categories:
         raise ValidationError(f"{person['name']}은(는) '{person['category']}' 분류라 구매계약 대상이 아닙니다.")

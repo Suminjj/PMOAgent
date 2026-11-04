@@ -55,8 +55,8 @@ def test_leader_sees_only_own_project(db):
     assert s.find_people("김컨설") == [] and s.find_people("김협력") == []  # 다른 과제 인력은 '없는 사람'
     assert {r["name"] for r in s.monthly_mm(2026)} <= SOFTLAB_PEOPLE
     assert all(r["name"] in SOFTLAB_PEOPLE for r in s.checklist_overview(include_closed=True))
-    rates = {a["purchase_rate"] for a in s.assignments()}
-    assert "9500000" in rates                                             # 담당 과제 단가는 볼 수 있음
+    assert {a["purchase_rate"] for a in s.assignments()} == {None}         # v3: 담당 과제라도 단가는 못 봄
+    assert all(a["rate_hidden"] for a in s.assignments())
 
 
 def test_leader_cannot_open_other_project_records(db):
@@ -154,7 +154,7 @@ def test_leader_menu_hides_write_pages():
     pytest.importorskip("streamlit")
     from ui.theme import pages_for
     leader, pmo = pages_for("과제 리더"), pages_for("PMO")
-    assert {"신규 인력 등록", "계약 등록·수정", "변경 이력", "사용자 관리"}.isdisjoint(leader)
+    assert {"신규 인력 등록", "계약 등록·수정", "검수하기", "변경 이력", "사용자 관리"}.isdisjoint(leader)
     assert "수정 요청" in leader and "사용자 관리" in pmo and len(pmo) == len(pages_for("PM"))
 
 
@@ -197,3 +197,32 @@ def test_find_people_summary_respects_leader_scope(db):
     assert lee["upcoming"] == [] and "전표작성 자동화" not in str(lee)          # 12월 전표작성 자동화 예정 투입은 안 보임
     assert call_tool(s, "find_people", {"name": "김컨설"})["data"] == []
     assert "12,000,000" not in str(call_tool(s, "find_people", {"name": "정협력"}))
+
+
+def test_rates_are_hidden_from_leaders_everywhere(db, monkeypatch):
+    """v3(11/04 담당자): 단가는 개인정보로 PMO·PM만. 과제 리더는 담당 과제 인력이라도 못 본다."""
+    leader, pmo = as_user(db, "leader-softlab"), as_user(db, "pmo")
+    lee = call_tool(leader, "find_people", {"name": "이협력"})["data"][0]["summary"]["current"][0]
+    assert lee["purchase_rate"].startswith("권한 없음")
+    assert call_tool(pmo, "find_people", {"name": "이협력"})["data"][0]["summary"]["current"][0][
+        "purchase_rate"] == "9,500,000 원/MM"
+    timeline = call_tool(leader, "get_assignment_timeline", {"person_id": "이협력"})["data"]
+    assert timeline["current"] and all(a["purchase_rate"] is None and a["sales_rate"] is None
+                                       for a in timeline["current"])
+    for call in (leader.inspection_contracts, lambda: leader.inspection("감마테크", "C-2026-206", "2026-11", "2026-11")):
+        with pytest.raises(AccessDenied, match="단가"):
+            call()
+    assert pmo.inspection_contracts()
+
+    class Fake:
+        def __init__(self, path, today):
+            pass
+
+        def generate(self, question):
+            return "SELECT purchase_rate, sales_rate FROM assignments"
+
+    monkeypatch.setattr(text_to_sql, "SQL_GENERATOR_FACTORY", Fake)
+    rows = call_tool(leader, "query_database", {"question": "단가"})["data"]["rows"]
+    assert rows and all(v is None for r in rows for v in (r.values() if isinstance(r, dict) else r))
+    pmo_rows = call_tool(pmo, "query_database", {"question": "단가"})["data"]["rows"]
+    assert any(v for r in pmo_rows for v in (r.values() if isinstance(r, dict) else r))

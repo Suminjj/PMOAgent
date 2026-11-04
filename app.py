@@ -483,6 +483,8 @@ elif page == "과제 투입 관리":
     timeline = service.assignment_timeline(person_id)
     columns = ["project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
                "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit"]
+    if not can_write:                                    # v3: 과제 리더는 단가를 보지 않는다
+        columns = [c for c in columns if c not in Service.RATE_FIELDS]
     for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입 이력", "past")):
         st.markdown(f"**{title}** ({len(timeline[key])}건)")
         show_table(timeline[key], columns)
