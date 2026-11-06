@@ -77,7 +77,8 @@ def test_v5_database_migrates_keeping_rows_links_and_backup(tmp_path):
     service = Service(path, clock=lambda: TODAY)
     row = service.assignments("OLD")[0]
     assert (row["id"], row["grade"], row["mm"], row["revenue_team"]) == ("A-OLD", "L6", "3", None)
-    assert service.checklist("A-OLD")[0]["status"] == "완료"
+    with connection(path) as con:                         # 근무 환경 준비 기능은 뺐지만(11/06) 예전 기록은 DB에 남는다
+        assert con.execute("SELECT status FROM checklist WHERE assignment_id='A-OLD'").fetchone()[0] == "완료"
     assert service.contracts("OLD")[0]["assignment_id"] == "A-OLD"
     with connection(path) as con:
         assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION

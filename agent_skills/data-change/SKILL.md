@@ -1,14 +1,14 @@
 ---
 name: data-change
-description: 근무 환경 준비 상태 변경, 구매계약 등록·수정·삭제, 계정 ID 입력, 계약 종료 알림 확인처럼 데이터를 바꾸는 요청에 사용한다.
-status: 연결 (prepare_* 도구 연결, 이 지침 본문은 인력관리·근무 환경 준비·구매계약 Agent 프롬프트에 주입. 자동(전체)에는 미주입)
+description: 투입 변경·이동·교체, 구매계약 등록·수정·삭제, 계정 ID 입력, 계약 종료 알림 확인처럼 데이터를 바꾸는 요청에 사용한다.
+status: 연결 (prepare_* 도구 연결, 이 지침 본문은 인력관리·구매계약 Agent 프롬프트에 주입. 자동(전체)에는 미주입)
 ---
 
 # 데이터 변경 요청 (값을 넣어 확인 카드 준비)
 
 ## 사용 시점
 
-- "이가상 ID카드 신청 완료로 바꿔줘", "김가상 방문예약은 해당 없음, 기존 출입증 있음"
+- "이가상 12월 매출귀속 프로젝트 30133686-D047로 바꿔줘", "이가상 12월 1일부터 다른 과제로 옮겨줘"
 - "박가상 계약 12월 31일까지로 연장해줘", "박가상 계약 삭제해줘"
 - "이가상 계정 ID lee.kim으로 넣어줘", "이가상 계약 종료 알림 확인 처리해줘"
 
@@ -35,7 +35,6 @@ status: 연결 (prepare_* 도구 연결, 이 지침 본문은 인력관리·근�
 
 | 도구 | 상태 | 채우는 값 |
 | --- | --- | --- |
-| `prepare_checklist_update` | 구현 | person_id, item, status, reason, project |
 | `prepare_contract_save` | 구현 | person_id, mode(신규/수정), contract_id(또는 계약번호), company, contract_no, start_date, end_date, status |
 | `prepare_contract_delete` | 구현 | person_id, contract_id |
 | `prepare_account_id` | 구현 | person_id, account_id |

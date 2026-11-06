@@ -54,7 +54,6 @@ def test_leader_sees_only_own_project(db):
     assert all(a["name"] in SOFTLAB_PEOPLE for a in s.pending_alerts())
     assert s.find_people("김컨설") == [] and s.find_people("김협력") == []  # 다른 과제 인력은 '없는 사람'
     assert {r["name"] for r in s.monthly_mm(2026)} <= SOFTLAB_PEOPLE
-    assert all(r["name"] in SOFTLAB_PEOPLE for r in s.checklist_overview(include_closed=True))
     assert {a["purchase_rate"] for a in s.assignments()} == {None}         # v3: 담당 과제라도 단가는 못 봄
     assert all(a["rate_hidden"] for a in s.assignments())
 
@@ -63,7 +62,7 @@ def test_leader_cannot_open_other_project_records(db):
     s, full = as_user(db, "leader-softlab"), Service(db, clock=lambda: TODAY)
     other = next(a["id"] for a in full.assignments() if a["project"] == VOUCHER)
     with pytest.raises(AccessDenied):
-        s.checklist(other)
+        s.require_assignment(other)
     with pytest.raises(AccessDenied):
         s.history()
     with pytest.raises(AccessDenied):
@@ -91,7 +90,7 @@ def test_agent_tools_follow_login_not_the_question(db):
     assert not result["ok"] and "없습니다" in result["error"]
     result = call_tool(s, "contracts_ending", {"year": 2026, "month": 11})
     assert {r["name"] for r in result["data"]} <= SOFTLAB_PEOPLE
-    plan = call_tool(s, "prepare_checklist_update", {"person_id": "서협력", "item": "ID카드 신청", "status": "진행 중"})
+    plan = call_tool(s, "prepare_contract_save", {"person_id": "서협력", "end_date": "2026-12-31"})
     assert not plan["ok"] and "수정 요청" in plan["error"]                # 확인 카드도 만들지 않음
 
 

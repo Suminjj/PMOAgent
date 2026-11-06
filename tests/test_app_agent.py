@@ -91,25 +91,24 @@ def test_example_button_and_llm_unavailable(app, monkeypatch):
     assert any("연결할 수 없습니다" in e.value for e in app.error)
 
 
-def status_of(service, aid, item):
-    """항목 순서가 바뀌어도 되도록 이름으로 찾는다."""
-    return next(r for r in service.checklist(aid) if r["item"] == item)["status"]
+def contract_end(service):
+    return next(c for c in service.contracts("DEMO-002") if c["contract_no"] == "DEMO-C-200")["end_date"]
 
 
 def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
-    REPLIES[:] = [tool("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중"),
+    REPLIES[:] = [tool("prepare_contract_save", person_id="이가상", end_date="2027-12-31"),
                   say("화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요.")]
-    app.chat_input[0].set_value("이가상 ID카드 신청 진행 중으로 바꿔줘").run()
+    app.chat_input[0].set_value("이가상 계약 종료일 2027년 12월 31일로 바꿔줘").run()
     assert not app.exception
     service = Service(Path(os.environ["PMO_DB_PATH"]))
-    aid = service.assignments("DEMO-002")[0]["id"]
-    assert status_of(service, aid, "ID카드 신청") == "미진행"            # 카드만으로는 저장 안 됨
+    before = contract_end(service)
+    assert before != "2027-12-31"                                     # 카드만으로는 저장 안 됨
     rows = app.table[0].value
-    assert list(rows["변경"])[3] == "진행 중"                          # 현재 → 변경 카드
+    assert list(rows["변경"])[6] == "2027-12-31"                        # 현재 → 변경 카드
     assert not [s for s in app.selectbox if s.key and s.key.startswith("act")]  # 값을 고르는 양식이 없음
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
-    assert status_of(service, aid, "ID카드 신청") == "진행 중"
+    assert contract_end(service) == "2027-12-31"
 
 
 def test_cancel_does_not_save(app):
@@ -123,8 +122,8 @@ def test_cancel_does_not_save(app):
 
 
 def test_category_selector_limits_agent_tools(app):
-    labels = [app.button(key=f"home_agent_{k}").label for k in ("auto", "staff", "environment", "contract", "inspection")]
-    assert labels == ["🤖 자동(전체)", "👤 인력관리", "💻 근무 환경 준비", "📄 구매계약", "💰 검수"]
+    labels = [app.button(key=f"home_agent_{k}").label for k in ("auto", "staff", "contract", "inspection")]
+    assert labels == ["🤖 자동(전체)", "👤 인력관리", "📄 구매계약", "💰 검수"]          # 11/06 근무 환경 준비 제외
     assert app.session_state["home_category"] == "auto"
     app.button(key="home_agent_contract").click().run()
     assert app.session_state["home_category"] == "contract"
@@ -133,7 +132,7 @@ def test_category_selector_limits_agent_tools(app):
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
     assert not app.exception
     sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
-    assert "pending_contract_alerts" in sent and "checklist_status" not in sent
+    assert "pending_contract_alerts" in sent and "find_people" in sent and "get_assignment_timeline" not in sent
     assert "[업무 지침: contract-expiry]" in RECEIVED[0]["messages"][0]["content"]
     assert any(c.value == "📄 구매계약 Agent" for c in app.caption)
 

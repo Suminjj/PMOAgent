@@ -12,13 +12,11 @@ import difflib
 from datetime import date, timedelta
 from uuid import uuid4
 
-from pmo.checklist import ITEMS, validate_change
 from pmo.contracts import CONTRACT_CATEGORIES, validate_contract
 from pmo.errors import ValidationError
 from pmo.service import validate_assignment
 
 TITLES = {
-    "checklist_update": "근무 환경 준비 상태 변경",
     "contract_save": "구매계약 등록·수정",
     "contract_delete": "구매계약 삭제",
     "account_id": "계정 ID 입력",
@@ -115,43 +113,6 @@ def _row(label, before, after) -> dict:
 
 # --- 작업별 계획 ------------------------------------------------------------------------
 
-def _plan_checklist(service, values: dict) -> dict:
-    person = _person(service, values)
-    item, status = values.get("item"), values.get("status")
-    if item not in ITEMS:
-        raise ValidationError("어느 항목(방문예약·계정 신청·ID카드 신청·OA기기 신청)인지 사용자에게 확인하세요.")
-    if not status:
-        raise ValidationError("어떤 상태(미진행·진행 중·완료·해당 없음)로 바꿀지 사용자에게 확인하세요.")
-    today = service.clock().isoformat()
-    live = [a for a in service.assignments(person["id"]) if a["end_date"] >= today]
-    hint = str(values.get("project") or "").strip()
-    if hint:
-        live = [a for a in live if hint in (a["project"] or "")] or live
-    if not live:
-        raise ValidationError(f"{person['name']}의 진행 중이거나 예정된 투입이 없습니다.")
-    if len(live) > 1:
-        raise ValidationError(f"{person['name']}의 투입이 {len(live)}건입니다: "
-                              + ", ".join(f"{a['project'] or '과제 미입력'}({a['start_date']}~{a['end_date']})"
-                                          for a in live) + ". 어느 과제의 준비 항목인지 확인하세요.")
-    assignment = live[0]
-    row = next(r for r in service.checklist(assignment["id"]) if r["item"] == item)
-    reason = values.get("reason")
-    reason = row["reason"] if reason is None else str(reason).strip()
-    validate_change(item, status, reason, actual_done=True)   # '완료'의 실제 신청 확인은 화면 확인란에서 받는다
-    if status == row["status"] and reason == row["reason"]:
-        raise ValidationError(f"{person['name']}의 {item}은(는) 이미 '{status}' 상태입니다.")
-    return {
-        "rows": [_row("인력", _person_label(person), _person_label(person)),
-                 _row("투입", f"{assignment['project'] or '과제 미입력'} ({assignment['start_date']}~)", "변경 없음"),
-                 _row("항목", item, item), _row("상태", row["status"], status),
-                 _row("사유·메모", row["reason"], reason)],
-        "check": "사내 시스템에서 실제 신청·예약을 마쳤습니다." if status == "완료" else None,
-        "params": {"assignment_id": assignment["id"], "item": item, "status": status, "reason": reason,
-                   "expected_version": row["version"]},
-        "summary": f"{person['name']}의 {item}: {row['status']} → {status}",
-    }
-
-
 def _plan_contract_save(service, values: dict) -> dict:
     person = _person(service, values, CONTRACT_CATEGORIES)
     new = values.get("mode") == "신규"
@@ -243,7 +204,7 @@ def _plan_alert(service, values: dict) -> dict:
 
 # --- 투입 변경·이동·교체 (11/03 담당자 요청) ------------------------------------------------
 # 투입은 기간이 있는 행이다. '12월만 매출귀속 프로젝트 변경'처럼 기간 일부만 바뀌면 투입을 나눈다.
-# 나눈 투입·이동한 투입은 같은 사람이므로 근무 환경 준비 상태를 이어 쓰고, 계약이 원래 투입에만 연결돼 있으면
+# 계약이 원래 투입에만 연결돼 있으면
 # 연결을 풀어 계약 기간 안의 그 인력 투입 전체를 덮게 한다(검수에서 뒤쪽 투입이 빠지지 않게). [제안]
 
 _ASSIGNMENT_KEYS = ("person_id", "project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
@@ -426,8 +387,7 @@ def _plan_assignment_update(service, values: dict) -> dict:
                 plan_changes.append({"table": "assignments", "data": dict(data, id=a["id"]),
                                      "expected_version": a["version"]})
             else:
-                plan_changes.append({"table": "assignments", "data": dict(data, id=str(uuid4())),
-                                     "checklist_from": a["id"]})
+                plan_changes.append({"table": "assignments", "data": dict(data, id=str(uuid4()))})
             shown.append(f"{s}~{e} {data['mm']}MM" + (" (변경)" if ch else " (기존 값)"))
         rows.append(_row("투입 나누기", f"{_period(a)} 한 건 {a['mm']}MM", " / ".join(shown)))
         _unlink(_linked_contracts(service, person, a), rows, plan_changes, seg_start - timedelta(days=1))
@@ -465,12 +425,11 @@ def _plan_assignment_transfer(service, values: dict) -> dict:
             _added("새 투입 과제", to_project),
             _added("새 투입 기간", f"{move}~{end} {new['mm']}MM ({new['assignment_type']})"),
             _added("새 투입 매출귀속 프로젝트", revenue or "미정 (나중에 보완)"),
-            _added("새 투입 등급·매입단가", f"{new['grade'] or '미입력'} · {_won(new['purchase_rate'])} (기존 투입과 같게)"),
-            _added("근무 환경 준비", "기존 투입의 상태를 이어 씀")]
+            _added("새 투입 등급·매입단가", f"{new['grade'] or '미입력'} · {_won(new['purchase_rate'])} (기존 투입과 같게)")]
     if warning:
         rows.append(_added("확인", warning))
     changes = [{"table": "assignments", "data": dict(old, id=a["id"]), "expected_version": a["version"]},
-               {"table": "assignments", "data": dict(new, id=new_id), "checklist_from": a["id"]}]
+               {"table": "assignments", "data": dict(new, id=new_id)}]
     _unlink(_linked_contracts(service, person, a), rows, changes, old_end)
     return {"rows": rows, "check": None, "params": {"changes": changes},
             "summary": f"{person['name']} {move}부터 {a['project']} → {to_project} 이동"}
@@ -519,8 +478,7 @@ def _plan_assignment_replace(service, values: dict) -> dict:
             _added("교체 인력", f"{_person_label(new_person)} · {start}~{end} {new['mm']}MM ({kind})"),
             _added("교체 인력 매출귀속 프로젝트", (revenue or "미정")
                  + (" (기존 인력과 같게)" if revenue == a["revenue_project"] else "")),
-            _added("교체 인력 등급·매입단가", f"{grade or '없음(컨설팅)'} · {_won(rate)}"),
-            _added("교체 인력 근무 환경 준비", "4개 항목 미진행으로 새로 만듦")]
+            _added("교체 인력 등급·매입단가", f"{grade or '없음(컨설팅)'} · {_won(rate)}")]
     changes = [{"table": "assignments", "data": dict(old, id=a["id"]), "expected_version": a["version"]},
                {"table": "assignments", "data": dict(new, id=new_id)}]
     for c in service.contracts(old_person["id"]):
@@ -540,7 +498,7 @@ def _plan_assignment_replace(service, values: dict) -> dict:
             "summary": f"{a['project']} {old_person['name']} → {new_person['name']} 교체 ({start}부터)"}
 
 
-_BUILDERS = {"checklist_update": _plan_checklist, "contract_save": _plan_contract_save,
+_BUILDERS = {"contract_save": _plan_contract_save,
              "contract_delete": _plan_contract_delete, "account_id": _plan_account, "alert_ack": _plan_alert,
              "assignment_update": _plan_assignment_update, "assignment_transfer": _plan_assignment_transfer,
              "assignment_replace": _plan_assignment_replace}
@@ -558,11 +516,7 @@ def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool =
     if plan.get("check") and not checked:
         raise ValidationError("확인란을 먼저 선택하세요.")
     p, action = plan["params"], plan["action"]
-    if action == "checklist_update":
-        service.update_checklist_item(p["assignment_id"], p["item"], p["status"], p["reason"],
-                                      actual_done=checked, token=token, actor=actor,
-                                      expected_version=p["expected_version"])
-    elif action == "contract_save":
+    if action == "contract_save":
         service.save_contract(p["data"], token=token, actor=actor, contract_id=p["contract_id"],
                               expected_version=p["expected_version"])
     elif action == "contract_delete":

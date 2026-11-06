@@ -24,7 +24,9 @@ def service(tmp_path):
     ("김정직 내년 연봉 얼마야?", "staff", "unsupported", "연봉 정보를 관리하지 않아"),
     ("감마테크 C-2026-202 11월 검수 금액 알려줘.", None, "inspection", "검수하기"),
     ("서협력 구매계약 언제까지야?", "staff", "redirect", "'구매계약'"),
-    ("서협력 ID카드 신청 어디까지 됐어?", "contract", "redirect", "'근무 환경 준비'"),
+    ("박협력 투입 기간 알려줘.", "contract", "redirect", "'인력관리'"),
+    ("서협력 ID카드 신청 어디까지 됐어?", "staff", "removed", "제공하지 않습니다"),   # 11/06 기능 제외
+    ("오협력 근무 환경 준비 어디까지 됐어?", None, "removed", "제공하지 않습니다"),
 ])
 def test_fixed_answers_without_llm(service, question, agent, kind, words):
     client = ScriptedClient([])                                   # LLM을 부르면 실패
@@ -125,10 +127,10 @@ def test_person_name_in_company_slot_points_to_find_people(service):
 
 def test_wrong_category_name_is_corrected(service):
     """v2 평가 A01: 없는 '계정 관리' 카테고리로 안내 → 업무 질문이면 맞는 카테고리, 아니면 범위 밖 안내."""
-    bad = "이 요청은 근무 환경 준비 카테고리에서 처리할 수 없습니다. 홈 화면에서 \"계정 관리\"를 골라 다시 요청해 주세요."
-    assert "'인력관리'" in guardrails.fix_redirect(bad, "계정 ID 없는 사람", "environment", {
-        "staff": "인력관리", "environment": "근무 환경 준비", "contract": "구매계약", "inspection": "검수", "auto": "자동(전체)"})
-    assert "도와드릴 수 없습니다" in guardrails.fix_redirect(bad, "그거 해줘", "environment", {"staff": "인력관리"})
+    bad = "이 요청은 구매계약 카테고리에서 처리할 수 없습니다. 홈 화면에서 \"계정 관리\"를 골라 다시 요청해 주세요."
+    assert "'인력관리'" in guardrails.fix_redirect(bad, "계정 ID 없는 사람", "contract", {
+        "staff": "인력관리", "contract": "구매계약", "inspection": "검수", "auto": "자동(전체)"})
+    assert "도와드릴 수 없습니다" in guardrails.fix_redirect(bad, "그거 해줘", "contract", {"staff": "인력관리"})
 
 
 def test_made_up_person_is_blocked_and_not_graded(service):

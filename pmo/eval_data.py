@@ -9,7 +9,6 @@
 from datetime import date
 from uuid import uuid4
 
-from pmo.checklist import ITEMS
 from pmo.service import Service
 
 TODAY = date(2026, 11, 15)
@@ -177,17 +176,5 @@ def seed_eval(service: Service, today: date = TODAY) -> dict:
         if alert["contract_id"] == expired:
             service.acknowledge_alert(alert["id"], actor=ACTOR)
 
-    # 근무 환경 준비: 오협력·서협력을 빼면 모두 완료. 오협력은 상태가 섞이게.
-    def set_item(aid, item, status, reason=""):
-        row = next(r for r in service.checklist(aid) if r["item"] == item)
-        service.update_checklist_item(aid, item, status, reason, actual_done=status == "완료",
-                                      token=_token(), actor=ACTOR, expected_version=row["version"])
-
-    for aid in [aid for pid, aid in a.items() if pid not in ("EV-13", "EV-14")] + shin:
-        for item in ITEMS:
-            set_item(aid, item, "완료")
-    set_item(a["EV-13"], "방문예약", "완료")
-    set_item(a["EV-13"], "계정 신청", "진행 중")
-    set_item(a["EV-13"], "ID카드 신청", "해당 없음", "기존 출입증 보유")
     seed_eval_users(service.path)
     return {"people": len(PEOPLE), "users": len(EVAL_USERS), "today": today.isoformat()}

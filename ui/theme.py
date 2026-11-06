@@ -15,7 +15,6 @@ NAVY, BLUE, MUTED = "#0F1B33", "#1D4ED8", "#5B6780"
 NAV_GROUPS = [
     ("홈", ":material/forum:", []),
     ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리"]),
-    ("근무 환경 준비", ":material/task_alt:", []),
     ("구매계약 관리", ":material/description:", ["전체 계약 조회", "계약 등록·수정"]),
     ("검수 관리", ":material/payments:", ["검수하기"]),
     ("계약 종료 알림", ":material/notifications:", []),
@@ -38,7 +37,7 @@ for _group, _icon, _subs in NAV_GROUPS:
         GROUP_OF[_page] = _group
 NAV_LABELS = {"홈": "홈 · PMO Agent"}
 # 홈 화면 업무 카테고리 버튼의 이모티콘 (10/20 담당자). 키는 pmo/agent/agents.py의 AGENTS 키.
-AGENT_ICONS = {"auto": "🤖", "staff": "👤", "environment": "💻", "contract": "📄", "inspection": "💰"}
+AGENT_ICONS = {"auto": "🤖", "staff": "👤", "contract": "📄", "inspection": "💰"}
 
 
 def agent_label(key: str, label: str) -> str:

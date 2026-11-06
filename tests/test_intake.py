@@ -37,7 +37,7 @@ def test_accountless_intake_retry_later_account_and_unknown_rates(tmp_path):
     assert service.assignments()[0]["id"] == initial["id"]
     assert service.assignments()[0]["person_id"] == person_id
     with connection(service.path) as con:
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 4
+        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 0   # 11/06: 근무 환경 준비 항목은 만들지 않음
     # Missing rates stay unknown; an explicitly entered zero is a real value.
     service.save_assignment(dict(initial, purchase_rate=0, rate_unit="원/MM"),
                             token="fake-rate-update", actor="테스트",
@@ -75,7 +75,7 @@ def test_invalid_intake_does_not_save_partial_person(tmp_path, part, field, valu
 def test_failed_assignment_rolls_back_intake_and_audit(tmp_path):
     service = Service(tmp_path / "rollback.db")
     with connection(service.path) as con:
-        con.execute("""CREATE TRIGGER fail_checklist BEFORE INSERT ON checklist BEGIN
+        con.execute("""CREATE TRIGGER fail_assignment BEFORE INSERT ON assignments BEGIN
                        SELECT RAISE(ABORT, 'fake failure'); END""")
     with pytest.raises(ValidationError):
         service.save_intake(intake(), token="fake-request", actor="테스트")

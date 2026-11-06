@@ -21,8 +21,8 @@ CHECKS = [
     ("이협력 단가(인력 찾기 요약)", lambda s: _rate_of(s, "이협력")),
     ("검수 금액 조회", lambda s: _try(lambda: s.inspection_contracts())),
     ("11월 종료 계약 인원", lambda s: len(call_tool(s, "contracts_ending", {"year": 2026, "month": 11})["data"])),
-    ("상태 변경 확인 카드", lambda s: _ok(call_tool(s, "prepare_checklist_update",
-                                               {"person_id": "서협력", "item": "ID카드 신청", "status": "진행 중"}))),
+    ("계약 변경 확인 카드", lambda s: _ok(call_tool(s, "prepare_contract_save",
+                                               {"person_id": "서협력", "end_date": "2026-12-31"}))),
     ("변경 이력 조회", lambda s: _try(s.history)),
 ]
 

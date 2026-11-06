@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | people | id, account_id, name, company, category, job_role(직무, v6), version | 내부 관리번호, 발급 후 계정 ID와 기본 정보 |
 | assignments | id, person_id, project, revenue_project, revenue_team(매출귀속팀, v6), start_date, end_date, grade(컨설팅은 NULL 허용, v6), assignment_type, mm, mm_details, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보와 MM 산정 근거 |
-| checklist | assignment_id, item, status, reason, version, draft, drafted_at, applied_at, updated_at, updated_by | 신규 투입과 함께 생성되는 준비 항목과 처리 상태 |
+| checklist | assignment_id, item, status, reason, version, draft, drafted_at, applied_at, updated_at, updated_by | (11/06 기능 제외) 예전 근무 환경 준비 기록. 새로 만들지 않고 화면·Agent·Text-to-SQL에서 읽지 않음, 지우지 않음 |
 | audit | entity, entity_id, before_json, after_json, changed_at, actor | 등록·수정 전후 값과 주체 |
 | requests | token, payload_hash, result_id | 동일 저장 요청 재실행 방지 |
 | contracts | id, person_id, assignment_id, company, contract_no, start_date, end_date, status, previous_contract_id, note, version | 인력별 구매계약. 연장은 이전 계약을 가리킨다 |
@@ -98,7 +98,7 @@
 - 저장 요청 토큰은 기록하지 않는다. 기록 실패는 업무 처리 결과를 바꾸지 않는다.
 - 로컬 DB에 함께 저장되므로 실제 데이터를 쓰는 DB는 Git에 올리지 않는다.
 
-## 근무 환경 준비 체크리스트 (v5)
+## 근무 환경 준비 체크리스트 (v5, 11/06 기능 제외 — 아래는 예전 기록의 의미)
 
 - 항목은 방문예약·계정 신청·ID카드 신청·OA기기 신청 4개이며 (assignment_id, item)이 유일하다.
 - 상태는 미진행·진행 중·완료·해당 없음. 해당 없음은 reason이 필수다.
@@ -117,5 +117,5 @@
 
 ## Text-to-SQL 조회 범위
 
-- 읽을 수 있는 테이블: people, assignments, contracts, contract_alerts, checklist
+- 읽을 수 있는 테이블: people, assignments, contracts, contract_alerts (checklist는 11/06 기능 제외로 뺌)
 - 읽을 수 없는 테이블: requests(저장 토큰), run_log(실행 기록), audit(변경 이력 원문), SQLite 내부 테이블
