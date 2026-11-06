@@ -25,8 +25,7 @@ def service(tmp_path):
     ("감마테크 C-2026-202 11월 검수 금액 알려줘.", None, "inspection", "검수하기"),
     ("서협력 구매계약 언제까지야?", "staff", "redirect", "'구매계약'"),
     ("박협력 투입 기간 알려줘.", "contract", "redirect", "'인력관리'"),
-    ("서협력 ID카드 신청 어디까지 됐어?", "staff", "removed", "제공하지 않습니다"),   # 11/06 기능 제외
-    ("오협력 근무 환경 준비 어디까지 됐어?", None, "removed", "제공하지 않습니다"),
+    ("서협력 ID카드 신청 어디까지 됐어?", "staff", "out_of_scope", "도와드릴 수 없습니다"),   # 제공하지 않는 업무
 ])
 def test_fixed_answers_without_llm(service, question, agent, kind, words):
     client = ScriptedClient([])                                   # LLM을 부르면 실패

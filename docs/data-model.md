@@ -6,7 +6,6 @@
 | --- | --- | --- |
 | people | id, account_id, name, company, category, job_role(직무, v6), version | 내부 관리번호, 발급 후 계정 ID와 기본 정보 |
 | assignments | id, person_id, project, revenue_project, revenue_team(매출귀속팀, v6), start_date, end_date, grade(컨설팅은 NULL 허용, v6), assignment_type, mm, mm_details, sales_rate, purchase_rate, rate_unit, version | 투입 건별 정보와 MM 산정 근거 |
-| checklist | assignment_id, item, status, reason, version, draft, drafted_at, applied_at, updated_at, updated_by | (11/06 기능 제외) 예전 근무 환경 준비 기록. 새로 만들지 않고 화면·Agent·Text-to-SQL에서 읽지 않음, 지우지 않음 |
 | audit | entity, entity_id, before_json, after_json, changed_at, actor | 등록·수정 전후 값과 주체 |
 | requests | token, payload_hash, result_id | 동일 저장 요청 재실행 방지 |
 | contracts | id, person_id, assignment_id, company, contract_no, start_date, end_date, status, previous_contract_id, note, version | 인력별 구매계약. 연장은 이전 계약을 가리킨다 |
@@ -20,7 +19,7 @@
 
 - 신규 인력 내부 관리번호(id)는 UUID로 자동 생성하고 생성 후 수정하지 않는다.
 - 계정 ID(account_id)는 계정 발급 전 NULL로 저장하고 발급 후 기존 인력에 추가한다.
-  계정 ID를 추가해도 내부 관리번호와 투입·체크리스트 연결은 유지한다.
+  계정 ID를 추가해도 내부 관리번호와 투입·계약 연결은 유지한다.
 - 동명이인 및 같은 이름·업체의 인력 등록을 허용하고 내부 관리번호의 중복은 차단한다.
 - 투입 ID는 UUID로 생성한다. 한 인력에 여러 투입을 연결할 수 있다.
 - 과제명은 현재 투입 건에 문자열로 저장한다. 과제 마스터·과제 코드·과제명
@@ -33,7 +32,7 @@
 - 금액은 Decimal로 검증하고 SQLite TEXT로 원문 정밀도를 보존한다.
   날짜는 ISO 형식으로 저장하며 변경 시각은 Asia/Seoul 기준이다.
 - 신규 대상 등록은 이름·업체명·분류·등급·투입 기간을 필수로 하여
-  인력과 첫 투입, 준비 체크리스트 및 각각의 변경 이력을 한 트랜잭션에 저장한다.
+  인력과 첫 투입 및 각각의 변경 이력을 한 트랜잭션에 저장한다.
 - 과제·단가·단위는 미입력(NULL)으로 저장할 수 있다. 단가가 하나라도 입력되면
   단위도 필수다. 명시적으로 입력한 0원과 미입력을 구분한다.
 
@@ -42,13 +41,12 @@
 - 미리보기만으로 저장하지 않는다. 확인된 요청마다 UUID 요청 토큰을 부여한다.
 - 저장 요청 토큰과 내용 해시를 함께 기록한다. 같은 토큰의 같은 내용은 원래 결과를 반환하고
   다른 내용은 거부한다. 별개의 신규 등록 요청을 동일한 요청으로 간주하지 않는다.
-- 실제 데이터, 신규 체크리스트, 변경 이력, 요청 기록은 같은 트랜잭션에 저장한다.
+- 실제 데이터, 변경 이력, 요청 기록은 같은 트랜잭션에 저장한다.
 - 기존 자료를 수정할 때 버전을 검사하여 오래된 미리보기로 최신 데이터를 덮어쓰지 않는다.
 - 동일 인력의 기간 중복은 시작일·종료일을 포함하여 검토 대상으로 탐지한다.
   이는 MM 산정 시 날짜 포함 규칙을 확정한 것이 아니다.
 - 투입 기간 중복은 명시적 검토 후 저장할 수 있다. 최종 허용·차단 기준은 TODO다.
 - 로컬 담당자 입력값은 이력 표시용이다. 실제 인증된 사용자 신원을 보장하지 않는다.
-- 체크리스트는 방문예약·계정 신청·ID카드 신청·OA기기 신청을 미진행으로 생성한다.
   실제 신청을 실행하거나 완료 상태로 변경하지 않는다.
 
 ## 후속 설계
@@ -59,7 +57,7 @@
 - 구매MM과 계약의 관계, 월별 구매 필요 판정 기준
 - 앞으로의 선거일·임시공휴일·회사 지정 휴일과 구매시스템 달력 일치, 검수 금액 반올림 규칙 (MM 반올림은 확정: 합계 셋째 자리 반올림)
 
-스키마 버전은 PRAGMA user_version=7이다(v7: 사용자·권한·수정 요청). v1~v4는 백업 후 마이그레이션하며 기존
+스키마 버전은 PRAGMA user_version=8이다(v7: 사용자·권한·수정 요청, v8: 예전 준비 항목 표 삭제). v1~v4는 백업 후 마이그레이션하며 기존
 관리번호·금액·이력·연결 관계를 보존한다. 기존의 직접 입력한 ID를 계정 ID로 추정하지 않는다.
 미확인 스키마는 자동 재생성하거나 삭제하지 않고 실행을 중단한다.
 
@@ -98,16 +96,6 @@
 - 저장 요청 토큰은 기록하지 않는다. 기록 실패는 업무 처리 결과를 바꾸지 않는다.
 - 로컬 DB에 함께 저장되므로 실제 데이터를 쓰는 DB는 Git에 올리지 않는다.
 
-## 근무 환경 준비 체크리스트 (v5, 11/06 기능 제외 — 아래는 예전 기록의 의미)
-
-- 항목은 방문예약·계정 신청·ID카드 신청·OA기기 신청 4개이며 (assignment_id, item)이 유일하다.
-- 상태는 미진행·진행 중·완료·해당 없음. 해당 없음은 reason이 필수다.
-- 완료는 담당자가 "실제 신청·예약을 마쳤다"고 확인해야 저장되고, 처음 완료한 시각을 applied_at에 남긴다.
-  완료에서 다른 상태로 되돌리면 applied_at을 지운다.
-- 신청 초안(draft, drafted_at)은 상태와 별개다. 초안을 만들어도 상태와 version은 바뀌지 않는다.
-- 상태 변경은 version 검사와 요청 토큰으로 오래된 화면의 덮어쓰기·중복 저장을 막고, 전후 값을 audit에 남긴다.
-- 예전 데이터에 빠진 항목은 화면에 미진행으로 보여주고 처음 저장할 때 만든다. 마이그레이션에서 임의로 채우지 않는다.
-
 ## 구매계약 삭제
 
 - 정해진 업무 함수 `delete_contract`로만 삭제한다(Agent·Text-to-SQL로는 삭제할 수 없음).
@@ -117,5 +105,5 @@
 
 ## Text-to-SQL 조회 범위
 
-- 읽을 수 있는 테이블: people, assignments, contracts, contract_alerts (checklist는 11/06 기능 제외로 뺌)
+- 읽을 수 있는 테이블: people, assignments, contracts, contract_alerts
 - 읽을 수 없는 테이블: requests(저장 토큰), run_log(실행 기록), audit(변경 이력 원문), SQLite 내부 테이블

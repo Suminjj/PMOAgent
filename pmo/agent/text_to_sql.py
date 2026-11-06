@@ -22,7 +22,6 @@ from pmo.agent.llm import LLMError
 from pmo.errors import ValidationError
 
 # Text-to-SQL이 볼 수 있는 테이블. 저장 요청 토큰·실행 기록·변경 이력 원문은 제외한다.
-# checklist(근무 환경 준비)는 11/06 기능 제외로 뺐다. 테이블과 예전 기록은 DB에 남아 있다.
 SAFE_TABLES = ("people", "assignments", "contracts", "contract_alerts")
 MAX_ROWS = 200
 TIME_LIMIT_SECONDS = 5.0

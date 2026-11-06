@@ -1,6 +1,6 @@
 ---
 name: pmo-feature-development
-description: PMOAgent(CoE 인력관리 Agent)의 기능을 구현·수정·검증하는 Claude Code 개발 스킬. 인력·투입 정보, 근무 환경 체크리스트, 구매계약·만료 알림, MM·검수, 자연어 도구 연동의 Python·Streamlit·로컬 DB 개발 요청에 사용한다. 서비스 내부 LLM의 업무 실행 지침(agent_skills/)으로 사용하지 않는다.
+description: PMOAgent(CoE 인력관리 Agent)의 기능을 구현·수정·검증하는 Claude Code 개발 스킬. 인력·투입 정보, 구매계약·만료 알림, MM·검수, 자연어 도구 연동의 Python·Streamlit·로컬 DB 개발 요청에 사용한다. 서비스 내부 LLM의 업무 실행 지침(agent_skills/)으로 사용하지 않는다.
 ---
 
 # PMOAgent 기능 구현·검증

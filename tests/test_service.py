@@ -100,10 +100,8 @@ def test_assignments_overlap_and_precision(service):
         save_assignment(service)
     second = save_assignment(service, assignment(project="가상 과제 B"), overlap_reviewed=True)
     assert first != second
-    third = save_assignment(service, assignment(start_date="2026-11-01", end_date="2026-11-30"))
+    save_assignment(service, assignment(start_date="2026-11-01", end_date="2026-11-30"))
     assert len(service.assignments()) == 3
-    with connection(service.path) as con:
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 0     # 11/06: 준비 항목을 만들지 않음
     save_assignment(service, assignment(project="수정 과제"), assignment_id=first,
                     expected_version=1, overlap_reviewed=True)
     with pytest.raises(ConflictError):

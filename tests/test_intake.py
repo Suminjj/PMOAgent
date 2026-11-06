@@ -36,8 +36,6 @@ def test_accountless_intake_retry_later_account_and_unknown_rates(tmp_path):
     assert service.people()[0]["account_id"] == "fake-issued-id"
     assert service.assignments()[0]["id"] == initial["id"]
     assert service.assignments()[0]["person_id"] == person_id
-    with connection(service.path) as con:
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 0   # 11/06: 근무 환경 준비 항목은 만들지 않음
     # Missing rates stay unknown; an explicitly entered zero is a real value.
     service.save_assignment(dict(initial, purchase_rate=0, rate_unit="원/MM"),
                             token="fake-rate-update", actor="테스트",
@@ -112,7 +110,7 @@ def test_v1_migration_backup_and_all_relationships_preserved(tmp_path):
     with connection(path) as con:
         assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 1
+        assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='checklist'").fetchall()   # v8에서 삭제
         assert con.execute("SELECT count(*) FROM requests").fetchone()[0] == 1
     backups = list(tmp_path.glob("existing.db.backup-v1-*.db"))
     assert len(backups) == 1

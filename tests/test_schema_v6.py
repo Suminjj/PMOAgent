@@ -77,8 +77,6 @@ def test_v5_database_migrates_keeping_rows_links_and_backup(tmp_path):
     service = Service(path, clock=lambda: TODAY)
     row = service.assignments("OLD")[0]
     assert (row["id"], row["grade"], row["mm"], row["revenue_team"]) == ("A-OLD", "L6", "3", None)
-    with connection(path) as con:                         # 근무 환경 준비 기능은 뺐지만(11/06) 예전 기록은 DB에 남는다
-        assert con.execute("SELECT status FROM checklist WHERE assignment_id='A-OLD'").fetchone()[0] == "완료"
     assert service.contracts("OLD")[0]["assignment_id"] == "A-OLD"
     with connection(path) as con:
         assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
@@ -86,3 +84,29 @@ def test_v5_database_migrates_keeping_rows_links_and_backup(tmp_path):
         grade = next(r for r in con.execute("PRAGMA table_info(assignments)") if r[1] == "grade")
         assert grade[3] == 0                                              # NULL 허용
     assert len(list(tmp_path.glob("v5.db.backup-v5-*.db"))) == 1
+    with connection(path) as con:                                         # v8: 준비 항목 표는 지움(11/06 담당자)
+        assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='checklist'").fetchall()
+    assert len(list(tmp_path.glob("v5.db.backup-v7-*.db"))) == 1          # 지우기 전 백업
+
+
+def test_v7_database_drops_checklist_with_its_history(tmp_path):
+    """v8(11/06): 근무 환경 준비 표·변경 이력·실행 기록을 지우고, 나머지 데이터는 그대로 둔다."""
+    path = tmp_path / "v7.db"
+    service = Service(path, clock=lambda: TODAY)
+    pid = service.save_intake(intake("협력", "L6"), token="t", actor="담당자")
+    with connection(path) as con:                                         # v7 DB 흉내: 예전 준비 항목과 그 기록
+        con.execute("PRAGMA user_version = 7")
+        con.execute("CREATE TABLE checklist (assignment_id TEXT, item TEXT, status TEXT)")
+        con.execute("INSERT INTO checklist VALUES ('A','ID카드 신청','완료')")
+        con.execute("INSERT INTO audit(entity,entity_id,before_json,after_json,changed_at,actor) "
+                    "VALUES ('checklist','A:ID카드 신청',NULL,'{}','2026-10-20','담당자')")
+        con.execute("INSERT INTO run_log(operation,input_json,ok,started_at,duration_ms) "
+                    "VALUES ('update_checklist_item','{}',1,'2026-10-20',1)")
+    service = Service(path, clock=lambda: TODAY)
+    with connection(path) as con:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION == 8
+        assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='checklist'").fetchall()
+        assert not con.execute("SELECT 1 FROM audit WHERE entity='checklist'").fetchall()
+        assert not con.execute("SELECT 1 FROM run_log WHERE operation LIKE '%checklist%'").fetchall()
+    assert service.people()[0]["id"] == pid and service.history()                # 다른 데이터·이력은 그대로
+    assert len(list(tmp_path.glob("v7.db.backup-v7-*.db"))) == 1

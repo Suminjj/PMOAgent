@@ -76,14 +76,6 @@ CREATE TABLE IF NOT EXISTS people (
 );
 {ASSIGNMENTS};
 CREATE INDEX IF NOT EXISTS assignments_person ON assignments(person_id);
-CREATE TABLE IF NOT EXISTS checklist (
-    assignment_id TEXT NOT NULL REFERENCES assignments(id),
-    item TEXT NOT NULL, status TEXT NOT NULL DEFAULT '미진행',
-    reason TEXT NOT NULL DEFAULT '',
-    version INTEGER NOT NULL DEFAULT 1, draft TEXT, drafted_at TEXT,
-    applied_at TEXT, updated_at TEXT, updated_by TEXT,
-    PRIMARY KEY(assignment_id, item)
-);
 CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity TEXT NOT NULL, entity_id TEXT NOT NULL,
@@ -94,10 +86,10 @@ CREATE TABLE IF NOT EXISTS requests (
     token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
 );
 """.replace("{ASSIGNMENTS}", ASSIGNMENTS_V6.format(name="assignments")) + V4_TABLES + V7_TABLES + \
-    "PRAGMA user_version = 7;"
+    "PRAGMA user_version = 8;"
 
-LATEST_VERSION = 7
-# v5: 체크리스트 상태 변경 지원 (버전 검사, 신청 초안, 실제 신청 완료 시각, 처리자)
+LATEST_VERSION = 8
+# v5: 예전 준비 항목 표에 칸 추가 (v8에서 표 자체를 지우지만, v4 이전 DB를 차례로 올릴 때 필요)
 V5_CHECKLIST_COLUMNS = ("version INTEGER NOT NULL DEFAULT 1", "draft TEXT", "drafted_at TEXT",
                         "applied_at TEXT", "updated_at TEXT", "updated_by TEXT")
 
@@ -137,6 +129,9 @@ def initialize(path: Path) -> None:
             version = 6
         if version == 6:
             migrate_v6(con, path)
+            version = 7
+        if version == 7:
+            migrate_v7(con, path)
             return
         tables = con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -294,6 +289,26 @@ def migrate_v6(con: sqlite3.Connection, path: Path) -> None:
             if statement.strip():
                 con.execute(statement)
         con.execute("PRAGMA user_version = 7")
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+
+
+def migrate_v7(con: sqlite3.Connection, path: Path) -> None:
+    """근무 환경 준비 기능 삭제(11/06 담당자): 준비 항목 표와 그 변경 이력·실행 기록을 지운다. 시작 전에 백업한다."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        if con.execute("PRAGMA user_version").fetchone()[0] >= 8:
+            con.commit()
+            return
+        backup = path.with_name(path.name + ".backup-v7-" + uuid4().hex[:8] + ".db")
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
+            source.backup(destination)
+        con.execute("DROP TABLE IF EXISTS checklist")
+        con.execute("DELETE FROM audit WHERE entity='checklist'")
+        con.execute("DELETE FROM run_log WHERE operation LIKE '%checklist%'")
+        con.execute("PRAGMA user_version = 8")
         con.commit()
     except Exception:
         con.rollback()

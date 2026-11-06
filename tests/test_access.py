@@ -5,7 +5,7 @@ import pytest
 
 from pmo.access import AccessDenied, authenticate, create_user, users
 from pmo.agent import text_to_sql
-from pmo.db import connection
+from pmo.db import LATEST_VERSION, connection
 from pmo.eval_data import PEOPLE, VOUCHER, SOFTLAB, EVAL_PASSWORD, TODAY, seed_eval
 from pmo.service import Service
 from pmo.tools import call_tool
@@ -144,7 +144,7 @@ def test_v6_database_gets_user_tables_with_backup(tmp_path):
                           "PRAGMA user_version = 6;")
     Service(path)
     with sqlite3.connect(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
         assert con.execute("SELECT count(*) FROM users").fetchone()[0] == 0
     assert len(list(tmp_path.glob("v6.db.backup-v6-*.db"))) == 1
 

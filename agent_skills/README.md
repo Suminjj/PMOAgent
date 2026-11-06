@@ -16,7 +16,6 @@
   앞머리와 '성공 기준'(개발·평가용) 절, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.
 - **자동(전체)** Agent에는 지침을 넣지 않고 `pmo/agent/prompts.py`의 공통 규칙만 쓴다(비교 기준).
 - 질문에 맞는 지침을 자동으로 고르는 기능(라우터·RAG)은 다음 단계다.
-- 근무 환경 준비 지침(work-environment-checklist)은 11/06 기능 제외로 삭제했다.
 - 도구는 `pmo/tools.py`에 정의되어 있고, 구현 여부는 각 지침의 "연결 도구" 표를 따른다.
 - 도구 이름·입력을 바꾸면 이 지침, `pmo/agent/agents.py`, `evals/questions.json`을 함께 고친다.
 
