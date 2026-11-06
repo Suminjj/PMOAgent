@@ -24,7 +24,7 @@ NAV_GROUPS = [
     ("사용자 관리", ":material/manage_accounts:", []),     # v2: PMO·PM
 ]
 # v2 역할별 메뉴 (11/03 담당자): 과제 리더는 조회 메뉴와 수정 요청만. 등록·수정 화면과 변경 이력·사용자 관리는 숨긴다.
-LEADER_HIDDEN = {"신규 인력 등록", "계약 등록·수정", "변경 이력", "사용자 관리"}
+LEADER_HIDDEN = {"신규 인력 등록", "계약 등록·수정", "검수하기", "변경 이력", "사용자 관리"}  # 검수: 단가 권한(v3)
 SUB_ICONS = {
     "전체 인력 조회": ":material/table_view:", "신규 인력 등록": ":material/person_add:",
     "과제 투입 관리": ":material/work:", "전체 계약 조회": ":material/table_view:",

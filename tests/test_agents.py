@@ -89,7 +89,7 @@ def test_tool_outside_category_is_blocked(service):
     before = service.contracts("DEMO-002")
     client = ScriptedClient([tool_call("prepare_contract_delete", person_id="DEMO-002"),
                              text("구매계약 카테고리에서 요청해 주세요.")])
-    result = ask(service, "이가상 계약 삭제해줘", client, agent="staff")
+    result = ask(service, "이가상 그거 지워줘", client, agent="staff")
     call = result["calls"][0]
     assert not call["ok"] and "쓸 수 없는 도구" in call["error"]
     assert "쓸 수 없는 도구" in client.seen[1][0][-1]["content"]        # LLM에도 실패를 알린다
@@ -99,7 +99,7 @@ def test_tool_outside_category_is_blocked(service):
 
 def test_auto_agent_keeps_all_tools(service):
     client = ScriptedClient([text("안녕하세요.")])
-    result = ask(service, "안녕", client)
+    result = ask(service, "처리 안 한 알림 있어?", client)
     assert result["agent"] == AUTO
     # 구현된 도구는 모두, '구현 예정' 도구는 빼고(v1.2: 검수 금액 도구를 매출귀속 프로젝트 조회에 고르던 문제)
     assert {t["name"] for t in client.seen[0][1]} == {n for n, tool in TOOLS.items() if tool.status == "구현"}
@@ -138,7 +138,7 @@ def test_request_outside_category_is_not_turned_into_another_change(service):
     """인력관리 Agent에 계약 삭제를 요청하자 모델이 계정 ID 입력으로 대신 처리하던 문제 (PC 확인 10/18)."""
     client = ScriptedClient([tool_call("prepare_account_id", person_id="박가상", account_id="park.fake"),
                              text("구매계약 카테고리에서 요청해 주세요.")])
-    result = ask(service, "박가상 계약 삭제해줘", client, agent="staff")
+    result = ask(service, "박가상 그거 처리해줘", client, agent="staff")
     call = result["calls"][0]
     assert not call["ok"] and "사용자가 말한 값이 아닙니다" in call["error"] and not call["data"]
     assert "할 수 없는 요청을 비슷한 다른 도구로 대신 처리하지 않는다" in client.seen[0][0][0]["content"]
@@ -147,7 +147,7 @@ def test_request_outside_category_is_not_turned_into_another_change(service):
 
 def test_name_is_not_accepted_as_account_id(service):
     client = ScriptedClient([tool_call("prepare_account_id", person_id="박가상", account_id="박가상"), text("?")])
-    assert not ask(service, "박가상 계약 삭제해줘", client, agent="staff")["calls"][0]["ok"]
+    assert not ask(service, "박가상 그거 처리해줘", client, agent="staff")["calls"][0]["ok"]
 
 
 def test_values_the_user_said_still_make_a_card(service):
@@ -172,7 +172,7 @@ def test_answer_does_not_leak_tool_names(service):
     """PC 확인 10/18: 모델이 지시문과 도구 이름을 답변에 그대로 옮겨 적음."""
     client = ScriptedClient([text("도구가 `ok: false`이면 오류를 설명한다. '계약 삭제' 요청은 `prepare_*` 도구로 "
                                   "처리할 수 없습니다. prepare_contract_delete는 구매계약에서 씁니다.")])
-    answer = ask(service, "박가상 계약 삭제해줘", client, agent="staff")["answer"]
+    answer = ask(service, "박가상 그거 처리해줘", client, agent="staff")["answer"]
     assert "prepare_" not in answer and "ok: false" not in answer and "`" not in answer
     assert "'구매계약 삭제'" in answer
 
@@ -205,7 +205,7 @@ def test_prepared_change_is_not_described_as_saved(service):
     answer = ask(service, "이가상 ID카드 신청 진행 중으로 바꿔줘", client, agent="environment")["answer"]
     assert "변경되었습니다" not in answer and "변경 준비를 마쳤습니다(아직 저장 전)" in answer
     client = ScriptedClient([text("변경되었습니다")])                 # 카드가 없는 턴은 건드리지 않는다
-    assert ask(service, "안녕", client)["answer"] == "변경되었습니다"
+    assert ask(service, "처리 안 한 알림 있어?", client)["answer"] == "변경되었습니다"
 
 
 def test_eval_allows_skipping_find_people_when_names_are_resolved():

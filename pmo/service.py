@@ -173,6 +173,21 @@ class Service:
     def _scoped(self) -> bool:
         return self.access is not None and not self.access.all_projects
 
+    def _hides_rates(self) -> bool:
+        return self.access is not None and not self.access.sees_rates
+
+    RATE_FIELDS = ("sales_rate", "purchase_rate", "rate_unit")
+
+    def _mask_rates(self, rows: list[dict]) -> list[dict]:
+        """v3: 단가를 볼 수 없는 사용자면 단가 칸을 비우고 rate_hidden 표시(미입력과 구분)."""
+        if not self._hides_rates():
+            return rows
+        return [dict(r, **dict.fromkeys(self.RATE_FIELDS), rate_hidden=True) for r in rows]
+
+    def _require_rates(self) -> None:
+        if self._hides_rates():
+            raise AccessDenied("검수 금액은 단가로 계산하므로 PM·PMO만 볼 수 있습니다.")
+
     def _require_write(self) -> None:
         if self.access is not None:
             self.access.require_write()
@@ -214,20 +229,26 @@ class Service:
 
         LLM이 만든 SQL이 WHERE를 빠뜨려도 권한 밖 행은 아예 없는 DB에서 실행되므로 보이지 않는다(행 단위 권한).
         """
-        if not self._scoped():
+        if not self._scoped() and not self._hides_rates():
             yield self.path
             return
-        assignments, persons = self._visible()
+        if self._scoped():
+            assignments, persons = self._visible()
+        else:
+            assignments = persons = None
         with connection(self.path) as con:
             schema = {r["name"]: r["sql"] for r in con.execute(
                 "SELECT name, sql FROM sqlite_master WHERE type='table'") if r["name"] in tables}
             data = {t: [dict(r) for r in con.execute(f"SELECT * FROM {t}")] for t in schema}
         contracts = {c["id"] for c in self._filter_contracts(data.get("contracts", []))}
-        keep = {"people": lambda r: r["id"] in persons,
-                "assignments": lambda r: r["id"] in assignments,
-                "contracts": lambda r: r["id"] in contracts,
-                "contract_alerts": lambda r: r["contract_id"] in contracts,
-                "checklist": lambda r: r["assignment_id"] in assignments}
+        everything = assignments is None
+        keep = {"people": lambda r: everything or r["id"] in persons,
+                "assignments": lambda r: everything or r["id"] in assignments,
+                "contracts": lambda r: everything or r["id"] in contracts,
+                "contract_alerts": lambda r: everything or r["contract_id"] in contracts,
+                "checklist": lambda r: everything or r["assignment_id"] in assignments}
+        if self._hides_rates() and "assignments" in data:          # v3: 단가 칸은 비운 채로 넣는다
+            data["assignments"] = [dict(r, **dict.fromkeys(self.RATE_FIELDS)) for r in data["assignments"]]
         with tempfile.TemporaryDirectory() as tmp:
             snapshot = Path(tmp) / "scoped.db"
             with contextlib.closing(sqlite3.connect(snapshot)) as out:
@@ -299,7 +320,8 @@ class Service:
             params = (person_id,)
         with connection(self.path) as con:
             rows = [dict(r) for r in con.execute(sql + " ORDER BY a.start_date, a.id", params)]
-        return [r for r in rows if self.access.sees_project(r["project"])] if self._scoped() else rows
+        rows = [r for r in rows if self.access.sees_project(r["project"])] if self._scoped() else rows
+        return self._mask_rates(rows)
 
     def project_names(self) -> list[str]:
         with connection(self.path) as con:
@@ -320,6 +342,10 @@ class Service:
         if len(partial) == 1:
             return partial[0]
         close = difflib.get_close_matches(given, known, n=1, cutoff=0.6)
+        if self._scoped() and not close:
+            # v3(P01): 과제 리더가 담당 밖 과제를 물으면 다른 과제를 대신 보여주지 않게 분명히 말한다(존재 여부는 알리지 않음)
+            raise ValidationError(f"'{given}' 과제는 조회할 수 있는 과제가 아닙니다. 담당 과제({', '.join(known)})만 조회할 수 있습니다. "
+                                  "다른 과제의 인력을 대신 보여주지 말고 이 내용을 그대로 안내하세요.")
         if close:
             raise ValidationError(f"'{given}' 과제는 없습니다. '{close[0]}' 과제가 맞는지 사용자에게 확인하세요.")
         raise ValidationError(f"'{given}' 과제는 없습니다. 등록된 과제: {', '.join(known)}")
@@ -635,6 +661,7 @@ class Service:
 
     def inspection_contracts(self) -> list[dict]:
         """검수 화면의 업체·계약번호 선택 목록. 계약번호가 있는 계약만, 같은 번호는 한 줄(인원 수·전체 기간)."""
+        self._require_rates()
         groups: dict[tuple[str, str], dict] = {}
         for c in self.contracts():
             if not c.get("contract_no"):
@@ -654,6 +681,7 @@ class Service:
         """
         from pmo.contracts import month_range
         from pmo.inspection import RULE, by_project, line_items
+        self._require_rates()
         company, contract_no = required(company, "업체명"), required(contract_no, "계약번호")
         rows = [c for c in self.contracts() if c.get("contract_no") and c["contract_no"].strip() == contract_no
                 and c["company"].strip().casefold() == company.casefold()]

@@ -17,7 +17,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Callable
 
-from pmo.agent.actions import _person, build_plan
+from pmo.agent.actions import _person, build_plan, typo_message
+from pmo.agent.guardrails import similar_names
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
 from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES as CHECKLIST_STATUSES
@@ -68,8 +69,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("find_people", "이름 일부로 인력 후보를 찾는다. 동명이인이 있으면 여러 명이 나온다. "
          "1명이면 summary에 그 사람의 현재·예정·과거 투입(과제·기간·매출귀속 프로젝트·투입 Type·MM)과 구매계약 요약이 함께 온다. "
          "summary로 답할 수 있으면 바로 답하고, 이후 도구는 결과의 내부 관리번호(id)로 호출한다.",
-         _obj({"name": {"type": "string", "description": "사람 이름(예: 조협력). 직함은 빼도 된다"},
-               "company": {"type": "string", "description": "질문에 업체명이 따로 있을 때만(예: '감마테크 김협력'의 감마테크). 이름을 넣지 않는다"}}),
+         _obj({"name": {"type": "string", "description": "사람 이름(예: 이가상). 직함은 빼도 된다"},
+               "company": {"type": "string", "description": "질문에 업체명이 따로 있을 때만(예: '가상솔루션 이가상'의 가상솔루션). 이름을 넣지 않는다"}}),
          # name을 스키마 필수로 두지 않는다: 이름을 company에 넣는 실수를 코드에서 바로잡기 위함(빈 이름은 _find_people이 거절)
          handler=lambda s, a: _find_people(s, a.get("name"), a.get("company"))),
     Tool("get_assignment_timeline", "인력의 현재·과거·예정 투입을 조회한다. 투입마다 과제, 매출귀속 프로젝트, 기간, 등급, "
@@ -89,15 +90,15 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "계약번호 미발급(without_number=true). 계약번호를 사람 이름 칸에 넣지 않고 이 도구를 쓴다.",
          _obj({"contract_no": STR, "company": STR, "status": _enum(CONTRACT_STATUSES),
                "without_number": {"type": "boolean", "description": "계약번호가 아직 없는 계약만"}}),
-         handler=lambda s, a: [{k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date",
-                                                   "status", "label")} | {"contract_no": c["contract_no"] or "미발급"}
-                               for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"),
-                                                           bool(a.get("without_number")))]),
+         handler=lambda s, a: _company_is_not_a_person(s, a) or [
+             {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "status", "label")}
+             | {"contract_no": c["contract_no"] or "미발급"}
+             for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"), bool(a.get("without_number")))]),
     Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true). "
          "이름을 모를 때 쓴다. 이름이 있으면 find_people.",
          _obj({"company": STR, "category": _enum(("정", "협력", "컨설팅")), "job_role": STR,
                "without_account": {"type": "boolean", "description": "계정 ID가 아직 없는 사람만"}}),
-         handler=lambda s, a: [{k: p[k] for k in ("name", "company", "category", "job_role")}
+         handler=lambda s, a: _company_is_not_a_person(s, a) or [{k: p[k] for k in ("name", "company", "category", "job_role")}
                                | {"account_id": p["account_id"] or "미발급"}
                                for p in s.search_people(a.get("company"), a.get("category"), a.get("job_role"),
                                                         bool(a.get("without_account")))]),
@@ -199,6 +200,18 @@ TOOL_LABELS = {
 _CONTRACT_NO = re.compile(r"^[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}$")
 
 
+def _company_is_not_a_person(service: Service, args: dict):
+    """조건 조회의 업체 칸에 사람 이름을 넣으면 그 사람의 인력 찾기 결과를 대신 돌려준다.
+
+    v3 평가 V01: '이협력' 업체로 검색. 처음엔 오류로 알렸더니 모델이 다시 부르지 않고 '인력 찾기를 호출하세요'를 사용자에게 전함.
+    """
+    company = str(args.get("company") or "").strip()
+    if company and not any(company in (p["company"] or "") for p in service.people()) and service.find_people(company):
+        return {"note": f"'{company}'은(는) 업체가 아니라 인력 이름이라 인력 찾기 결과를 돌려줍니다.",
+                "people": _find_people(service, company)}
+    return None
+
+
 def _not_a_name(value) -> str | None:
     """사람 이름 자리에 계약번호·조건 문장이 들어왔으면 맞는 도구를 알려 준다(v2 평가 C09·C10)."""
     text = str(value or "").strip()
@@ -246,7 +259,12 @@ def _monthly_mm(row: dict) -> dict | str:
         return "계산 근거 없음"
 
 
+RATE_HIDDEN = "권한 없음(단가는 PM·PMO만 조회)"
+
+
 def _rate(row: dict) -> str:
+    if row.get("rate_hidden"):
+        return RATE_HIDDEN
     rate = row.get("purchase_rate")
     if rate in (None, ""):
         return "미입력"
@@ -267,7 +285,11 @@ def _brief(a: dict) -> dict:
 
 def _timeline(service: Service, person_id: str) -> dict:
     t = service.assignment_timeline(person_id)
-    return {k: ([_work(r) for r in v] if isinstance(v, list) else v) for k, v in t.items()}
+    result = {k: ([_work(r) for r in v] if isinstance(v, list) else v) for k, v in t.items()}
+    shared = _months_with_several(t["current"] + t["upcoming"] + t["past"])
+    if shared:
+        result["months_with_several_assignments"] = shared      # v3 평가 S08: 투입 이력 조회 후에도 달별 합계를 보게
+    return result
 
 
 def _find_people(service: Service, name: str, company: str | None = None) -> list[dict]:
@@ -292,6 +314,8 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
         hint = _not_a_name(value)
         if hint:
             raise ValidationError(hint)
+        if similar_names(service, value):          # v3: 오타면 비슷한 이름을 되묻게 한다(빈 결과로 '없다'고 끝내지 않음)
+            raise ValidationError(typo_message(service, value))
     if len(found) != 1:
         return found
     person = found[0]
@@ -306,7 +330,25 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
         "past": [_brief(a) for a in t["past"][:3]],
         "contracts": contracts or ("구매계약 대상 아님(정 분류)" if person["category"] == "정" else "등록된 구매계약 없음"),
     }
+    shared = _months_with_several(t["current"] + t["upcoming"] + t["past"])
+    if shared:
+        summary["months_with_several_assignments"] = shared
     return [dict(person, summary=summary)]
+
+
+def _months_with_several(rows: list[dict]) -> dict:
+    """한 달에 Full time 투입이 2건 이상이면 과제별 MM과 합계(v3 평가 S08: 8월 0.25+0.75 중 하나만 답함)."""
+    months: dict[str, list[tuple[str, Decimal]]] = {}
+    for a in rows:
+        values = _monthly_mm(a)
+        if isinstance(values, dict):
+            for month, mm in values.items():
+                months.setdefault(month, []).append((a["project"] or "과제 미입력", Decimal(mm)))
+    return {m: " + ".join(f"{p} {format(v.normalize(), 'f')}" for p, v in parts)
+               + f" = 합계 {format(sum(v for _, v in parts).normalize(), 'f')}MM"
+            for m, parts in sorted(months.items()) if len(parts) > 1}
+
+
 
 
 def _query_database(service: Service, question: str) -> dict:

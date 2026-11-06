@@ -58,7 +58,8 @@ class AgentPlanner:
     def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]:
         agent = question.get("agent") if self.routing == "category" else None
         self.last = self._ask(service, question["question"], self.client, agent=agent)
-        return [(c["tool"], c["arguments"]) for c in self.last["calls"]]
+        # v3: 가드레일이 막아 실행하지 않은 호출(blocked)은 부르지 않은 것으로 본다
+        return [(c["tool"], c["arguments"]) for c in self.last["calls"] if not c.get("blocked")]
 
 
 def check(expect: dict, result: dict) -> list[str]:

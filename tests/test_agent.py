@@ -255,9 +255,9 @@ def test_token_usage_is_recorded_for_answers_and_evals(fake_ollama, service):
     FakeOllama.reply = {"message": {"content": "답입니다"}, "prompt_eval_count": 1200, "eval_count": 35}
     client = OllamaClient(model="m", base_url=fake_ollama)
     assert client.chat([], [])["usage"] == {"prompt_tokens": 1200, "completion_tokens": 35}
-    result = ask(service, "안녕", client)
+    result = ask(service, "처리 안 한 알림 있어?", client)
     assert result["tokens"] == {"prompt": 1200, "completion": 35, "llm_calls": 1}
-    scripted = ask(service, "안녕", ScriptedClient([text("답")]))           # usage가 없는 클라이언트도 동작
+    scripted = ask(service, "처리 안 한 알림 있어?", ScriptedClient([text("답")]))           # usage가 없는 클라이언트도 동작
     assert scripted["ok"] and scripted["tokens"] == {"prompt": 0, "completion": 0, "llm_calls": 1}
     from pmo.harness import token_summary
     summary = token_summary([{"tokens": {"prompt": 1000, "completion": 30, "llm_calls": 2}},
