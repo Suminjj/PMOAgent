@@ -379,7 +379,7 @@ def mm_calculator(day: date) -> None:
                                     "전체 근무일": m["working_days"],
                                     "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
                                     "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
-                                   for m in months]), hide_index=True, use_container_width=True)
+                                   for m in months]), hide_index=True, width="stretch")
         st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
                    "Part time은 수동 입력이라 계산하지 않습니다.")
 

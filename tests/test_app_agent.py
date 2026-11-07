@@ -71,7 +71,7 @@ def test_question_shows_answer_and_tool_results(app):
     assert not app.exception
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
     assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 오른쪽 결과 패널 제목
-    assert app.dataframe and len(app.dataframe[0].value) == 2
+    assert app.dataframe and len(app.dataframe[-1].value) == 2   # [0]은 홈 MM 계산기의 월별 근거 표
 
 
 def test_follow_up_keeps_conversation(app):
