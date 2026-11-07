@@ -1352,10 +1352,24 @@
       "agent": "inspection",
       "case": "검수 금액 + 계산 불가",
       "question": "감마테크 C-2026-202 11월 검수 금액 알려줘.",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "inspection_amount_by_revenue_project",
+          "args": {
+            "company": "감마테크",
+            "contract_no": "C-2026-202",
+            "year": 2026,
+            "month": 11
+          },
+          "expect": {
+            "ok": true,
+            "inspection_total_won": 11500000,
+            "contract_total_won": 54000000
+          }
+        }
+      ],
       "answer": {
-        "target": "v3",
-        "hold_ok": true,
+        "target": "추가 기능",
         "must_include": [
           "11,500,000",
           "계산 불가"
@@ -1368,14 +1382,26 @@
       "agent": "inspection",
       "case": "계약 총액",
       "question": "알파솔루션 C-2026-103 계약 총액 얼마야?",
-      "steps": null,
+      "steps": [
+        {
+          "tool": "inspection_amount_by_revenue_project",
+          "args": {
+            "company": "알파솔루션",
+            "contract_no": "C-2026-103"
+          },
+          "expect": {
+            "ok": true,
+            "inspection_total_won": 6664000,
+            "contract_total_won": 25914000
+          }
+        }
+      ],
       "answer": {
-        "target": "v3",
-        "hold_ok": true,
+        "target": "추가 기능",
         "must_include": [
           "25,914,000"
         ],
-        "note": "검수 Agent 도구 연결 전(추가 기능)에는 v3: 답변 보류 + '검수하기' 화면 안내."
+        "note": "11/07 검수 Agent 도구 연결. 월을 말하지 않아 조회 월은 이번 달(기준일 11월), 계약 총액은 계약 기간 전체."
       }
     },
     {

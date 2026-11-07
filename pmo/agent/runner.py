@@ -185,7 +185,7 @@ def ask(service: Service, question: str, client: ChatClient,
     # v3 사전 검사: 지시 무시·관리하지 않는 정보·업무 범위 밖·다른 카테고리·검수 금액은 LLM 없이 정해진 방식으로 답한다
     early = guardrails.precheck(service, question, spec.key, LABELS, history)
     if early:
-        answer = early["answer"] or AGENTS["inspection"].planned_notice
+        answer = early["answer"]
         return _finish(service, client, spec, question, t0, started, answer, [], None, tokens, early["kind"])
     texts = [question] + [str(m.get("content") or "") for m in reversed(history or [])]
     guardrail = None

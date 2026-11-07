@@ -156,10 +156,15 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
          "구매 필요 판정 기준 미확정(TODO).",
          _obj({"year": INT, "month": INT}, ("year", "month")), status=PLANNED),
-    Tool("inspection_amount_by_revenue_project", "업체의 월 검수 금액(원)을 매출귀속 프로젝트별로 계산한다. 검수 금액을 물을 때만 쓴다. "
-         "인력의 매출귀속 프로젝트가 무엇인지 묻는 질문은 get_assignment_timeline으로 답한다. "
-         "배분·반올림·부가세 규칙 미확정(TODO).",
-         _obj({"company": STR, "year": INT, "month": INT}, ("company", "year", "month")), status=PLANNED),
+    Tool("inspection_amount_by_revenue_project", "업체·계약번호의 검수 금액(원)을 매출귀속 프로젝트별로 계산한다(화면 '검수하기'와 같은 계산). "
+         "검수 금액·계약 총액을 물을 때만 쓴다. 인력의 매출귀속 프로젝트가 무엇인지 묻는 질문은 get_assignment_timeline으로 답한다. "
+         "계약번호를 모르면 비운다(업체의 계약이 여러 건이면 결과가 되물을 내용을 알려 준다). "
+         "월을 말하지 않으면 비운다(이번 달). 금액은 결과의 문장을 그대로 옮기고 직접 계산하지 않는다.",
+         _obj({"company": {"type": "string", "description": "업체명"},
+               "contract_no": {"type": "string", "description": "계약번호(예: C-2026-202). 모르면 비운다"},
+               "year": INT, "month": {"type": "integer", "description": "검수 월(1~12). 말하지 않으면 비운다"}},
+              ("company",)),
+         handler=lambda s, a: _inspection(s, **a)),
 ]}
 
 
@@ -174,7 +179,7 @@ TOOL_LABELS = {
     "contracts_ending": "월·업체별 계약 종료 예정",
     "pending_contract_alerts": "미확인 계약 종료 알림",
     "monthly_purchase_needs": "월별 구매 필요 인력 (구현 예정)",
-    "inspection_amount_by_revenue_project": "매출귀속 프로젝트별 검수 금액 (구현 예정)",
+    "inspection_amount_by_revenue_project": "매출귀속 프로젝트별 검수 금액",
     "query_database": "자유 조회 (Text-to-SQL, 읽기 전용)",
     "prepare_contract_save": "구매계약 등록·수정",
     "prepare_contract_delete": "구매계약 삭제",
@@ -338,6 +343,80 @@ def _months_with_several(rows: list[dict]) -> dict:
             for m, parts in sorted(months.items()) if len(parts) > 1}
 
 
+
+
+def _won(amount) -> str:
+    return "계산 불가" if amount is None else f"{amount:,}원"
+
+
+def _fold_no(text: str) -> str:
+    return str(text or "").casefold().replace(" ", "")
+
+
+def _inspection(service: Service, company: str, contract_no: str = "", year: int | None = None,
+                month: int | None = None) -> dict:
+    """검수 Agent 도구(11/07 담당자: 검수 Agent가 실제로 답하게). 화면 '검수하기'와 같은 Service.inspection을 부른다.
+
+    업체 → 계약번호(모르면 업체의 계약이 1건일 때 그 계약, 여러 건이면 되물을 문장) → 조회 월(기본 이번 달).
+    금액은 작은 모델이 다시 계산하지 않도록 원 단위 문장으로 돌려준다. 과제 리더는 Service가 막는다(단가 권한).
+    """
+    from pmo.inspection import RULE
+    options = service.inspection_contracts()
+    if contract_no:
+        found = [c for c in options if _fold_no(c["contract_no"]) == _fold_no(contract_no)]
+        if len(found) > 1 and company:
+            found = [c for c in found if _fold_no(company) in _fold_no(c["company"])] or found
+        if not found:
+            raise ValidationError(f"계약번호 {contract_no} 계약이 없습니다. 계약번호가 발급된 계약만 검수 금액을 계산할 수 있습니다.")
+    else:
+        found = [c for c in options if _fold_no(company) and _fold_no(company) in _fold_no(c["company"])]
+        if not found:
+            numbered = [c for c in options if _fold_no(c["contract_no"]) == _fold_no(company)]
+            if numbered:                                  # 업체 칸에 계약번호를 넣은 경우
+                found = numbered
+            else:
+                raise ValidationError(f"'{company}' 업체의 계약번호가 발급된 계약이 없습니다. 업체명을 확인해 주세요.")
+        if len(found) > 1:
+            listed = ", ".join(f"{c['contract_no']}({c['start_date']}~{c['end_date']}, {c['people']}명)" for c in found)
+            raise ValidationError(f"{found[0]['company']}의 계약이 {len(found)}건 있습니다: {listed}. "
+                                  "어느 계약번호의 검수 금액을 볼까요?")
+    target = found[0]
+    today = service.clock()
+    year = year or today.year
+    month = month or today.month
+    if not 1 <= month <= 12:
+        raise ValidationError("월은 1~12로 입력하세요.")
+    ym = f"{year:04d}-{month:02d}"
+    r = service.inspection(target["company"], target["contract_no"], ym, ym)
+    contract_by = {p["revenue_project"]: p for p in r["contract"]["projects"]}
+    selected = r["selected"]
+    projects = [{"revenue_project": p["revenue_project"], "people": p["people"], "mm": p["mm"] or "계산 불가",
+                 "amount": _won(p["amount"]),
+                 "contract_amount": _won(contract_by.get(p["revenue_project"], {}).get("amount"))}
+                for p in selected["projects"]]
+    for name, p in contract_by.items():                   # 조회 월에 투입이 없는 프로젝트도 계약 총액에는 들어간다
+        if all(x["revenue_project"] != name for x in projects):
+            projects.append({"revenue_project": name, "people": p["people"], "mm": "조회 월 투입 없음",
+                             "amount": "해당 없음(조회 월 투입 없음)", "contract_amount": _won(p["amount"])})
+    lines = [{"name": l["name"], "revenue_project": l["revenue_project"], "period": f"{l['start']}~{l['end']}",
+              "mm": l["mm"] or "계산 불가", "amount": _won(l["amount"]), **({"note": l["note"]} if l["note"] else {})}
+             for l in selected["lines"]]
+    incomplete = [f"{l['name']}: {l['note']}" for l in selected["lines"] if l["amount"] is None]
+    if not lines:                                         # 계산 실패가 아니라 조회 월에 검수할 투입이 없음
+        none = f"해당 없음({ym}은 계약 기간 {r['contract_period'][0]}~{r['contract_period'][1]} 밖이거나 투입이 없음)"
+        total_text, mm_text = none, none
+    else:
+        total_text, mm_text = _won(selected["total"]), selected["mm"] or "계산 불가"
+    return {"company": r["company"], "contract_no": r["contract_no"],
+            "contract_period": f"{r['contract_period'][0]}~{r['contract_period'][1]}",
+            "inspection_period": f"{r['period'][0]}~{r['period'][1]}", "people": r["people"],
+            "inspection_total": total_text, "inspection_mm": mm_text,
+            "contract_total": _won(r["contract"]["total"]),
+            "projects": sorted(projects, key=lambda p: p["revenue_project"]), "lines": lines,
+            "not_calculated": incomplete,
+            "not_calculated_note": ("계산 불가 건은 합계에서 뺐습니다(0원으로 보지 않음)." if incomplete else ""),
+            "rule": RULE + ". 기본안 규칙이며 구매시스템 계약금액과 대조 전입니다.",
+            "inspection_total_won": selected["total"], "contract_total_won": r["contract"]["total"]}
 
 
 def _query_database(service: Service, question: str) -> dict:
