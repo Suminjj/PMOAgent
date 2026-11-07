@@ -882,7 +882,25 @@ else:
     if log:
         st.dataframe([{"시각": r["started_at"], "작업": r["operation"], "주체": r["actor"],
                        "성공": "성공" if r["ok"] else "실패", "소요(ms)": r["duration_ms"],
-                       "결과": r["result"] or "", "오류": r["error"] or ""} for r in log],
-                     use_container_width=True, hide_index=True)
+                       "결과": (r["result"] or "")[:120], "오류": r["error"] or ""} for r in log],
+                     width="stretch", hide_index=True)
+        # 11/08 담당자: Agent 도구의 입력·결과 원본(JSON)은 홈 채팅에 보이지 않고 여기서만 본다.
+        tool_rows = [r for r in log if r["operation"].startswith("tool:")]
+        if tool_rows:
+            with st.expander("Agent 도구 호출 상세 (입력·결과 원본)"):
+                pick = st.selectbox("도구 호출", range(len(tool_rows)), key="runlog_pick",
+                                    format_func=lambda i: f"{tool_rows[i]['started_at'][:19].replace('T', ' ')} · "
+                                                          f"{tool_rows[i]['operation'][5:]} · "
+                                                          f"{'성공' if tool_rows[i]['ok'] else '실패'}")
+                row = tool_rows[pick]
+                inputs = json.loads(row["input_json"] or "{}").get("kwargs", {})
+                st.markdown(f"**{row['operation'][5:]}**(" + ", ".join(f"{k}={v}" for k, v in inputs.items()) + ")")
+                if row["ok"]:
+                    try:
+                        st.json(json.loads(row["result"] or "null"))
+                    except ValueError:              # 너무 길어 잘린 기록
+                        st.code(row["result"] or "")
+                else:
+                    st.error(row["error"] or "실패")
     else:
         st.info("실행 기록이 없습니다.")

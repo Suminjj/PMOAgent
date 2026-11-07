@@ -547,9 +547,21 @@ def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
         result = {"ok": False, "tool": name, "error": f"처리 중 오류: {type(exc).__name__}"}
     result["duration_ms"] = round((time.perf_counter() - t0) * 1000)
     service.record_run(f"tool:{name}", (), dict(args), result["ok"],
-                    None if not result["ok"] else _summary_of(result["data"]),
+                    None if not result["ok"] else _log_result(result["data"]),
                     result.get("error"), t0, started)
     return result
+
+
+LOG_LIMIT = 20000
+
+
+def _log_result(data: Any) -> str:
+    """실행 기록(run_log)에 남길 도구 결과 전체(JSON). 11/08 담당자: 화면에는 JSON을 보이지 않고 기록에만 남긴다.
+
+    실행 기록은 PM·PMO만 보고 Text-to-SQL에서도 제외된다(SAFE_TABLES). 너무 길면 앞부분만 남긴다.
+    """
+    text = json.dumps(data, ensure_ascii=False, default=str)
+    return text if len(text) <= LOG_LIMIT else text[:LOG_LIMIT] + f" …(총 {len(text):,}자, 앞 {LOG_LIMIT:,}자만 기록)"
 
 
 def _summary_of(data: Any) -> str:

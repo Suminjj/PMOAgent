@@ -239,3 +239,12 @@ def test_calculate_mm_tool(service):
                      access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
     hidden = call_tool(leader, "calculate_mm", {"start_date": "2026-08-01", "end_date": "2026-08-31", "person_id": "김컨설"})
     assert not hidden["ok"]                                          # 권한 밖 인력은 없는 사람처럼
+
+
+def test_tool_result_is_kept_in_run_log(service):
+    """11/08 담당자: 화면에는 JSON을 보이지 않고, 도구 입력·결과 원본은 실행 기록에만 남긴다."""
+    import json
+    call_tool(service, "calculate_mm", {"start_date": "2026-11-02", "end_date": "2026-11-15"})
+    row = next(r for r in service.run_log(10) if r["operation"] == "tool:calculate_mm")
+    assert json.loads(row["input_json"])["kwargs"] == {"start_date": "2026-11-02", "end_date": "2026-11-15"}
+    assert json.loads(row["result"])["mm"] == "0.476"                 # 결과 전체(JSON)

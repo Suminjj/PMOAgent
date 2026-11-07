@@ -51,12 +51,47 @@ def table(rows: list[dict], fields: list[str] | None = None) -> None:
                  use_container_width=True, hide_index=True)
 
 
+_LABELS = {**COLUMNS, "period": "기간", "basis": "기준", "month": "월", "assigned_days": "투입 근무일",
+           "working_days": "전체 근무일", "note": "비고", "rule": "계산 규칙", "today": "기준일", "members": "인력",
+           "include_past": "과거 포함"}
+
+
+def _render_mm(data: dict) -> None:
+    """기간 MM 계산 결과(calculate_mm)를 사람이 읽는 모양으로."""
+    who = f"{data['name']} · " if data.get("name") else ""
+    st.markdown(f"**{who}{data['period']} · {data['mm']} MM**")
+    if data.get("basis"):
+        st.caption(data["basis"])
+    if data.get("months"):
+        table(data["months"], ["month", "assigned_days", "working_days"])
+    if data.get("assignments"):
+        table(data["assignments"], ["project", "revenue_project", "assignment_type", "period", "mm", "note"])
+    if data.get("note"):
+        st.caption(data["note"])
+    if data.get("rule"):
+        st.caption(data["rule"])
+
+
+def _render_dict(data: dict) -> None:
+    """전용 화면이 없는 도구 결과: JSON 대신 값 목록·표로 보여준다(11/08 담당자). 원본은 실행 기록에 남는다."""
+    plain = {k: v for k, v in data.items() if not isinstance(v, (dict, list)) and k not in HIDDEN_KEYS}
+    if plain:
+        st.dataframe([{"항목": _LABELS.get(k, k), "값": _cell(v)} for k, v in plain.items()],
+                     width="stretch", hide_index=True)
+    for key, value in data.items():
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            st.markdown(f"**{_LABELS.get(key, key)}** ({len(value)}건)")
+            table(value)
+
+
 def _render_data(tool: str, data) -> None:
     if tool == "get_assignment_timeline":
         st.caption(f"기준일 {data.get('today')}")
         for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입", "past")):
             st.markdown(f"**{title}** ({len(data.get(key, []))}건)")
             table(data.get(key, []), _ASSIGNMENT_FIELDS)
+    elif tool == "calculate_mm":
+        _render_mm(data)
     elif tool == "inspection_amount_by_revenue_project":
         st.caption(f"{data['company']} · 계약번호 {data['contract_no']} · 계약 기간 {data['contract_period']} · "
                    f"검수 기간 {data['inspection_period']}")
@@ -72,14 +107,16 @@ def _render_data(tool: str, data) -> None:
             st.warning("계산 불가 " + str(len(data["not_calculated"])) + "건(합계에서 뺌): " + ", ".join(data["not_calculated"]))
         st.caption(data["rule"])
     elif tool == "query_database":
-        st.code(data["sql"], language="sql")
-        st.caption("LlamaIndex가 만든 SQL을 검사한 뒤 읽기 전용으로 실행했습니다."
+        # 만든 SQL은 화면에 보이지 않고 실행 기록에 남긴다(11/08 담당자: 사람이 보는 화면에는 개발용 표시를 두지 않음)
+        st.caption("자유 조회(읽기 전용)로 찾은 결과입니다."
                    + (" 결과가 많아 일부만 표시합니다." if data.get("truncated") else ""))
         table(data["rows"], data["columns"] or None)
     elif isinstance(data, list):
         table(data, _TABLE_FIELDS.get(tool))
+    elif isinstance(data, dict):
+        _render_dict(data)
     else:
-        st.json(data)
+        st.write(data)
 
 
 def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: int = 0, latest: bool = False) -> None:
@@ -105,9 +142,8 @@ def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: in
         return
     with st.expander(f"🔎 조회 결과 · 도구 {len(calls)}개 · {seconds}", expanded=latest):
         for number, call in reads:
-            args = ", ".join(f"{k}={v}" for k, v in call["arguments"].items()) or "입력 없음"
+            # 도구 이름·입력값(개발용 표시)은 화면에 두지 않고 실행 기록(run_log)에 남긴다(11/08 담당자)
             st.markdown(f"**{number}. {TOOL_LABELS.get(call['tool'], call['tool'])}**")
-            st.caption(f"{call['tool']}({args})")
             if call["ok"]:
                 _render_data(call["tool"], call.get("data"))
             else:

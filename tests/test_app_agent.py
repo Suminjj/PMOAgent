@@ -73,6 +73,9 @@ def test_question_shows_answer_and_tool_results(app):
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
     assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 답변 아래 조회 결과의 도구 이름
     assert app.dataframe and len(app.dataframe[-1].value) == 2
+    # 11/08 담당자: 채팅 화면에는 도구 입력(함수 모양)·JSON 원본을 보이지 않는다(실행 기록에만 남김)
+    assert not app.json
+    assert not any("pending_contract_alerts(" in c.value for c in app.caption)
 
 
 def test_follow_up_keeps_conversation(app):
@@ -164,3 +167,12 @@ def test_home_mm_calculator_replaces_account_card(app):
     app.button(key="home_mm_calc").click()
     app.date_input(key="mm_calc_end").set_value(date(2026, 9, 1)).run()
     assert any("종료일은 시작일보다" in e.value for e in app.error)
+
+
+def test_mm_question_shows_readable_result_not_json(app):
+    """11/08: '11월 2일부터 15일까지 MM' → 기간 MM 계산 도구, 결과는 표로(JSON 아님)."""
+    REPLIES[:] = [tool("calculate_mm", start_date="2026-11-02", end_date="2026-11-15"), say("0.476 MM입니다.")]
+    app.chat_input[0].set_value("11월 2일부터 15일까지 MM 얼마야?").run()
+    assert not app.exception and not app.json
+    assert any("0.476 MM" in m.value for m in app.markdown)
+    assert any("기간 MM 계산" in m.value for m in app.markdown)
