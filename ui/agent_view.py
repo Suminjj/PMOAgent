@@ -57,6 +57,20 @@ def _render_data(tool: str, data) -> None:
         for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입", "past")):
             st.markdown(f"**{title}** ({len(data.get(key, []))}건)")
             table(data.get(key, []), _ASSIGNMENT_FIELDS)
+    elif tool == "inspection_amount_by_revenue_project":
+        st.caption(f"{data['company']} · 계약번호 {data['contract_no']} · 계약 기간 {data['contract_period']} · "
+                   f"검수 기간 {data['inspection_period']}")
+        st.markdown(f"**검수 금액** {data['inspection_total']} · **계약 총액(계약 기간 전체)** {data['contract_total']}")
+        st.dataframe([{"매출귀속 프로젝트": p["revenue_project"], "인원": p["people"], "MM": p["mm"],
+                       "검수 금액": p["amount"], "프로젝트 전체 금액(계약 기간)": p["contract_amount"]}
+                      for p in data["projects"]], width="stretch", hide_index=True)
+        if data["lines"]:
+            st.dataframe([{"인력": l["name"], "매출귀속 프로젝트": l["revenue_project"], "기간": l["period"],
+                           "MM": l["mm"], "검수 금액": l["amount"], "비고": l.get("note", "")}
+                          for l in data["lines"]], width="stretch", hide_index=True)
+        if data["not_calculated"]:
+            st.warning("계산 불가 " + str(len(data["not_calculated"])) + "건(합계에서 뺌): " + ", ".join(data["not_calculated"]))
+        st.caption(data["rule"])
     elif tool == "query_database":
         st.code(data["sql"], language="sql")
         st.caption("LlamaIndex가 만든 SQL을 검사한 뒤 읽기 전용으로 실행했습니다."

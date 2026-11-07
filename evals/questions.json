@@ -147,7 +147,7 @@
       "question": "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
       "agent": "inspection",
       "template": "B 업체의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.",
-      "note": "검수 금액 규칙 미확정. 구현 예정 도구라 실패해야 정상이다.",
+      "note": "11/07 검수 Agent 도구 연결: 화면 '검수하기'와 같은 계산(기본안 규칙). 베타컨설팅은 계약번호가 하나라 계약번호 없이도 계산한다.",
       "steps": [
         {
           "tool": "inspection_amount_by_revenue_project",
@@ -157,7 +157,7 @@
             "month": 9
           },
           "expect": {
-            "ok": false
+            "ok": true
           }
         }
       ]

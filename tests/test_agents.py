@@ -49,7 +49,7 @@ def test_writes_stay_in_their_category():
         "prepare_account_id", "prepare_assignment_update", "prepare_assignment_transfer", "prepare_assignment_replace"}
     assert {t for t in AGENTS["contract"].tools if t.startswith("prepare_")} == {
         "prepare_contract_save", "prepare_contract_delete", "prepare_alert_ack"}
-    assert AGENTS["inspection"].tools == ("inspection_amount_by_revenue_project",)
+    assert AGENTS["inspection"].tools == ("inspection_amount_by_revenue_project", "search_contracts")
 
 
 def test_prompt_injects_guides_only_for_specialists():
@@ -129,7 +129,7 @@ def test_category_routing_in_eval_harness():
     rows = {r["id"]: r for r in report["results"]}
     assert rows["Q7"]["agent_used"] == "inspection" and rows["Q3"]["agent_used"] == "contract"
     assert any("[업무 지침: contract-expiry]" in p for p, _ in client.prompts)
-    assert rows["Q7"]["success"] and "구현 예정" in rows["Q7"]["answer"]   # 검수는 LLM 없이 고정 안내
+    assert any("[업무 지침: inspection-amount]" in p for p, _ in client.prompts)   # 11/07: 검수 Agent도 LLM으로 답함
     with pytest.raises(ValueError):
         AgentPlanner(client, "router")
 
@@ -226,14 +226,17 @@ def test_eval_allows_skipping_find_people_when_names_are_resolved():
     assert not rows["Q2"]["success"]                                  # 동명이인 확인은 생략 불가
 
 
-def test_planned_only_agent_answers_without_llm(service):
-    """비교 평가 Q7: 검수 Agent가 두 번 연속 도구를 부르지 않고 엉뚱한 카테고리를 안내함."""
-    client = ScriptedClient([])                                       # LLM을 부르면 pop에서 실패
-    result = ask(service, "베타컨설팅의 9월 검수 금액을 매출귀속 프로젝트별로 알려줘.", client, agent="inspection")
-    assert result["ok"] and "구현 예정" in result["answer"] and not client.seen
-    assert [(c["tool"], c["ok"]) for c in result["calls"]] == [("inspection_amount_by_revenue_project", False)]
-    assert "구현 예정" in result["calls"][0]["error"]
-    assert all(not a.planned_notice for k, a in AGENTS.items() if k != "inspection")
+def test_inspection_agent_answers_with_the_screen_calculation(service):
+    """11/07 담당자: 검수 Agent가 정해진 안내 대신 화면 '검수하기'와 같은 계산으로 답한다(이전 Q7은 구현 예정 안내)."""
+    client = ScriptedClient([tool_call("inspection_amount_by_revenue_project", company="베타컨설팅"),
+                             text("베타컨설팅 계약 총액은 16,000,000원입니다.")])
+    result = ask(service, "베타컨설팅 계약 총액 얼마야?", client, agent="inspection")
+    assert result["ok"] and result["guardrail"] is None
+    call = result["calls"][0]
+    assert call["ok"] and call["data"]["contract_no"] == "DEMO-C-200"          # 계약이 하나라 계약번호 없이 찾음
+    assert call["data"]["contract_total_won"] == service.inspection(
+        "베타컨설팅", "DEMO-C-200", "2026-10", "2026-10")["contract"]["total"]
+    assert all(not a.planned_notice for a in AGENTS.values())
 
 
 def test_revenue_project_questions_belong_to_staff():
@@ -245,7 +248,7 @@ def test_revenue_project_questions_belong_to_staff():
     contract = system_prompt(AGENTS["contract"], "2026-11-15")
     assert "인력관리: 인력 찾기, 투입 과제·기간·매출귀속 프로젝트" in contract     # 다른 Agent가 바르게 안내
     assert "매출귀속 프로젝트" in TOOLS["get_assignment_timeline"].description
-    assert "검수 금액을 물을 때만" in TOOLS["inspection_amount_by_revenue_project"].description
+    assert "검수 금액·계약 총액을 물을 때만" in TOOLS["inspection_amount_by_revenue_project"].description
     assert "검수 금액(원)을 물을 때만" in SYSTEM_PROMPT
 
 

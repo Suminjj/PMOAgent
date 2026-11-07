@@ -80,6 +80,9 @@ def check(expect: dict, result: dict) -> list[str]:
             problems.append(f"빠진 인력 {missing}")
     if "end_dates" in expect and sorted(r["end_date"] for r in data) != sorted(expect["end_dates"]):
         problems.append(f"종료일 {[r['end_date'] for r in data]} (기대 {expect['end_dates']})")
+    for key in ("inspection_total_won", "contract_total_won"):     # 검수 금액(원)은 숫자로 비교
+        if key in expect and (data or {}).get(key) != expect[key]:
+            problems.append(f"{key} {(data or {}).get(key)} (기대 {expect[key]})")
     if "action" in expect and (data or {}).get("plan", {}).get("action") != expect["action"]:
         problems.append(f"변경 계획 {(data or {}).get('plan', {}).get('action')} (기대 {expect['action']})")
     if "current_projects" in expect:
