@@ -1,4 +1,4 @@
-"""홈 화면(AI Agent 챗봇 + 수행 결과) 테스트 (Streamlit AppTest + 가짜 Ollama 서버, 가상 데이터)."""
+"""홈 화면(AI Agent 채팅: 질문·답변·수행 결과를 한 화면에) 테스트 (Streamlit AppTest + 가짜 Ollama 서버, 가상 데이터)."""
 from datetime import date
 import json
 import os
@@ -61,7 +61,8 @@ def test_home_is_first_page_with_chat_and_results(app):
     assert app.session_state["nav_page"] == "홈"
     assert not app.sidebar.radio                                         # 메뉴는 라디오가 아니라 버튼
     assert [b.key for b in app.sidebar.button][:7] == [f"nav_{i}" for i in range(7)]
-    assert [s.value for s in app.subheader][:2] == ["🤖 PMO Agent", "수행 결과"]
+    assert [s.value for s in app.subheader][:1] == ["🤖 PMO Agent"]
+    assert "수행 결과" not in [s.value for s in app.subheader]          # 11/08: 오른쪽 결과 패널 없음
     assert app.chat_input
 
 
@@ -70,8 +71,11 @@ def test_question_shows_answer_and_tool_results(app):
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
     assert not app.exception
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
-    assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 오른쪽 결과 패널 제목
-    assert app.dataframe and len(app.dataframe[-1].value) == 2   # [0]은 홈 MM 계산기의 월별 근거 표
+    assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 답변 아래 조회 결과의 도구 이름
+    assert app.dataframe and len(app.dataframe[-1].value) == 2
+    # 11/08 담당자: 채팅 화면에는 도구 입력(함수 모양)·JSON 원본을 보이지 않는다(실행 기록에만 남김)
+    assert not app.json
+    assert not any("pending_contract_alerts(" in c.value for c in app.caption)
 
 
 def test_follow_up_keeps_conversation(app):
@@ -82,7 +86,9 @@ def test_follow_up_keeps_conversation(app):
     assert not app.exception
     roles = [m["role"] for m in RECEIVED[-2]["messages"]]
     assert roles[:4] == ["system", "user", "assistant", "user"]
-    assert any(s.label == "결과를 볼 질문" for s in app.selectbox)
+    assert not any(s.label == "결과를 볼 질문" for s in app.selectbox)   # 11/08: 질문 고르기 없이 한 화면 채팅
+    results = [e for e in app.expander if "조회 결과" in e.label]
+    assert len(results) == 2                                           # 답변마다 그 아래에 조회 결과
 
 
 def test_example_button_and_llm_unavailable(app, monkeypatch):
@@ -98,7 +104,7 @@ def contract_end(service):
 
 def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     REPLIES[:] = [tool("prepare_contract_save", person_id="이가상", end_date="2027-12-31"),
-                  say("화면 오른쪽 확인 카드에서 '확인 후 저장'을 눌러 주세요.")]
+                  say("답변 아래 확인 카드에서 '확인 후 저장'을 눌러 주세요.")]
     app.chat_input[0].set_value("이가상 계약 종료일 2027년 12월 31일로 바꿔줘").run()
     assert not app.exception
     service = Service(Path(os.environ["PMO_DB_PATH"]))
@@ -148,12 +154,25 @@ def test_auto_category_keeps_all_tools(app):
 
 
 def test_home_mm_calculator_replaces_account_card(app):
-    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기를 둔다(11/07 담당자)."""
+    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기 버튼을 둔다. 누르면 모달로 연다(11/07 담당자)."""
     assert not any("계정 ID 미발급" in m.value for m in app.markdown)
+    assert not app.date_input                                        # 처음에는 버튼만
+    app.button(key="home_mm_calc").click().run()
+    # 화면에서는 모달 안의 입력만 다시 실행되지만, AppTest는 전체를 다시 실행하므로 버튼도 함께 누른다.
+    app.button(key="home_mm_calc").click()
     app.date_input(key="mm_calc_start").set_value(date(2026, 10, 1))
     app.date_input(key="mm_calc_end").set_value(date(2026, 10, 10)).run()
     assert not app.exception
-    assert any(">0.250<" in m.value for m in app.markdown)            # 10월 1~10일 = 5/20 (구매시스템)
-    assert any(c.value == "근무일 5/20일" for c in app.caption)
+    assert any(">0.250<" in m.value and "근무일 5/20일" in m.value for m in app.markdown)   # 10월 1~10일 = 5/20
+    app.button(key="home_mm_calc").click()
     app.date_input(key="mm_calc_end").set_value(date(2026, 9, 1)).run()
     assert any("종료일은 시작일보다" in e.value for e in app.error)
+
+
+def test_mm_question_shows_readable_result_not_json(app):
+    """11/08: '11월 2일부터 15일까지 MM' → 기간 MM 계산 도구, 결과는 표로(JSON 아님)."""
+    REPLIES[:] = [tool("calculate_mm", start_date="2026-11-02", end_date="2026-11-15"), say("0.476 MM입니다.")]
+    app.chat_input[0].set_value("11월 2일부터 15일까지 MM 얼마야?").run()
+    assert not app.exception and not app.json
+    assert any("0.476 MM" in m.value for m in app.markdown)
+    assert any("기간 MM 계산" in m.value for m in app.markdown)

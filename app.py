@@ -1,4 +1,5 @@
 """Run with: python -m streamlit run app.py"""
+from html import escape
 import os
 import sqlite3
 import json
@@ -351,12 +352,12 @@ def confirm() -> None:
         st.rerun()
 
 
+@st.dialog("🧮 MM 계산기 · Full time", width="medium")
 def mm_calculator(day: date) -> None:
-    """홈 MM 계산기(11/07 담당자): Full time 기간을 넣으면 구매시스템 방식 MM을 바로 보여준다. 저장하지 않는다."""
-    st.markdown('<div class="pmo-kpi-label">MM 계산기 · Full time</div>', unsafe_allow_html=True)
+    """홈 MM 계산기(11/07 담당자): 버튼을 누르면 모달로 열린다. Full time 기간을 넣으면 구매시스템 방식 MM을
+    바로 보여준다. 저장하지 않는다."""
     left, right = st.columns(2, gap="small")
-    month_start = day.replace(day=1)
-    start = left.date_input("시작일", value=month_start, key="mm_calc_start", format="YYYY-MM-DD")
+    start = left.date_input("시작일", value=day.replace(day=1), key="mm_calc_start", format="YYYY-MM-DD")
     end = right.date_input("종료일", value=day, key="mm_calc_end", format="YYYY-MM-DD")
     if not start or not end:
         st.caption("시작일과 종료일을 고르세요.")
@@ -368,27 +369,26 @@ def mm_calculator(day: date) -> None:
         return
     months = result["months"]
     days = sum(m["assigned_days"] for m in months)
-    st.markdown(f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div>',
+    detail = (f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일" if len(months) == 1
+              else f"{len(months)}개월 · 투입 근무일 {days}일")
+    st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">투입 MM · {escape(detail)}</div>'
+                f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div></div>',
                 unsafe_allow_html=True)
-    if len(months) == 1:
-        st.caption(f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일")
-    else:
-        st.caption(f"{len(months)}개월 · 투입 근무일 {days}일")
-    with st.popover("월별 근거"):
-        st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
-                                    "전체 근무일": m["working_days"],
-                                    "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
-                                    "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
-                                   for m in months]), hide_index=True, width="stretch")
-        st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
-                   "Part time은 수동 입력이라 계산하지 않습니다.")
+    st.markdown("**월별 근거**")
+    st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
+                                "전체 근무일": m["working_days"],
+                                "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
+                                "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
+                               for m in months]), hide_index=True, width="stretch")
+    st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
+               "Part time은 수동 입력이라 계산하지 않습니다.")
 
 
 if page == "홈":
     from pmo.agent.agents import AGENTS, AUTO
     from pmo.agent.llm import OllamaClient
     from pmo.agent.runner import ask
-    from ui.agent_view import render_turn_results
+    from ui.agent_view import render_turn_inline
 
     client = OllamaClient()
     turns = st.session_state.setdefault("chat_turns", [])
@@ -402,32 +402,32 @@ if page == "홈":
         theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
                        (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
                        ("등록 인력", _people_count, "명", False)], columns=3)
-    with calc_col, st.container(key="home_mm_calc"):
+    # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
+    if calc_col.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
         mm_calculator(day)
-    chat_col, result_col = st.columns(2, gap="large")
-
-    with chat_col, st.container(key="home_chat_panel"):
+    # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
+    # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
+    with st.container(key="home_chat_panel"):
         st.subheader("🤖 PMO Agent")
         st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
-                   "등록·수정·삭제는 오른쪽 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
+                   "등록·수정·삭제는 답변 아래 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
         # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
         agent_key = st.session_state.setdefault("home_category", AUTO)
         st.markdown("**업무 카테고리**", help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 "
                     "가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
-        with st.container(key="home_agent"):   # 3개 · 2개 두 줄 (10/20 담당자)
+        with st.container(key="home_agent"):
             keys = list(AGENTS)
-            columns = list(st.columns(3)) + list(st.columns(2))
-            for column, key in zip(columns, keys):
+            for column, key in zip(st.columns(len(keys)), keys):
                 column.button(theme.agent_label(key, AGENTS[key].label), key=f"home_agent_{key}",
                               type="primary" if key == agent_key else "secondary", width="stretch",
                               on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
-        with st.container(height=480, border=True):
+        with st.container(height=640, border=True, key="home_chat_log"):
             if not turns:
                 with st.chat_message("assistant"):
-                    st.markdown("무엇을 도와드릴까요? 인력·투입·구매계약을 묻거나, "
-                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 오른쪽 확인 카드에서 확인 후 진행됩니다.")
-            for turn in turns:
+                    st.markdown("무엇을 도와드릴까요? 인력·투입·MM·구매계약·검수 금액을 묻거나, "
+                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.")
+            for index, turn in enumerate(turns):
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
                 with st.chat_message("assistant"):
@@ -440,7 +440,7 @@ if page == "홈":
                         st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
                     for message in turn.get("done", {}).values():
                         st.success(message)
-                    st.caption(f"도구 {len(turn['calls'])}개 사용 · {turn['duration_ms'] / 1000:.1f}초")
+                    render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
         asked = None
         if not turns:
             st.caption(f"예시 질문 · {agent.label}")
@@ -462,21 +462,6 @@ if page == "홈":
         if turns and st.button("대화 지우기", key="home_clear"):
             turns.clear()
             st.rerun()
-
-    with result_col, st.container(key="home_result_panel"):
-        st.subheader("수행 결과")
-        if not turns:
-            st.info("질문하면 Agent가 사용한 도구와 조회 결과가 여기에 표시됩니다.")
-        else:
-            selected = len(turns) - 1
-            if len(turns) > 1:
-                # 새 질문이 생기면 위젯을 새로 만들어 가장 최근 결과를 기본으로 보여준다.
-                selected = st.selectbox(
-                    "결과를 볼 질문", list(range(len(turns))), index=selected,
-                    key=f"home_pick_{len(turns)}",
-                    format_func=lambda i: f"{i + 1}. [{turns[i].get('agent_label', '자동(전체)')}] "
-                                          f"{turns[i]['question'][:40]}")
-            render_turn_results(turns[selected], service, actor, selected)
 
 elif page == "전체 인력 조회":
     st.subheader("인력 목록")
@@ -897,7 +882,25 @@ else:
     if log:
         st.dataframe([{"시각": r["started_at"], "작업": r["operation"], "주체": r["actor"],
                        "성공": "성공" if r["ok"] else "실패", "소요(ms)": r["duration_ms"],
-                       "결과": r["result"] or "", "오류": r["error"] or ""} for r in log],
-                     use_container_width=True, hide_index=True)
+                       "결과": (r["result"] or "")[:120], "오류": r["error"] or ""} for r in log],
+                     width="stretch", hide_index=True)
+        # 11/08 담당자: Agent 도구의 입력·결과 원본(JSON)은 홈 채팅에 보이지 않고 여기서만 본다.
+        tool_rows = [r for r in log if r["operation"].startswith("tool:")]
+        if tool_rows:
+            with st.expander("Agent 도구 호출 상세 (입력·결과 원본)"):
+                pick = st.selectbox("도구 호출", range(len(tool_rows)), key="runlog_pick",
+                                    format_func=lambda i: f"{tool_rows[i]['started_at'][:19].replace('T', ' ')} · "
+                                                          f"{tool_rows[i]['operation'][5:]} · "
+                                                          f"{'성공' if tool_rows[i]['ok'] else '실패'}")
+                row = tool_rows[pick]
+                inputs = json.loads(row["input_json"] or "{}").get("kwargs", {})
+                st.markdown(f"**{row['operation'][5:]}**(" + ", ".join(f"{k}={v}" for k, v in inputs.items()) + ")")
+                if row["ok"]:
+                    try:
+                        st.json(json.loads(row["result"] or "null"))
+                    except ValueError:              # 너무 길어 잘린 기록
+                        st.code(row["result"] or "")
+                else:
+                    st.error(row["error"] or "실패")
     else:
         st.info("실행 기록이 없습니다.")

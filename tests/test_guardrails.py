@@ -219,3 +219,32 @@ def test_inspection_tool(service):
                      access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
     denied = call_tool(leader, "inspection_amount_by_revenue_project", {"company": "감마테크", "contract_no": "C-2026-202"})
     assert not denied["ok"] and "PM·PMO만" in denied["error"]
+
+
+def test_calculate_mm_tool(service):
+    """11/08 담당자: '11월 1일부터 18일까지 MM'에 '미입력'이라 답하던 문제 → 기간 MM 계산 도구."""
+    from datetime import date
+    from pmo.mm import calculate_full_time
+    plain = call_tool(service, "calculate_mm", {"start_date": "2026-11-01", "end_date": "2026-11-18"})
+    assert plain["ok"] and plain["data"]["mm"] == calculate_full_time(date(2026, 11, 1), date(2026, 11, 18))["mm"]
+    assert call_tool(service, "calculate_mm", {"start_date": "2026-10-01", "end_date": "2026-10-10"})["data"]["mm"] == "0.250"
+    assert not call_tool(service, "calculate_mm", {"start_date": "2026-11-18", "end_date": "2026-11-01"})["ok"]
+    # 인력을 주면 그 사람 투입과 겹치는 날만 계산한다(김정직: 현재 Full time 투입)
+    person = call_tool(service, "calculate_mm", {"start_date": "2026-11-01", "end_date": "2026-11-18", "person_id": "김정직"})
+    assert person["ok"] and person["data"]["name"] == "김정직" and person["data"]["assignments"]
+    # 정협력 8월: 한 달에 과제 두 건(0.25 + 0.75) → 투입마다 계산해 더함(평가 S08)
+    jung = call_tool(service, "calculate_mm", {"start_date": "2026-08-01", "end_date": "2026-08-31", "person_id": "정협력"})
+    assert jung["ok"] and len(jung["data"]["assignments"]) == 2 and jung["data"]["mm"] == "1.000"
+    leader = Service(service.path, clock=lambda: TODAY,
+                     access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
+    hidden = call_tool(leader, "calculate_mm", {"start_date": "2026-08-01", "end_date": "2026-08-31", "person_id": "김컨설"})
+    assert not hidden["ok"]                                          # 권한 밖 인력은 없는 사람처럼
+
+
+def test_tool_result_is_kept_in_run_log(service):
+    """11/08 담당자: 화면에는 JSON을 보이지 않고, 도구 입력·결과 원본은 실행 기록에만 남긴다."""
+    import json
+    call_tool(service, "calculate_mm", {"start_date": "2026-11-02", "end_date": "2026-11-15"})
+    row = next(r for r in service.run_log(10) if r["operation"] == "tool:calculate_mm")
+    assert json.loads(row["input_json"])["kwargs"] == {"start_date": "2026-11-02", "end_date": "2026-11-15"}
+    assert json.loads(row["result"])["mm"] == "0.476"                 # 결과 전체(JSON)
