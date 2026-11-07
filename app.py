@@ -351,6 +351,39 @@ def confirm() -> None:
         st.rerun()
 
 
+def mm_calculator(day: date) -> None:
+    """홈 MM 계산기(11/07 담당자): Full time 기간을 넣으면 구매시스템 방식 MM을 바로 보여준다. 저장하지 않는다."""
+    st.markdown('<div class="pmo-kpi-label">MM 계산기 · Full time</div>', unsafe_allow_html=True)
+    left, right = st.columns(2, gap="small")
+    month_start = day.replace(day=1)
+    start = left.date_input("시작일", value=month_start, key="mm_calc_start", format="YYYY-MM-DD")
+    end = right.date_input("종료일", value=day, key="mm_calc_end", format="YYYY-MM-DD")
+    if not start or not end:
+        st.caption("시작일과 종료일을 고르세요.")
+        return
+    try:
+        result = calculate_full_time(start, end)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+    months = result["months"]
+    days = sum(m["assigned_days"] for m in months)
+    st.markdown(f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div>',
+                unsafe_allow_html=True)
+    if len(months) == 1:
+        st.caption(f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일")
+    else:
+        st.caption(f"{len(months)}개월 · 투입 근무일 {days}일")
+    with st.popover("월별 근거"):
+        st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
+                                    "전체 근무일": m["working_days"],
+                                    "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
+                                    "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
+                                   for m in months]), hide_index=True, use_container_width=True)
+        st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
+                   "Part time은 수동 입력이라 계산하지 않습니다.")
+
+
 if page == "홈":
     from pmo.agent.agents import AGENTS, AUTO
     from pmo.agent.llm import OllamaClient
@@ -361,13 +394,16 @@ if page == "홈":
     turns = st.session_state.setdefault("chat_turns", [])
     day = service.clock()
     try:
-        ending, no_account = service.contracts_ending(day.year, day.month), service.search_people(without_account=True)
+        ending = service.contracts_ending(day.year, day.month)
     except sqlite3.Error:
-        ending, no_account = [], []
-    theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
-                   (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
-                   ("계정 ID 미발급 인력", len(no_account), "명", False),
-                   ("등록 인력", _people_count, "명", False)])
+        ending = []
+    kpi_col, calc_col = st.columns([3, 1], gap="small")
+    with kpi_col:
+        theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
+                       (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
+                       ("등록 인력", _people_count, "명", False)], columns=3)
+    with calc_col, st.container(key="home_mm_calc"):
+        mm_calculator(day)
     chat_col, result_col = st.columns(2, gap="large")
 
     with chat_col, st.container(key="home_chat_panel"):

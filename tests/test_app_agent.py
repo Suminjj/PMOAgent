@@ -1,4 +1,5 @@
 """홈 화면(AI Agent 챗봇 + 수행 결과) 테스트 (Streamlit AppTest + 가짜 Ollama 서버, 가상 데이터)."""
+from datetime import date
 import json
 import os
 import threading
@@ -144,3 +145,15 @@ def test_auto_category_keeps_all_tools(app):
     # 자동(전체)은 구현된 도구 전부를 받는다. '구현 예정' 도구는 v1.2부터 전문 Agent만(검수 금액 도구를 잘못 고르던 문제)
     assert len(RECEIVED[0]["tools"]) == sum(1 for tool in TOOLS.values() if tool.status == "구현")
     assert any(c.value == "🤖 자동(전체) Agent" for c in app.caption)
+
+
+def test_home_mm_calculator_replaces_account_card(app):
+    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기를 둔다(11/07 담당자)."""
+    assert not any("계정 ID 미발급" in m.value for m in app.markdown)
+    app.date_input(key="mm_calc_start").set_value(date(2026, 10, 1))
+    app.date_input(key="mm_calc_end").set_value(date(2026, 10, 10)).run()
+    assert not app.exception
+    assert any(">0.250<" in m.value for m in app.markdown)            # 10월 1~10일 = 5/20 (구매시스템)
+    assert any(c.value == "근무일 5/20일" for c in app.caption)
+    app.date_input(key="mm_calc_end").set_value(date(2026, 9, 1)).run()
+    assert any("종료일은 시작일보다" in e.value for e in app.error)
