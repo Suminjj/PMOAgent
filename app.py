@@ -387,6 +387,7 @@ def mm_calculator(day: date) -> None:
 if page == "홈":
     from pmo.agent.agents import AGENTS, AUTO
     from pmo.agent.llm import OllamaClient
+    from pmo.agent.router import ROUTER_LABEL, ask_routed
     from pmo.agent.runner import ask
     from ui.agent_view import render_turn_inline
 
@@ -413,12 +414,15 @@ if page == "홈":
                    "등록·수정·삭제는 답변 아래 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
         # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
         agent_key = st.session_state.setdefault("home_category", AUTO)
-        st.markdown("**업무 카테고리**", help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 "
-                    "가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
+        st.markdown("**업무 카테고리**", help="'자동 배정'이면 질문을 보고 맞는 전문 Agent(인력관리·구매계약·검수)를 "
+                    "자동으로 고릅니다. 여러 업무를 한 번에 물으면 Agent를 차례로 불러 답을 합칩니다. "
+                    "카테고리를 직접 고르면 그 Agent만 답합니다.")
         with st.container(key="home_agent"):
             keys = list(AGENTS)
             for column, key in zip(st.columns(len(keys)), keys):
-                column.button(theme.agent_label(key, AGENTS[key].label), key=f"home_agent_{key}",
+                # v3.1: '자동'은 라우터가 질문에 맞는 전문 Agent를 고른다(여러 업무면 차례로). 나머지는 직접 선택용.
+                label = ROUTER_LABEL if key == AUTO else AGENTS[key].label
+                column.button(theme.agent_label(key, label), key=f"home_agent_{key}",
                               type="primary" if key == agent_key else "secondary", width="stretch",
                               on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
@@ -431,8 +435,16 @@ if page == "홈":
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
                 with st.chat_message("assistant"):
-                    st.caption(theme.agent_label(turn.get("agent", AUTO),
-                                                 f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
+                    routing = turn.get("routing")
+                    if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
+                        how = {"keyword": "키워드", "multi": "여러 업무", "llm": "LLM 분류", "follow_up": "이어지는 대화",
+                               "precheck": "가드레일", "fallback": "전체 Agent"}.get(routing["method"], routing["method"])
+                        chosen = " → ".join(theme.agent_label(k, AGENTS[k].label if k != AUTO else "전체") + " Agent"
+                                            for k in routing["agents"])
+                        st.caption(f"🧭 자동 배정({how}) · {chosen}")
+                    else:
+                        st.caption(theme.agent_label(turn.get("agent", AUTO),
+                                                     f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
                     if turn["ok"]:
                         st.markdown(turn["answer"])
                     else:
@@ -443,7 +455,7 @@ if page == "홈":
                     render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
         asked = None
         if not turns:
-            st.caption(f"예시 질문 · {agent.label}")
+            st.caption(f"예시 질문 · {ROUTER_LABEL if agent.key == AUTO else agent.label}")
             for i, example in enumerate(agent.examples):
                 if st.button(example, key=f"home_example_{i}"):
                     asked = example
@@ -455,8 +467,13 @@ if page == "홈":
                 if turn["ok"]:
                     history += [{"role": "user", "content": turn["question"]},
                                 {"role": "assistant", "content": turn["answer"]}]
-            with st.spinner(f"{agent.label} Agent — '{asked}' 도구를 고르고 조회하는 중입니다…"):
-                result = ask(service, asked, client, history=history, agent=agent)
+            if agent.key == AUTO:
+                previous = (turns[-1].get("routing") or {}).get("agents") if turns else None
+                with st.spinner(f"질문에 맞는 Agent를 고르고 조회하는 중입니다 — '{asked}'"):
+                    result = ask_routed(service, asked, client, history=history, previous=previous)
+            else:
+                with st.spinner(f"{agent.label} Agent — '{asked}' 도구를 고르고 조회하는 중입니다…"):
+                    result = ask(service, asked, client, history=history, agent=agent)
             turns.append(dict(result, question=asked))
             st.rerun()
         if turns and st.button("대화 지우기", key="home_clear"):

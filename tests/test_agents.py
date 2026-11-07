@@ -131,7 +131,7 @@ def test_category_routing_in_eval_harness():
     assert any("[업무 지침: contract-expiry]" in p for p, _ in client.prompts)
     assert any("[업무 지침: inspection-amount]" in p for p, _ in client.prompts)   # 11/07: 검수 Agent도 LLM으로 답함
     with pytest.raises(ValueError):
-        AgentPlanner(client, "router")
+        AgentPlanner(client, "nonsense")
 
 
 def test_request_outside_category_is_not_turned_into_another_change(service):

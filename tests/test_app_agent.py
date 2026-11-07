@@ -130,7 +130,7 @@ def test_cancel_does_not_save(app):
 
 def test_category_selector_limits_agent_tools(app):
     labels = [app.button(key=f"home_agent_{k}").label for k in ("auto", "staff", "contract", "inspection")]
-    assert labels == ["🤖 자동(전체)", "👤 인력관리", "📄 구매계약", "💰 검수"]          # 11/06 근무 환경 준비 제외
+    assert labels == ["🤖 자동 배정", "👤 인력관리", "📄 구매계약", "💰 검수"]          # v3.1: 자동 = 라우터
     assert app.session_state["home_category"] == "auto"
     app.button(key="home_agent_contract").click().run()
     assert app.session_state["home_category"] == "contract"
