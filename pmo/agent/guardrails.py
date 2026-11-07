@@ -160,6 +160,22 @@ def ungrounded_person(service, tool: str, args: dict, texts: list[str], seen: li
     return None
 
 
+def invented_name(tool: str, args: dict, texts: list[str], seen: list[str]) -> str | None:
+    """인력 찾기에 사용자가 말하지 않은(등록되지도 않은) 이름을 넣으면 실행하지 않는다.
+
+    v3.1 PC 평가 G02(라우터): '계약 종료일 12월 31일로 바꿔줘'에 '김민수'를 지어내 찾고 '등록되지 않았다'고 답함.
+    등록된 이름은 ungrounded_person이 보고, 오타(사용자 문장에 있는 이름)는 도구가 되묻는다.
+    """
+    if tool != "find_people":
+        return None
+    value = str(args.get("name") or "").strip()
+    pool = _fold(" ".join(texts + seen))
+    if not value or _fold(value) in pool or _fold(value.split()[0]) in pool:
+        return None
+    return (f"'{value}'은(는) 사용자가 말한 이름이 아닙니다. 이름을 지어내지 말고, "
+            "누구의 일인지 사용자에게 물어보세요.")
+
+
 def ungrounded_names_in_answer(service, answer: str, texts: list[str], seen: list[str]) -> list[str]:
     """답변에 나온 인력 이름 중 사용자 문장·도구 결과 어디에도 없는 이름."""
     pool = " ".join(texts + seen)

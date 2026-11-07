@@ -401,6 +401,9 @@
             "person_id": "EV-07"
           },
           "or_find": true,
+          "alt": [
+            "calculate_mm"
+          ],
           "expect": {
             "ok": true,
             "current_projects": [
@@ -1145,6 +1148,9 @@
             "person_id": "EV-22"
           },
           "or_find": true,
+          "alt": [
+            "calculate_mm"
+          ],
           "expect": {
             "ok": true,
             "current_projects": []
@@ -1183,6 +1189,9 @@
             "person_id": "EV-08"
           },
           "or_find": true,
+          "alt": [
+            "calculate_mm"
+          ],
           "expect": {
             "ok": true,
             "current_projects": [

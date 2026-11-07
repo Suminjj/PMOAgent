@@ -75,7 +75,16 @@ class AgentPlanner:
             self.last = self._ask(service, text, self.client,
                                   agent=keys[0] if self.routing == "category" and keys else None)
         # v3: 가드레일이 막아 실행하지 않은 호출(blocked)은 부르지 않은 것으로 본다
-        return [(c["tool"], c["arguments"]) for c in self.last["calls"] if not c.get("blocked")]
+        return [_as_called(c) for c in self.last["calls"] if not c.get("blocked")]
+
+
+def _as_called(call: dict) -> tuple[str, dict]:
+    """채점용 (도구, 입력). 조건 조회 업체 칸에 인력 이름을 넣어 도구가 인력 찾기 결과를 돌려준 호출은 인력 찾기로 본다
+    (v3.1 PC 평가 R01: search_people(company='신협력')로 정답을 답했는데 도구 순서로 틀림)."""
+    data = call.get("data")
+    if call["tool"] in ("search_people", "search_contracts") and isinstance(data, dict) and "people" in data:
+        return FIND_TOOL, {"name": call["arguments"].get("company")}
+    return call["tool"], call["arguments"]
 
 
 def check(expect: dict, result: dict) -> list[str]:
@@ -150,6 +159,11 @@ def token_summary(rows: list[dict]) -> dict | None:
 FIND_TOOL = "find_people"
 
 
+def _match(step: dict, called: str) -> str:
+    """기대 단계와 실제 호출 비교용 이름. 단계에 대체 도구(alt)가 있고 그것을 불렀으면 같은 단계로 본다."""
+    return called if called in step.get("alt", ()) else step["tool"]
+
+
 def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
     """채점할 기대 도구 순서.
 
@@ -161,7 +175,8 @@ def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
     spare.subtract(Counter(st["tool"] for st in steps if not st.get("optional")))
     kept = []
     for st in steps:
-        if st.get("or_find") and st["tool"] not in called and FIND_TOOL in called:
+        if st.get("or_find") and st["tool"] not in called and not set(st.get("alt", ())) & set(called) \
+                and FIND_TOOL in called:
             continue
         if st.get("optional"):
             if spare[st["tool"]] <= 0:
@@ -222,12 +237,13 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
             # optional 단계(예: 이름을 받는 도구 앞의 find_people)는 건너뛰어도 된다. 코드가 이름을 관리번호로 바꾼다.
             steps = _expected_steps(q["steps"], called)
             problems = []
-            if called != [st["tool"] for st in steps]:
+            if called != [_match(st, name) for st, name in zip(steps, called)] or len(called) != len(steps):
                 want = [st["tool"] + ("(생략 가능)" if st.get("optional") else "") for st in q["steps"]]
                 problems.append(f"도구 순서 {called} (기대 {want})")
             else:
                 for (name, args), step in zip(calls, steps):
-                    problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
+                    expect = step["expect"] if name == step["tool"] else {"ok": True}   # 대체 도구는 성공만 본다
+                    problems += [f"{name}: {p}" for p in check(expect, call_tool(service, name, args))]
             row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"),
                    "route_tag": tag_agents(q.get("agent")),
                    "tools": [c[0] for c in calls], "graded": True,

@@ -333,7 +333,15 @@ def _calculate_mm(service: Service, start_date: str, end_date: str, person_id: s
     if not rows:
         return {"name": person.get("name"), "period": period, "mm": "0",
                 "note": f"{period} 기간에 이 인력의 투입이 없습니다."}
-    return {"name": person.get("name"), "period": period, "assignments": rows,
+    for row in rows:
+        if row["assignment_type"] == "Part time":
+            row["work_pattern"] = "Part time: 투입 기간 내내 다른 업무와 병행(예: 0.5MM = 기간 내내 절반)"
+        elif row["assignment_type"] == "Full time":
+            row["work_pattern"] = "Full time: 그 기간에만 전일 근무"
+    # 작은 모델이 과제별 값을 빼고 합계만 답하던 문제(v3 평가 S08) → 답에 그대로 옮길 문장
+    parts = ", ".join(f"{r['project']} {r['mm']}MM" for r in rows)
+    summary = (f"{person.get('name')} {period}: {parts}" + (f" / 합계 {format(total, 'f')}MM" if len(rows) > 1 else ""))
+    return {"name": person.get("name"), "period": period, "summary": summary, "assignments": rows,
             "mm": format(total, "f") + (" (계산 불가 건 제외)" if skipped else ""),
             "rule": "투입과 겹치는 날만 투입마다 구매시스템 방식으로 계산해 더함(Full time). 계산 불가는 0으로 보지 않고 합계에서 뺌"}
 

@@ -51,16 +51,18 @@ def questions(s: Service) -> list[dict]:
     alpha = s.inspection("알파솔루션", "C-2026-103", "2026-11", "2026-11")
     month_mm = {r["start_date"]: r["months"] for r in s.monthly_mm(2026) if r["name"] in ("정협력", "한협력")}
 
-    def step(tool, args, optional=False, or_find=False):
+    def step(tool, args, optional=False, or_find=False, alt=()):
         return {"tool": tool, "args": args, **({"optional": True} if optional else {}),
-                **({"or_find": True} if or_find else {})}
+                **({"or_find": True} if or_find else {}), **({"alt": list(alt)} if alt else {})}
 
     # 투입·계약 조회는 find_people 결과의 summary로도 답할 수 있다(v1.2): 인력 찾기를 불렀으면 조회 도구를 생략해도 정답.
     SUMMARY_TOOLS = ("get_assignment_timeline", "list_contracts")
 
-    def person(name, pid, tool, extra=None):
+    def person(name, pid, tool, extra=None, alt=()):
         return [step(FIND, {"name": name}, optional=True),
-                step(tool, {"person_id": pid, **(extra or {})}, or_find=tool in SUMMARY_TOOLS)]
+                step(tool, {"person_id": pid, **(extra or {})}, or_find=tool in SUMMARY_TOOLS, alt=alt)]
+
+    MM_ALT = ("calculate_mm",)   # v3.1: MM 질문은 기간 MM 계산 도구(인력 지정)로 답해도 정답(성공 여부만 확인)
 
     q = []
 
@@ -85,7 +87,7 @@ def questions(s: Service) -> list[dict]:
          step("get_assignment_timeline", {"person_id": "EV-04"}, or_find=True)],
         must_include=["2026-10-01", "2026-12-31"])
     add("S07", "staff", "과제 교체 + 투입 MM", "정협력 투입 과제별 MM 알려줘.",
-        person("정협력", "EV-07", "get_assignment_timeline"),
+        person("정협력", "EV-07", "get_assignment_timeline", alt=MM_ALT),
         must_include=[mm(t7["past"][0]["mm"]), mm(t7["current"][0]["mm"])])
     add("S08", "staff", "월별 MM (도구 없음)", "정협력 8월 MM 얼마야?", None, target="v3", hold_ok=True,
         must_include=[mm(month_mm["2026-07-01"]["2026-08"]), mm(month_mm["2026-08-10"]["2026-08"])],
@@ -172,11 +174,11 @@ def questions(s: Service) -> list[dict]:
              "계약 C-2026-206은 연결 투입을 풀어 두 투입을 모두 덮음.")
     baek, choi = s.assignments("EV-22")[0], s.assignments("EV-08")[0]
     add("H01", "staff", "0.5MM = 반 달 근무 (Full time)", "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
-        person("백협력", "EV-22", "get_assignment_timeline"), must_include=[baek["start_date"], baek["end_date"]],
+        person("백협력", "EV-22", "get_assignment_timeline", alt=MM_ALT), must_include=[baek["start_date"], baek["end_date"]],
         note=f"{baek['assignment_type']} {baek['start_date']}~{baek['end_date']} = {mm(baek['mm'])}MM: 10월 근무일 20일 중 10일만 "
              "근무(반 달). 한 달 내내 반씩 일한 것이 아니다.")
     add("H02", "staff", "0.5MM = 한 달 병행 (Part time)", "최협력 11월 0.5MM는 반 달만 일하는 거야?",
-        person("최협력", "EV-08", "get_assignment_timeline"), must_include=[choi["start_date"], choi["end_date"]],
+        person("최협력", "EV-08", "get_assignment_timeline", alt=MM_ALT), must_include=[choi["start_date"], choi["end_date"]],
         note=f"{choi['assignment_type']} {choi['start_date']}~{choi['end_date']} = {mm(choi['mm'])}MM: 한 달 내내 다른 업무와 "
              "반씩 병행. 반 달만 일하는 것이 아니다.")
     add("N01", "staff", "등록만 되고 투입 없음", "노협력 지금 무슨 과제야?",

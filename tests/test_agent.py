@@ -106,7 +106,7 @@ def test_agent_planner_in_eval_harness():
                 question = messages[1]["content"]
                 key = next((k for k in script if question.startswith(k)), None)
                 self.current = list(script[key]) if key else [text("모르겠습니다.")]
-            return self.current.pop(0)
+            return self.current.pop(0) if self.current else text("모르겠습니다.")   # v3.1 도구 재시도에도 답한다
 
     seen = []
     report = run(AgentPlanner(PerQuestion()), save=False, on_result=lambda r: seen.append(r["id"]))

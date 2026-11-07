@@ -35,9 +35,18 @@ def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> d
     작은 로컬 모델은 find_people을 건너뛰고 person_id를 비워 보내는 일이 있다. 이번 질문을 먼저 보고,
     없으면 최근 사용자 메시지를 거슬러 본다. 동명이인은 이름만 넣어 두고 변경 계획 단계에서 되묻는다.
     """
+    names = {p["name"] for p in service.people()}
+    if tool == "prepare_assignment_replace":
+        args = _fix_replace_target(service, args, texts[:1], names)
+    if tool == "calculate_mm":
+        # v3.1 PC 평가 S09: '한협력 9월 MM'에 인력을 빼고 계산(Full time 기준 1.000). 이번 질문에 인력이 한 명이면 채운다.
+        if not str(args.get("person_id") or "").strip():
+            found = guardrails.mentioned_people(service, texts[0]) if texts else []
+            if len(found) == 1:
+                return dict(args, person_id=found[0])
+        return args
     if not tool.startswith("prepare_") or str(args.get("person_id") or "").strip():
         return args
-    names = {p["name"] for p in service.people()}
     for text in texts:
         found = sorted({n for n in names if n and n in text}, key=len, reverse=True)
         found = [n for n in found if not any(n != m and n in m for m in found)]  # 긴 이름 우선
@@ -45,6 +54,29 @@ def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> d
             return dict(args, person_id=found[0])
         if found:
             return args   # 여러 사람이 언급되면 추측하지 않는다
+    return args
+
+
+def _fix_replace_target(service: Service, args: dict, texts: list[str], names: set[str]) -> dict:
+    """인력 교체에서 기존 인력 자리에 과제명 앞부분을 넣으면 바로잡는다.
+
+    v3.1 PC 평가 X01: '전표작성 자동화 류협력을 … 노협력(L6)으로 교체'에서 person_id='전표작성'.
+    기존 인력 칸이 등록 인력이 아니고 질문에 인력이 두 명(그중 하나가 교체 인력)이면 나머지를 기존 인력으로,
+    넣은 값이 과제명의 일부면 과제 칸으로 옮긴다.
+    """
+    value = str(args.get("person_id") or "").strip()
+    ids = {p["id"] for p in service.people()}
+    if not value or value in ids or any(n in value for n in names):
+        return args
+    mentioned = guardrails.mentioned_people(service, texts[0]) if texts else []
+    new = str(args.get("new_person_id") or "").strip()
+    others = [n for n in mentioned if n not in new]
+    if len(mentioned) == 2 and len(others) == 1:
+        fixed = dict(args, person_id=others[0])
+        project = next((p for p in service.project_names() if value in p), None)
+        if project and not args.get("project"):
+            fixed["project"] = project
+        return fixed
     return args
 
 
@@ -127,6 +159,7 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
     args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
     call["arguments"] = _fill_person(service, call["name"], args, user_texts)
     problem = (guardrails.missing_target(call["name"], call["arguments"])
+               or guardrails.invented_name(call["name"], call["arguments"], texts, guardrails.seen_text(calls))
                or _ungrounded(service, call["name"], call["arguments"], user_texts)
                or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
                                                guardrails.seen_text(calls)))
@@ -188,7 +221,7 @@ def ask(service: Service, question: str, client: ChatClient,
                  + (f"\n\n{focus}" if focus else "")},
                 *[{"role": m["role"], "content": str(m["content"])}
                   for m in (history or [])[-MAX_HISTORY:] if m.get("role") in ("user", "assistant")],
-                {"role": "user", "content": question}]
+                {"role": "user", "content": question + (f"\n\n({focus})" if focus else "")}]
     calls: list[dict] = []
     answer, error = "", None
     tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
@@ -207,7 +240,7 @@ def ask(service: Service, question: str, client: ChatClient,
                           "data": result.get("data"), "error": result.get("error")})
         max_steps, answer = 0, spec.planned_notice
     user_texts = [question] + [str(m.get("content") or "") for m in reversed(history or []) if m.get("role") == "user"]
-    nudged = False
+    nudged = tool_nudged = False
     try:
         steps = 0
         while steps < max_steps:
@@ -219,6 +252,16 @@ def ask(service: Service, question: str, client: ChatClient,
             tokens["completion"] += int(usage.get("completion_tokens") or 0)
             if not reply["tool_calls"]:
                 answer = _clean_answer(reply["content"])
+                people = guardrails.mentioned_people(service, question)
+                if not calls and people and not tool_nudged and tools and not guardrails.is_redirect(answer):
+                    # v3.1 PC 평가 S07·H01·V01: 질문에 등록 인력이 있는데 도구 없이 답함('이름을 알려주세요'·'없는 인력'·추측).
+                    # 한 번 다시 시켜 도구로 확인하게 한다.
+                    tool_nudged, guardrail = True, "tool_retry"
+                    messages += [{"role": "assistant", "content": reply["content"]},
+                                 {"role": "system", "content": f"도구를 부르지 않고 답했다. 질문의 인력({', '.join(people)})은 등록된 인력이다. "
+                                                               "맡은 도구로 먼저 조회하고 도구 결과로만 답하라."}]
+                    answer = ""
+                    continue
                 if focus and guardrails.is_redirect(answer):
                     # 여러 업무 질문: 다른 Agent가 맡은 부분의 '다른 카테고리로 가라' 안내 문장만 뺀다(v3.1)
                     answer = _drop_redirect(answer) or answer
