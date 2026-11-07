@@ -388,7 +388,7 @@ if page == "홈":
     from pmo.agent.agents import AGENTS, AUTO
     from pmo.agent.llm import OllamaClient
     from pmo.agent.runner import ask
-    from ui.agent_view import render_turn_results
+    from ui.agent_view import render_turn_inline
 
     client = OllamaClient()
     turns = st.session_state.setdefault("chat_turns", [])
@@ -405,30 +405,29 @@ if page == "홈":
     # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
     if calc_col.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
         mm_calculator(day)
-    chat_col, result_col = st.columns(2, gap="large")
-
-    with chat_col, st.container(key="home_chat_panel"):
+    # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
+    # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
+    with st.container(key="home_chat_panel"):
         st.subheader("🤖 PMO Agent")
         st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
-                   "등록·수정·삭제는 오른쪽 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
+                   "등록·수정·삭제는 답변 아래 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
         # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
         agent_key = st.session_state.setdefault("home_category", AUTO)
         st.markdown("**업무 카테고리**", help="카테고리를 고르면 그 업무 전문 Agent가 필요한 도구와 업무 지침만 "
                     "가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.")
-        with st.container(key="home_agent"):   # 3개 · 2개 두 줄 (10/20 담당자)
+        with st.container(key="home_agent"):
             keys = list(AGENTS)
-            columns = list(st.columns(3)) + list(st.columns(2))
-            for column, key in zip(columns, keys):
+            for column, key in zip(st.columns(len(keys)), keys):
                 column.button(theme.agent_label(key, AGENTS[key].label), key=f"home_agent_{key}",
                               type="primary" if key == agent_key else "secondary", width="stretch",
                               on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
-        with st.container(height=480, border=True):
+        with st.container(height=640, border=True, key="home_chat_log"):
             if not turns:
                 with st.chat_message("assistant"):
-                    st.markdown("무엇을 도와드릴까요? 인력·투입·구매계약을 묻거나, "
-                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 오른쪽 확인 카드에서 확인 후 진행됩니다.")
-            for turn in turns:
+                    st.markdown("무엇을 도와드릴까요? 인력·투입·MM·구매계약·검수 금액을 묻거나, "
+                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.")
+            for index, turn in enumerate(turns):
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
                 with st.chat_message("assistant"):
@@ -441,7 +440,7 @@ if page == "홈":
                         st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
                     for message in turn.get("done", {}).values():
                         st.success(message)
-                    st.caption(f"도구 {len(turn['calls'])}개 사용 · {turn['duration_ms'] / 1000:.1f}초")
+                    render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
         asked = None
         if not turns:
             st.caption(f"예시 질문 · {agent.label}")
@@ -463,21 +462,6 @@ if page == "홈":
         if turns and st.button("대화 지우기", key="home_clear"):
             turns.clear()
             st.rerun()
-
-    with result_col, st.container(key="home_result_panel"):
-        st.subheader("수행 결과")
-        if not turns:
-            st.info("질문하면 Agent가 사용한 도구와 조회 결과가 여기에 표시됩니다.")
-        else:
-            selected = len(turns) - 1
-            if len(turns) > 1:
-                # 새 질문이 생기면 위젯을 새로 만들어 가장 최근 결과를 기본으로 보여준다.
-                selected = st.selectbox(
-                    "결과를 볼 질문", list(range(len(turns))), index=selected,
-                    key=f"home_pick_{len(turns)}",
-                    format_func=lambda i: f"{i + 1}. [{turns[i].get('agent_label', '자동(전체)')}] "
-                                          f"{turns[i]['question'][:40]}")
-            render_turn_results(turns[selected], service, actor, selected)
 
 elif page == "전체 인력 조회":
     st.subheader("인력 목록")

@@ -1,4 +1,4 @@
-"""홈 화면 오른쪽 '수행 결과' 패널: Agent가 호출한 도구와 조회 결과를 표로 보여준다."""
+"""홈 화면 채팅의 수행 결과: Agent가 호출한 도구와 조회 결과를 답변 아래에 보여준다(11/08 한 화면 채팅)."""
 import streamlit as st
 
 from pmo.agent.agents import AGENTS, AUTO
@@ -82,29 +82,33 @@ def _render_data(tool: str, data) -> None:
         st.json(data)
 
 
-def render_turn_results(turn: dict, service=None, actor: str = "", turn_index: int = 0) -> None:
-    """질문 한 번에 Agent가 사용한 도구와 결과를 차례로 보여준다.
+def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: int = 0, latest: bool = False) -> None:
+    """채팅 답변 아래에 붙는 수행 결과(11/08 담당자: 질문·답변을 한 화면에).
 
-    prepare_* 도구 결과(변경 계획)는 '현재 → 변경' 확인 카드로 보여주고, 사용자 확인 후에만 저장한다.
+    확인 카드(prepare_*)는 바로 보이게 답변 아래에 두고, 조회 결과 표는 '조회 결과' 접기 상자에 넣는다
+    (가장 최근 답변만 펼침). 저장은 이전과 같이 카드의 '확인 후 저장'을 눌러야 한다.
     """
     from ui.agent_actions import render_plan
-    st.caption(f"질문: {turn['question']}")
-    if not turn["calls"]:
-        if turn["ok"]:
-            st.info("도구를 사용하지 않은 답변입니다. 조회 결과가 필요하면 질문을 구체적으로 바꿔 보세요.")
-        else:
-            st.error(turn["error"])
+    calls = turn["calls"]
+    plans = [(n, c) for n, c in enumerate(calls, 1) if c["tool"].startswith("prepare_")]
+    reads = [(n, c) for n, c in enumerate(calls, 1) if not c["tool"].startswith("prepare_")]
+    for number, call in plans:
+        if call["ok"] and service is not None:
+            with st.container(border=True):
+                st.markdown(f"**{TOOL_LABELS.get(call['tool'], call['tool'])}**")
+                render_plan(service, call["data"]["plan"], f"act{turn_index}_{number}", actor, turn, number)
+        elif not call["ok"]:
+            st.info(f"확인 카드를 만들지 않았습니다: {call.get('error')}")
+    seconds = f"{turn['duration_ms'] / 1000:.1f}초"
+    if not reads:
+        st.caption(f"도구 {len(calls)}개 사용 · {seconds}")
         return
-    for number, call in enumerate(turn["calls"], 1):
-        with st.container(border=True):
+    with st.expander(f"🔎 조회 결과 · 도구 {len(calls)}개 · {seconds}", expanded=latest):
+        for number, call in reads:
             args = ", ".join(f"{k}={v}" for k, v in call["arguments"].items()) or "입력 없음"
             st.markdown(f"**{number}. {TOOL_LABELS.get(call['tool'], call['tool'])}**")
             st.caption(f"{call['tool']}({args})")
-            if call["ok"] and call["tool"].startswith("prepare_") and service is not None:
-                render_plan(service, call["data"]["plan"], f"act{turn_index}_{number}", actor, turn, number)
-            elif call["ok"]:
+            if call["ok"]:
                 _render_data(call["tool"], call.get("data"))
-            elif call["tool"].startswith("prepare_"):
-                st.info(f"확인 카드를 만들지 않았습니다: {call.get('error')}")
             else:
                 st.warning(call.get("error") or "도구 실행에 실패했습니다.")

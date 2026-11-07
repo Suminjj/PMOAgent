@@ -52,7 +52,7 @@ def _enum(values) -> dict:
     return {"type": "string", "enum": list(values)}
 
 
-PROPOSAL_NOTE = ("저장하지 않았습니다. 화면 오른쪽에 '현재 → 변경' 확인 카드를 띄웠습니다. "
+PROPOSAL_NOTE = ("저장하지 않았습니다. 답변 아래에 '현재 → 변경' 확인 카드를 띄웠습니다. "
                  "사용자가 '확인 후 저장'을 눌러야 반영됩니다.")
 
 
@@ -76,6 +76,14 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "투입 Type(Full time·Part time), 투입 MM이 있다. 한 사람의 매출귀속 프로젝트(월별 포함)·등급·MM을 묻는 질문도 이 도구로 답한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: _timeline(s, _pid(s, a["person_id"]))),
+    Tool("calculate_mm", "기간(시작일~종료일)의 MM을 구매시스템 방식으로 계산한다(시작·종료일 포함, 주말·공휴일 제외, "
+         "월별 근무일 비율 합). '11월 1일부터 18일까지 MM', '이가상 10/1~10/10 MM'처럼 날짜 구간의 MM을 물을 때 쓴다. "
+         "인력을 말하면 person_id에 넣는다(그 사람 투입과 겹치는 날만 계산), 인력이 없으면 비운다(Full time 기준 MM). "
+         "결과의 mm을 그대로 답하고 직접 계산하지 않는다.",
+         _obj({"start_date": DATE, "end_date": DATE,
+               "person_id": {"type": "string", "description": "인력 id 또는 이름. 말하지 않았으면 비운다"}},
+              ("start_date", "end_date")),
+         handler=lambda s, a: _calculate_mm(s, **a)),
     Tool("get_project_members", "과제(투입 과제, 예: APC Analysis)의 인력 목록을 조회한다. 사람마다 매출귀속 프로젝트·기간·"
          "투입 Type·MM과, 매출귀속 프로젝트별로 묶은 이름(by_revenue_project)이 있다. 기본은 현재·예정 투입, "
          "과거까지 보려면 include_past=true. 과제명은 사람 이름이 아니니 find_people에 넣지 않는다.",
@@ -172,6 +180,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 TOOL_LABELS = {
     "find_people": "인력 찾기",
     "get_assignment_timeline": "투입 이력 조회",
+    "calculate_mm": "기간 MM 계산",
     "get_project_members": "과제 인력 조회",
     "search_contracts": "조건으로 계약 찾기",
     "search_people": "조건으로 인력 찾기",
@@ -275,6 +284,58 @@ def _brief(a: dict) -> dict:
             "start_date": a["start_date"], "end_date": a["end_date"], "assignment_type": a["assignment_type"],
             "mm": a["mm"], "monthly_mm": _monthly_mm(a), "grade": a["grade"], "purchase_rate": _rate(a),
             "work_pattern": WORK_PATTERN.get(a["assignment_type"], "투입 Type 미입력")}
+
+
+def _calculate_mm(service: Service, start_date: str, end_date: str, person_id: str = "") -> dict:
+    """기간 MM 계산 도구(11/08 담당자: '11월 1일부터 18일까지 MM'에 '미입력'이라 답하던 문제).
+
+    인력이 없으면 Full time 기준 기간 MM(홈 'MM 계산기'와 같음). 인력이 있으면 그 사람 투입과 겹치는 날로 투입마다 계산한다.
+    Full time은 겹치는 기간으로 다시 계산하고, Part time은 기간 전체 MM만 있어 조회 기간이 투입 전체를 덮을 때만 그 값을 쓴다.
+    """
+    from pmo.inspection import _overlap
+    from pmo.mm import calculate_full_time
+    try:
+        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+    except ValueError as exc:
+        raise ValidationError("날짜는 YYYY-MM-DD 형식으로 넣으세요.") from exc
+    if end < start:
+        raise ValidationError("종료일이 시작일보다 빠릅니다.")
+    period = f"{start}~{end}"
+    if not person_id:
+        r = calculate_full_time(start, end)
+        return {"period": period, "basis": "Full time(그 기간 내내 투입) 기준", "mm": r["mm"],
+                "months": [{"month": m["month"], "assigned_days": m["assigned_days"],
+                            "working_days": m["working_days"]} for m in r["months"]],
+                "rule": "시작·종료일 포함, 주말·공휴일 제외, 월별 (투입 근무일 ÷ 그 달 근무일) 합, 합계 소수 셋째 자리 반올림"}
+    pid = _pid(service, person_id)
+    person = next((p for p in service.people() if p["id"] == pid), {})
+    rows, total, skipped = [], Decimal(0), []
+    for a in service.assignments(pid):
+        window = _overlap((a["start_date"], a["end_date"]), (start.isoformat(), end.isoformat()))
+        if window is None:
+            continue
+        row = {"project": a["project"], "revenue_project": a.get("revenue_project") or "미정",
+               "assignment_type": a.get("assignment_type") or "미입력", "period": f"{window[0]}~{window[1]}"}
+        if a.get("assignment_type") == "Full time":
+            row["mm"] = calculate_full_time(*window)["mm"]
+        elif a.get("assignment_type") == "Part time" and window == (date.fromisoformat(a["start_date"]),
+                                                                    date.fromisoformat(a["end_date"])) \
+                and a.get("mm") not in (None, ""):
+            row["mm"] = str(a["mm"])
+        else:
+            row["mm"] = "계산 불가"
+            row["note"] = ("Part time은 투입 기간 전체 MM만 있어 일부 기간으로 나눌 수 없음"
+                           if a.get("assignment_type") == "Part time" else "투입 Type 미입력")
+            skipped.append(row["project"])
+        if row["mm"] != "계산 불가":
+            total += Decimal(row["mm"])
+        rows.append(row)
+    if not rows:
+        return {"name": person.get("name"), "period": period, "mm": "0",
+                "note": f"{period} 기간에 이 인력의 투입이 없습니다."}
+    return {"name": person.get("name"), "period": period, "assignments": rows,
+            "mm": format(total, "f") + (" (계산 불가 건 제외)" if skipped else ""),
+            "rule": "투입과 겹치는 날만 투입마다 구매시스템 방식으로 계산해 더함(Full time). 계산 불가는 0으로 보지 않고 합계에서 뺌"}
 
 
 def _timeline(service: Service, person_id: str) -> dict:

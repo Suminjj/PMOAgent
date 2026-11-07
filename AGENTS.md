@@ -149,6 +149,9 @@
   [제안] 월별 값은 달마다 소수 셋째 자리 반올림이라 합계 반올림한 '투입 MM'과 0.001 차이가 날 수 있다. Part time은 월별 칸을 비운다.
 - [확정] 홈 숫자 카드 맨 오른쪽에 'MM 계산기' 버튼(네이비, 숫자 카드와 다른 색)을 두고 누르면 모달로 연다(11/07 담당자, '계정 ID 미발급 인력' 카드 대신). 시작일·종료일을 넣으면
   Full time MM(`calculate_full_time`, 구매시스템 방식)과 월별 근거를 보여준다. 저장하지 않는다. Part time은 수동 입력이라 계산하지 않는다.
+- [확정] Agent도 날짜 구간의 MM을 답한다(11/08 담당자: '11월 1일부터 18일까지 MM'에 '미입력'이라 답하던 문제).
+  [제안] 도구 calculate_mm(start_date, end_date, person_id 선택): 인력이 없으면 Full time 기준 기간 MM(MM 계산기와 같음),
+  인력이 있으면 그 사람 투입과 겹치는 날만 투입마다 계산해 더한다(Part time은 기간 전체를 덮을 때만, 아니면 '계산 불가'). 권한 필터를 따른다.
 - [확정] 내부 관리번호는 화면에 보이지 않는다. 인력은 이름·업체·직무·계정 ID로 구분해 고른다 (10/20 담당자).
 - [확정] Part time은 기간 전체 MM를 수동 입력한다. 미입력·잘못된 값을 0으로 대체하지 않는다.
 - [확정] 자동 계산 근거(월별 근무일·투입일·제외 공휴일·규칙)를 저장한다.
@@ -170,7 +173,9 @@
 ### 5.4 자연어 요청
 
 - [확정] 화면은 사람이 직접 조회·수정하는 메뉴별 화면과, 모든 기능을 AI Agent에게 자연어로 맡기는 홈 화면으로 구성한다.
-- [확정] 홈 화면은 반으로 나눠 왼쪽에 AI Agent 챗봇, 오른쪽에 수행 결과(사용한 도구와 조회 결과)를 보여준다.
+- [확정] 홈 화면은 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다(11/08 담당자, 이전: 왼쪽 챗봇·오른쪽 수행 결과).
+  [제안] 질문은 오른쪽 말풍선, 답변은 왼쪽. 답변 아래에 확인 카드(바로 보임)와 '조회 결과' 접기 상자(사용한 도구·결과 표, 최근 답변만 펼침).
+  업무 카테고리 버튼은 한 줄(4개).
 - [확정] 왼쪽 메뉴 (10/25 담당자): 홈 · 인력 관리(전체 인력 조회 · 신규 인력 등록 · 과제 투입 관리) ·
   구매계약 관리(전체 계약 조회 · 계약 등록·수정) · 검수 관리(검수하기) · 계약 종료 알림 · 변경 이력. 정의는 `ui/theme.py` NAV_GROUPS.
   전체 인력 조회에 인력 목록과 '전체 투입 · 월별 MM' 표를 함께 둔다. [제안] 인력 정보 수정·계정 ID 보완은 전체 인력 조회 아래에 둔다.
@@ -243,7 +248,7 @@
 - [확정] 10/20 담당자: 홈 챗봇 이름은 '🤖 PMO Agent'. 카테고리는 라디오 대신 이모티콘을 붙인 큰 버튼
   (🤖 자동·👤 인력관리·📄 구매계약·💰 검수, `ui/theme.py` AGENT_ICONS). 고른 버튼은 파란색.
 - [제안] 각 전문 Agent는 맡은 업무의 도구만 받는다. 정의는 `pmo/agent/agents.py`의 `AGENTS`다.
-  - 인력관리: find_people, search_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id,
+  - 인력관리: find_people, search_people, get_assignment_timeline, get_project_members, calculate_mm, query_database, prepare_account_id,
     prepare_assignment_update, prepare_assignment_transfer, prepare_assignment_replace
   - 구매계약: find_people, list_contracts, search_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
   - 검수: inspection_amount_by_revenue_project, search_contracts (11/07 연결. 이전에는 도구가 구현 예정이라 LLM 없이 정해진 안내로 답함)
