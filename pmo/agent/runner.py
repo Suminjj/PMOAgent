@@ -101,6 +101,13 @@ def _not_saved_yet(answer: str) -> str:
 LABELS = {key: spec.label for key, spec in AGENTS.items()}
 
 
+def _drop_redirect(answer: str) -> str:
+    """'이 요청은 … 카테고리에서 처리할 수 없습니다 … 다시 요청해 주세요.' 문장을 뺀다."""
+    kept = [s for s in re.split(r"(?<=[.!?。])\s+|\n+", answer) if s.strip() and not guardrails.is_redirect(s)
+            and "다시 요청해 주세요" not in s]
+    return " ".join(kept).strip()
+
+
 def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
@@ -159,11 +166,13 @@ def _continue(service, client, messages, tools, tokens, calls, allowed, spec, qu
 
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
-        history: list[dict] | None = None, agent: AgentSpec | str | None = None) -> dict:
+        history: list[dict] | None = None, agent: AgentSpec | str | None = None,
+        focus: str | None = None) -> dict:
     """질문 하나를 처리한다. 예외 대신 결과 객체로 성공·실패를 돌려준다.
 
     history: 이전 대화 [{"role": "user"|"assistant", "content": str}] (최근 MAX_HISTORY개만 사용)
     agent: 전문 Agent(AgentSpec 또는 키). 없으면 자동(전체)
+    focus: 여러 업무 질문(v3.1 라우터)에서 이 Agent가 맡을 부분을 알려 주는 지시(시스템 메시지로 덧붙임)
     반환: {"ok", "answer", "calls": [{"tool","arguments","ok","data","error"}], "error", "duration_ms",
           "tokens": {"prompt", "completion", "llm_calls"} (LLM 호출 전체 합),
           "model", "agent", "agent_label"}
@@ -175,7 +184,8 @@ def ask(service: Service, question: str, client: ChatClient,
     # 자동(전체)에는 '구현 예정' 도구를 주지 않는다: 이름이 비슷한 검수 금액 도구를 매출귀속 프로젝트 조회에 고르던 문제
     # (v1·v1.2 평가 R01). 구현 예정 기능은 해당 전문 Agent(검수·구매계약)가 정해진 안내로 답한다.
     tools = tool_specs(include_planned=allowed is not None, names=allowed)
-    messages = [{"role": "system", "content": system_prompt(spec, day.isoformat())},
+    messages = [{"role": "system", "content": system_prompt(spec, day.isoformat())
+                 + (f"\n\n{focus}" if focus else "")},
                 *[{"role": m["role"], "content": str(m["content"])}
                   for m in (history or [])[-MAX_HISTORY:] if m.get("role") in ("user", "assistant")],
                 {"role": "user", "content": question}]
@@ -209,6 +219,10 @@ def ask(service: Service, question: str, client: ChatClient,
             tokens["completion"] += int(usage.get("completion_tokens") or 0)
             if not reply["tool_calls"]:
                 answer = _clean_answer(reply["content"])
+                if focus and guardrails.is_redirect(answer):
+                    # 여러 업무 질문: 다른 Agent가 맡은 부분의 '다른 카테고리로 가라' 안내 문장만 뺀다(v3.1)
+                    answer = _drop_redirect(answer) or answer
+                    break
                 if allowed is not None and guardrails.is_redirect(answer) and not any(not c.get("forced") for c in calls):
                     if guardrails.owner_of(question) == spec.key and not nudged:
                         # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다.

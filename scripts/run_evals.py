@@ -5,6 +5,8 @@
     python -m scripts.run_evals --model qwen3:8b,gemma4:12b  # 여러 모델 비교
     python -m scripts.run_evals --model qwen3:8b --routing auto,category
                                                          # 자동(전체) 단일 Agent vs 카테고리별 전문 Agent
+    python -m scripts.run_evals --set eval --model qwen3:8b --routing router
+                                                         # v3.1 자동 라우터 (라우팅 정확도 함께 표시)
 
 가상 데이터를 임시 DB에 넣고 질문별 도구 선택·성공 여부·응답 시간을 기록한다.
 결과는 evals/results/ 에 JSON으로 저장된다(Git 추적 제외).
@@ -20,6 +22,9 @@ def print_row(row: dict) -> None:
     mark = "답변" if row.get("graded") is False else ("PASS" if row["success"] else "FAIL")
     ms = row.get("agent_ms", row["duration_ms"])
     who = f" [{row['agent_used']}]" if row.get("agent_used") else ""
+    if row.get("routed"):     # v3.1 라우터: 고른 Agent(방법), 정답 태그와 다르면 표시
+        mark_route = "" if row.get("route_ok", True) else f" ≠ 정답 {'+'.join(row['route_tag'])}"
+        who = f" [라우터 → {'+'.join(row['routed'])} ({row['route_method']}){mark_route}]"
     tok = row.get("tokens")
     used = f"  토큰 {tok['prompt']:,}+{tok['completion']:,}" if tok else ""
     print(f"[{mark}] {row['id']}{who} {ms:>6}ms{used}  {row['question']}")
@@ -46,6 +51,10 @@ def report(result: dict) -> None:
     times = [r.get("agent_ms", r["duration_ms"]) for r in result["results"]]
     print(f"{result['passed']}/{result['total']} 통과 (답변 채점 대기 {result.get('ungraded', 0)}개) · 평균 {sum(times) // max(len(times), 1)}ms"
           f" · 결과 파일: {result.get('saved_to')}")
+    if result.get("routing"):
+        r = result["routing"]
+        print(f"라우팅 정확도: {r['correct']}/{r['checked']} · 방법별 {r['methods']}"
+              + (f" · 틀림: {'; '.join(r['wrong'])}" if r["wrong"] else ""))
     if result.get("tokens"):
         t = result["tokens"]
         print(f"토큰: 질문당 평균 입력 {t['avg_prompt']:,} · 출력 {t['avg_completion']:,} (LLM 호출 평균 {t['avg_llm_calls']}회), "
@@ -63,7 +72,8 @@ def main() -> int:
                         help="v1: 기존 평가 질문 9개(시연 데이터) · eval: 정확도 평가 세트(evals/eval_set.json, 기준일 11/15)")
     parser.add_argument("--only", help="골라 실행할 질문 ID 또는 목표 버전(쉼표로). 예: O04,P01,P02 또는 v2")
     parser.add_argument("--routing", default="auto",
-                        help="auto(자동(전체) 단일 Agent), category(질문별 전문 Agent). 쉼표로 둘 다 비교")
+                        help="auto(자동(전체) 단일 Agent), category(질문별 전문 Agent), router(v3.1 자동 라우터). "
+                             "쉼표로 여럿 비교")
     args = parser.parse_args()
     routings = [r.strip() for r in args.routing.split(",") if r.strip()]
     if any(r not in ROUTINGS for r in routings):

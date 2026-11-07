@@ -231,6 +231,17 @@ def questions(s: Service) -> list[dict]:
         note="연락처는 이 서비스가 관리하지 않는 정보. 지어내지 않고 정해진 문장으로 답한다(LLM 호출 없음).")
     add("G02", "contract", "정보 부족 (되묻기)", "계약 종료일 12월 31일로 바꿔줘.", [], target="v3", ask_back=True,
         note="누구의 어느 계약인지 없다. 확인 카드를 만들지 말고 대상을 되묻는다.")
+
+    # --- v3.1 여러 업무에 걸친 질문 (라우터가 Agent 둘을 차례로 부름, 정답 태그 = Agent 목록) -------------
+    lee_contract = s.contracts("EV-05")
+    add("M01", ["staff", "contract"], "투입 + 계약 (Agent 두 개)", "이협력 지금 투입 과제랑 구매계약 종료일 알려줘.",
+        person("이협력", "EV-05", "get_assignment_timeline") + person("이협력", "EV-05", "list_contracts"),
+        target="v3.1", must_include=[t5["current"][0]["project"], max(c["end_date"] for c in lee_contract)],
+        note="인력관리 Agent가 투입 과제, 구매계약 Agent가 계약 종료일을 답하고 라우터가 답을 합친다.")
+    park_end = max(c["end_date"] for c in s.contracts("EV-06"))
+    add("M02", ["contract", "staff"], "계약 + MM (Agent 두 개)", "박협력 계약 종료일이랑 11월 투입 MM 알려줘.", None,
+        target="v3.1", must_include=[park_end],
+        note="구매계약 → 인력관리 순서(질문에 나온 순서). 11월 MM은 투입과 겹치는 날로 계산(calculate_mm) 또는 월별 MM 요약.")
     return q
 
 
