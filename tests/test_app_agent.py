@@ -144,13 +144,15 @@ def test_category_selector_limits_agent_tools(app):
     assert any(c.value == "📄 구매계약 Agent" for c in app.caption)
 
 
-def test_auto_category_keeps_all_tools(app):
-    REPLIES[:] = [say("안녕하세요.")]
+def test_auto_category_routes_to_specialist(app):
+    """v3.1: '자동 배정'은 라우터가 질문에 맞는 전문 Agent를 고른다(예전 자동(전체)은 모든 도구를 받던 단일 Agent)."""
+    from pmo.agent.agents import AGENTS
+    REPLIES[:] = [say("미확인 알림은 없습니다.")]
     app.chat_input[0].set_value("처리 안 한 알림 있어?").run()
-    from pmo.tools import TOOLS
-    # 자동(전체)은 구현된 도구 전부를 받는다. '구현 예정' 도구는 v1.2부터 전문 Agent만(검수 금액 도구를 잘못 고르던 문제)
-    assert len(RECEIVED[0]["tools"]) == sum(1 for tool in TOOLS.values() if tool.status == "구현")
-    assert any(c.value == "🤖 자동(전체) Agent" for c in app.caption)
+    assert not app.exception
+    sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
+    assert sent == set(AGENTS["contract"].tools)                      # '알림' → 구매계약 Agent의 도구만
+    assert any("자동 배정" in c.value and "구매계약 Agent" in c.value for c in app.caption)
 
 
 def test_home_mm_calculator_replaces_account_card(app):
