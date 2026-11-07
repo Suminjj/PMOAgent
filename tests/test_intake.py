@@ -36,8 +36,6 @@ def test_accountless_intake_retry_later_account_and_unknown_rates(tmp_path):
     assert service.people()[0]["account_id"] == "fake-issued-id"
     assert service.assignments()[0]["id"] == initial["id"]
     assert service.assignments()[0]["person_id"] == person_id
-    with connection(service.path) as con:
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 4
     # Missing rates stay unknown; an explicitly entered zero is a real value.
     service.save_assignment(dict(initial, purchase_rate=0, rate_unit="원/MM"),
                             token="fake-rate-update", actor="테스트",
@@ -75,7 +73,7 @@ def test_invalid_intake_does_not_save_partial_person(tmp_path, part, field, valu
 def test_failed_assignment_rolls_back_intake_and_audit(tmp_path):
     service = Service(tmp_path / "rollback.db")
     with connection(service.path) as con:
-        con.execute("""CREATE TRIGGER fail_checklist BEFORE INSERT ON checklist BEGIN
+        con.execute("""CREATE TRIGGER fail_assignment BEFORE INSERT ON assignments BEGIN
                        SELECT RAISE(ABORT, 'fake failure'); END""")
     with pytest.raises(ValidationError):
         service.save_intake(intake(), token="fake-request", actor="테스트")
@@ -112,7 +110,7 @@ def test_v1_migration_backup_and_all_relationships_preserved(tmp_path):
     with connection(path) as con:
         assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
         assert con.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 1
+        assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='checklist'").fetchall()   # v8에서 삭제
         assert con.execute("SELECT count(*) FROM requests").fetchone()[0] == 1
     backups = list(tmp_path.glob("existing.db.backup-v1-*.db"))
     assert len(backups) == 1

@@ -41,7 +41,7 @@ def fake_sql(monkeypatch):
 def counts(service):
     with connection(service.path) as con:
         return {t: con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-                for t in ("people", "assignments", "contracts", "checklist")}
+                for t in ("people", "assignments", "contracts")}
 
 
 @pytest.mark.parametrize("sql", [

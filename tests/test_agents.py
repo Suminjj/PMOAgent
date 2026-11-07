@@ -23,8 +23,9 @@ def service(tmp_path):
     return s
 
 
-def test_four_categories_plus_auto():
-    assert [a.label for a in AGENTS.values()] == ["자동(전체)", "인력관리", "근무 환경 준비", "구매계약", "검수"]
+def test_three_categories_plus_auto():
+    """11/06 담당자: 근무 환경 준비 기능을 빼서 전문 Agent는 3개."""
+    assert [a.label for a in AGENTS.values()] == ["자동(전체)", "인력관리", "구매계약", "검수"]
     assert get_agent(None).key == AUTO and get_agent("없는키").key == AUTO
 
 
@@ -46,7 +47,6 @@ def test_every_tool_belongs_to_some_specialist():
 def test_writes_stay_in_their_category():
     assert {t for t in AGENTS["staff"].tools if t.startswith("prepare_")} == {
         "prepare_account_id", "prepare_assignment_update", "prepare_assignment_transfer", "prepare_assignment_replace"}
-    assert {t for t in AGENTS["environment"].tools if t.startswith("prepare_")} == {"prepare_checklist_update"}
     assert {t for t in AGENTS["contract"].tools if t.startswith("prepare_")} == {
         "prepare_contract_save", "prepare_contract_delete", "prepare_alert_ack"}
     assert AGENTS["inspection"].tools == ("inspection_amount_by_revenue_project",)
@@ -75,14 +75,14 @@ def test_tool_specs_filter_by_name():
 
 
 def test_specialist_gets_only_its_tools(service):
-    client = ScriptedClient([tool_call("find_people", name="이가상"),
-                             tool_call("checklist_status", person_id="DEMO-002"), text("ID카드 신청은 미진행입니다.")])
-    result = ask(service, "이가상 근무 환경 준비 어디까지 됐어?", client, agent="environment")
-    assert result["ok"] and result["agent"] == "environment" and result["agent_label"] == "근무 환경 준비"
+    client = ScriptedClient([tool_call("find_people", name="박가상"),
+                             tool_call("list_contracts", person_id="DEMO-003"), text("2026-12-01까지입니다.")])
+    result = ask(service, "박가상 구매계약 언제까지야?", client, agent="contract")
+    assert result["ok"] and result["agent"] == "contract" and result["agent_label"] == "구매계약"
     tools = {t["name"] for t in client.seen[0][1]}
-    assert tools == set(AGENTS["environment"].tools)
-    assert "[업무 지침: work-environment-checklist]" in client.seen[0][0][0]["content"]
-    assert json.loads(service.run_log()[0]["input_json"])["kwargs"] == {"agent": "environment"}
+    assert tools == set(AGENTS["contract"].tools)
+    assert "[업무 지침: contract-expiry]" in client.seen[0][0][0]["content"]
+    assert json.loads(service.run_log()[0]["input_json"])["kwargs"] == {"agent": "contract"}
 
 
 def test_tool_outside_category_is_blocked(service):
@@ -127,7 +127,7 @@ def test_category_routing_in_eval_harness():
     report = run(AgentPlanner(client, "category"), save=False)
     assert report["planner"] == "fake-router-category"
     rows = {r["id"]: r for r in report["results"]}
-    assert rows["Q7"]["agent_used"] == "inspection" and rows["Q9"]["agent_used"] == "environment"
+    assert rows["Q7"]["agent_used"] == "inspection" and rows["Q3"]["agent_used"] == "contract"
     assert any("[업무 지침: contract-expiry]" in p for p, _ in client.prompts)
     assert rows["Q7"]["success"] and "구현 예정" in rows["Q7"]["answer"]   # 검수는 LLM 없이 고정 안내
     with pytest.raises(ValueError):
@@ -187,10 +187,9 @@ def test_specialist_calls_its_own_planned_tool_and_never_points_to_itself():
 
 
 def test_read_tools_accept_names_instead_of_returning_empty(service):
-    """자동(전체) Q8: checklist_status(person_id='이가상') → 빈 결과 → '모두 완료' 로 지어낸 답."""
+    """조회 도구에 관리번호 대신 이름(직함 포함)을 넣어도 빈 결과 대신 찾아 준다(10/18 평가: 빈 결과로 지어낸 답)."""
     from pmo.tools import call_tool
-    status = call_tool(service, "checklist_status", {"person_id": "이가상 차장"})
-    assert status["ok"] and len(status["data"]) == 1 and len(status["data"][0]["items"]) == 4
+    assert call_tool(service, "get_assignment_timeline", {"person_id": "이가상 차장"})["ok"]
     assert call_tool(service, "list_contracts", {"person_id": "박가상"})["data"][0]["end_date"] == "2026-12-01"
     assert call_tool(service, "get_assignment_timeline", {"person_id": "이가상"})["data"]["current"]
     namesake = call_tool(service, "get_assignment_timeline", {"person_id": "김가상"})
@@ -199,10 +198,10 @@ def test_read_tools_accept_names_instead_of_returning_empty(service):
 
 
 def test_prepared_change_is_not_described_as_saved(service):
-    """Q9: 카드만 만들었는데 '진행 중으로 변경되었습니다'라고 답함."""
-    client = ScriptedClient([tool_call("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중"),
-                             text("이가상의 ID카드 신청 상태가 '진행 중'으로 변경되었습니다. 확인 카드에서 눌러 주세요.")])
-    answer = ask(service, "이가상 ID카드 신청 진행 중으로 바꿔줘", client, agent="environment")["answer"]
+    """카드만 만들었는데 '변경되었습니다'라고 답함(10/18 평가)."""
+    client = ScriptedClient([tool_call("prepare_contract_save", person_id="이가상", end_date="2026-12-31"),
+                             text("이가상의 계약 종료일이 2026-12-31로 변경되었습니다. 확인 카드에서 눌러 주세요.")])
+    answer = ask(service, "이가상 계약 종료일 12월 31일로 바꿔줘", client, agent="contract")["answer"]
     assert "변경되었습니다" not in answer and "변경 준비를 마쳤습니다(아직 저장 전)" in answer
     client = ScriptedClient([text("변경되었습니다")])                 # 카드가 없는 턴은 건드리지 않는다
     assert ask(service, "처리 안 한 알림 있어?", client)["answer"] == "변경되었습니다"
@@ -216,14 +215,14 @@ def test_eval_allows_skipping_find_people_when_names_are_resolved():
             if messages[-1]["role"] == "tool":
                 return text("완료")
             q = messages[-1]["content"]
-            if q.startswith("이가상 근무 환경"):
-                return tool_call("checklist_status", person_id="이가상")
-            if q.startswith("이가상 ID카드"):
-                return tool_call("prepare_checklist_update", person_id="이가상", item="ID카드 신청", status="진행 중")
+            if q.startswith("이가상 지금"):
+                return tool_call("get_assignment_timeline", person_id="이가상")
+            if q.startswith("박가상 구매계약"):
+                return tool_call("list_contracts", person_id="박가상")
             return text("모르겠습니다")
 
     rows = {r["id"]: r for r in run(AgentPlanner(SkipsLookup()), save=False)["results"]}
-    assert rows["Q8"]["success"] and rows["Q9"]["success"], (rows["Q8"]["problems"], rows["Q9"]["problems"])
+    assert rows["Q1"]["success"] and rows["Q3"]["success"], (rows["Q1"]["problems"], rows["Q3"]["problems"])
     assert not rows["Q2"]["success"]                                  # 동명이인 확인은 생략 불가
 
 

@@ -19,8 +19,6 @@ from datetime import date
 OWNER_KEYWORDS: dict[str, dict[str, int]] = {
     "staff": {"투입": 1, "과제": 1, "매출귀속": 2, "귀속": 1, "등급": 1, "mm": 1, "계정 id": 2, "계정id": 2,
               "계정 아이디": 2, "교체": 1, "옮겨": 1, "이동": 1, "직무": 1, "단가": 1},
-    "environment": {"근무 환경": 2, "방문예약": 2, "방문 예약": 2, "id카드": 2, "id 카드": 2, "oa": 1, "노트북": 1,
-                    "모니터": 1, "계정 신청": 2, "준비": 1},
     "contract": {"계약": 1, "알림": 1, "만료": 1, "연장": 1, "종료": 1},
     "inspection": {"검수": 3, "총액": 2, "금액": 2},
 }
@@ -44,15 +42,17 @@ def owner_of(question: str) -> str | None:
 # --- 사전 검사 ----------------------------------------------------------------------------------
 INJECTION = re.compile(r"(지시|규칙|프롬프트|명령|설정)\S{0,3}\s*(은|는|을|를)?\s*(다\s*)?(무시|잊어|따르지)"
                        r"|시스템\s*프롬프트|system\s*prompt|ignore\s+(all|previous|the)", re.I)
+# 제공하지 않는 업무(출입·장비 신청 등). 등록 인력 이름이 있어도 LLM이 지어내지 않게 범위 밖으로 답한다.
+NOT_OFFERED = re.compile(r"근무\s*환경|방문\s*예약|ID\s*카드|OA\s*기기|노트북|모니터|계정\s*신청|출입증", re.I)
 UNSUPPORTED = re.compile(r"연봉|급여|월급|보너스|성과급|연락처|전화번호|휴대폰|핸드폰|주소|주민등록|생년월일|인사\s*평가|평가\s*결과")
 
 ANSWERS = {
     "scope": "'{project}' 과제는 조회할 수 있는 과제가 아닙니다. 담당 과제({mine})만 조회할 수 있습니다.",
     "redirect_failed": "이 요청은 {here} 업무인데 처리하지 못했습니다. 인력 이름과 기간 등을 넣어 다시 요청해 주세요.",
-    "injection": "이전 지시를 무시하거나 바꾸라는 요청은 따를 수 없습니다. 인력·투입·구매계약·근무 환경 준비 업무를 요청해 주세요.",
+    "injection": "이전 지시를 무시하거나 바꾸라는 요청은 따를 수 없습니다. 인력·투입·구매계약 업무를 요청해 주세요.",
     "unsupported": "이 서비스는 인력의 {what} 정보를 관리하지 않아 답할 수 없습니다. "
-                   "투입 과제·기간, 구매계약, 근무 환경 준비 정보만 조회할 수 있습니다.",
-    "out_of_scope": "이 요청은 도와드릴 수 없습니다. 인력·투입, 구매계약, 근무 환경 준비, 검수 업무만 도와드립니다. "
+                   "투입 과제·기간, 구매계약 정보만 조회할 수 있습니다.",
+    "out_of_scope": "이 요청은 도와드릴 수 없습니다. 인력·투입, 구매계약, 검수 업무만 도와드립니다. "
                     "예: '김정직 지금 무슨 과제에 투입되어 있어?'",
     "redirect": "이 요청은 {here} 카테고리에서 처리할 수 없습니다. 홈 화면에서 '{there}'를 골라 다시 요청해 주세요.",
     "hold": "조회 결과로 확인되지 않은 인력({names})이 답변에 들어가 답변을 보류합니다. 대상 인력의 이름을 확인해 다시 요청해 주세요.",
@@ -84,6 +84,8 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
                                                                        mine=", ".join(service.project_names()) or "없음")}
     if INJECTION.search(q):
         return {"kind": "injection", "answer": ANSWERS["injection"]}
+    if NOT_OFFERED.search(q):
+        return {"kind": "out_of_scope", "answer": ANSWERS["out_of_scope"]}
     m = UNSUPPORTED.search(q)
     if m:
         return {"kind": "unsupported", "answer": ANSWERS["unsupported"].format(what=m.group(0))}

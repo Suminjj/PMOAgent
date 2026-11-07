@@ -22,7 +22,7 @@ def service(tmp_path):
 
 def snapshot(service):
     with connection(service.path) as con:
-        return [tuple(r) for t in ("assignments", "contracts", "checklist")
+        return [tuple(r) for t in ("assignments", "contracts")
                 for r in con.execute(f"SELECT * FROM {t} ORDER BY 1, 2")]
 
 
@@ -32,10 +32,6 @@ def run(service, plan, token=None):
 
 def rows_of(service, pid):
     return sorted(service.assignments(pid), key=lambda a: a["start_date"])
-
-
-def statuses(service, assignment_id):
-    return [r["status"] for r in service.checklist(assignment_id)]
 
 
 @pytest.mark.parametrize("tool, args", [
@@ -62,7 +58,7 @@ def test_month_change_touches_only_that_month(service):
 
 
 def test_month_change_inside_long_assignment_splits_it(service):
-    """기간 일부(12월)만 바뀌면 투입을 셋으로 나누고, 준비 상태를 잇고, 계약 연결을 풀어 검수에서 빠지지 않게 한다."""
+    """기간 일부(12월)만 바뀌면 투입을 셋으로 나누고, 계약 연결을 풀어 검수에서 빠지지 않게 한다."""
     original = rows_of(service, "EV-21")[0]
     run(service, build_plan(service, "assignment_update",
                             {"person_id": "명협력", "month": "2026-12", "revenue_project": "30133686-D050"}))
@@ -72,7 +68,6 @@ def test_month_change_inside_long_assignment_splits_it(service):
         ("2026-12-01", "2026-12-31", "30133686-D050", "1.000"),
         ("2027-01-01", "2027-02-28", "30133686-D048", "2.000")]
     assert parts[0]["id"] == original["id"]
-    assert all(statuses(service, a["id"]) == ["완료"] * 4 for a in parts)
     contract = service.contracts("EV-21")[0]
     assert contract["assignment_id"] is None
     december = service.inspection("감마테크", "C-2026-206", "2026-12", "2026-12")["selected"]["projects"]
@@ -87,14 +82,13 @@ def test_transfer_ends_old_project_and_starts_new(service):
     assert (old["project"], old["end_date"]) == ("Soft Lab 고도화", "2026-11-30")
     assert (new["project"], new["start_date"], new["end_date"]) == ("APC Analysis", "2026-12-01", "2027-02-28")
     assert new["revenue_project"] is None and new["grade"] == old["grade"]          # 매출귀속 프로젝트는 미정
-    assert statuses(service, new["id"]) == ["완료"] * 4                              # 같은 사람: 준비 상태 이어 씀
     timeline = service.assignment_timeline("EV-21", TODAY)
     assert [a["project"] for a in timeline["current"]] == ["Soft Lab 고도화"]
     assert [a["project"] for a in timeline["upcoming"]] == ["APC Analysis"]
 
 
 def test_replace_swaps_people_and_contracts(service):
-    """질문 X01: 류협력 → 노협력 교체. 투입·계약을 한 번에 맞추고 교체 인력 준비 항목을 새로 만든다."""
+    """질문 X01: 류협력 → 노협력 교체. 투입·계약을 한 번에 맞춘다."""
     run(service, build_plan(service, "assignment_replace", {"person_id": "류협력", "new_person_id": "노협력",
                                                             "start_date": "2026-12-01", "grade": "L6"}))
     old, = rows_of(service, "EV-19")
@@ -102,7 +96,6 @@ def test_replace_swaps_people_and_contracts(service):
     assert old["end_date"] == "2026-11-30"
     assert (new["project"], new["revenue_project"], new["start_date"], new["end_date"], new["grade"]) == (
         "전표작성 자동화", "30133686-D047", "2026-12-01", "2027-01-31", "L6")
-    assert statuses(service, new["id"]) == ["미진행"] * 4
     assert service.contracts("EV-19")[0]["end_date"] == "2026-11-30"
     c, = service.contracts("EV-20")
     assert (c["status"], c["contract_no"], c["assignment_id"], c["company"]) == ("준비", None, new["id"], "알파솔루션")

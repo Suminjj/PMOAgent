@@ -9,7 +9,6 @@
 from datetime import date
 from uuid import uuid4
 
-from pmo.checklist import ITEMS
 from pmo.service import Service
 
 TODAY = date(2026, 11, 15)
@@ -44,8 +43,8 @@ PEOPLE = [
     ("EV-10", "조협력", "알파솔루션", "협력", "종료 5일 전이지만 연장 계약 등록됨 (종료 예정 아님)"),
     ("EV-11", "윤협력", "알파솔루션", "협력", "계약 만료 15일 경과, 알림은 확인함"),
     ("EV-12", "한협력", "감마테크", "협력", "매입단가 미입력 (검수 계산 불가), 9월 15일 투입 시작 (9월 0.5MM)"),
-    ("EV-13", "오협력", "알파솔루션", "협력", "예정 투입 · 계약 준비(계약번호 없음) · 준비 항목 상태가 섞임"),
-    ("EV-14", "서협력", "감마테크", "협력", "신규 투입 예정(11/23) · 준비 항목 모두 미진행"),
+    ("EV-13", "오협력", "알파솔루션", "협력", "예정 투입 · 계약 준비(계약번호 없음)"),
+    ("EV-14", "서협력", "감마테크", "협력", "신규 투입 예정(11/23) · 계정 ID 미발급"),
     ("EV-15", "김컨설", "베타컨설팅", "컨설팅", "컨설팅 · 등급 없음"),
     ("EV-16", "이컨설", "베타컨설팅", "컨설팅", "계약 종료 10일 전 (종료 예정)"),
     # --- 11/03 담당자 추가 질문용 ---
@@ -177,17 +176,5 @@ def seed_eval(service: Service, today: date = TODAY) -> dict:
         if alert["contract_id"] == expired:
             service.acknowledge_alert(alert["id"], actor=ACTOR)
 
-    # 근무 환경 준비: 오협력·서협력을 빼면 모두 완료. 오협력은 상태가 섞이게.
-    def set_item(aid, item, status, reason=""):
-        row = next(r for r in service.checklist(aid) if r["item"] == item)
-        service.update_checklist_item(aid, item, status, reason, actual_done=status == "완료",
-                                      token=_token(), actor=ACTOR, expected_version=row["version"])
-
-    for aid in [aid for pid, aid in a.items() if pid not in ("EV-13", "EV-14")] + shin:
-        for item in ITEMS:
-            set_item(aid, item, "완료")
-    set_item(a["EV-13"], "방문예약", "완료")
-    set_item(a["EV-13"], "계정 신청", "진행 중")
-    set_item(a["EV-13"], "ID카드 신청", "해당 없음", "기존 출입증 보유")
     seed_eval_users(service.path)
     return {"people": len(PEOPLE), "users": len(EVAL_USERS), "today": today.isoformat()}

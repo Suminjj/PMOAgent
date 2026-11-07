@@ -8,10 +8,9 @@
 | 지침 | 업무 | 주입되는 Agent | 서비스 연결 |
 | --- | --- | --- | --- |
 | [staff-assignment-lookup](staff-assignment-lookup/SKILL.md) | 인력의 현재·과거 투입 조회, 계정 ID 입력, 투입 변경·과제 이동·인력 교체 | 인력관리 | 연결 |
-| [work-environment-checklist](work-environment-checklist/SKILL.md) | 근무 환경 준비 현황 조회·상태 변경 | 근무 환경 준비 | 연결 |
 | [contract-expiry](contract-expiry/SKILL.md) | 구매계약 기간·종료 예정·만료 알림, 계약 등록·수정·삭제·알림 확인 | 구매계약 | 연결 (구매 필요 판정은 구현 예정) |
 | [inspection-amount](inspection-amount/SKILL.md) | 매출귀속 프로젝트별 검수 금액 | 검수 | 미사용 (도구 구현 예정이라 정해진 안내로 답함) |
-| [data-change](data-change/SKILL.md) | 변경 요청 공통 규칙 (확인 카드 준비) | 인력관리·근무 환경 준비·구매계약 | 연결 |
+| [data-change](data-change/SKILL.md) | 변경 요청 공통 규칙 (확인 카드 준비) | 인력관리·구매계약 | 연결 |
 
 - **연결**: 홈 화면에서 카테고리를 고르면 그 전문 Agent(`pmo/agent/agents.py`)의 시스템 프롬프트에 위 지침 본문이 들어간다.
   앞머리와 '성공 기준'(개발·평가용) 절, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.

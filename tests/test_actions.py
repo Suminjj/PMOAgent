@@ -22,7 +22,7 @@ def service(tmp_path):
 
 def snapshot(service):
     with connection(service.path) as con:
-        return [tuple(r) for t in ("people", "contracts", "checklist", "contract_alerts")
+        return [tuple(r) for t in ("people", "contracts", "contract_alerts")
                 for r in con.execute(f"SELECT * FROM {t} ORDER BY 1")]
 
 
@@ -34,16 +34,9 @@ def contract_of(service, pid, number=None):
     return next(c for c in service.contracts(pid) if number is None or c["contract_no"] == number)
 
 
-def item_status(service, pid, item):
-    aid = [a for a in service.assignments(pid) if a["end_date"] >= TODAY.isoformat()][0]["id"]
-    return next(r for r in service.checklist(aid) if r["item"] == item)
-
-
 # --- 도구는 계획만 만들고 저장하지 않는다 ---------------------------------------------------
 
 @pytest.mark.parametrize("tool, args, action", [
-    ("prepare_checklist_update", {"person_id": "DEMO-002", "item": "ID카드 신청", "status": "진행 중"},
-     "checklist_update"),
     ("prepare_contract_save", {"person_id": "DEMO-002", "end_date": "2026-12-31"}, "contract_save"),
     ("prepare_contract_delete", {"person_id": "DEMO-003"}, "contract_delete"),
     ("prepare_account_id", {"person_id": "DEMO-002", "account_id": "lee.fake"}, "account_id"),
@@ -62,21 +55,20 @@ def test_prepare_tools_build_plans_without_saving(service, tool, args, action):
 
 def test_agent_sees_prepare_and_query_tools():
     names = {t["name"] for t in tool_specs()}
-    assert {"query_database", "prepare_checklist_update", "prepare_contract_save",
+    assert {"query_database", "prepare_contract_save",
             "prepare_contract_delete", "prepare_account_id", "prepare_alert_ack"} <= names
 
 
 # --- 대상 확정: 이름·계약번호 보완, 애매하면 되물음 ----------------------------------------------
 
 def test_name_and_title_are_resolved_to_person(service):
-    plan = build_plan(service, "checklist_update",
-                      {"person_id": "이가상 차장", "item": "ID카드 신청", "status": "진행 중"})
+    plan = build_plan(service, "account_id", {"person_id": "이가상 차장", "account_id": "lee.fake"})
     assert "DEMO-002" in plan["rows"][0]["현재"]
 
 
 def test_ambiguous_or_missing_targets_ask_instead_of_planning(service):
     with pytest.raises(ValidationError, match="2명.*DEMO-001.*DEMO-005"):
-        build_plan(service, "checklist_update", {"person_id": "김가상", "item": "계정 신청", "status": "진행 중"})
+        build_plan(service, "account_id", {"person_id": "김가상", "account_id": "kim.fake"})
     with pytest.raises(ValidationError, match="없습니다"):
         build_plan(service, "account_id", {"person_id": "홍길동", "account_id": "x"})
     with pytest.raises(ValidationError, match="누구"):
@@ -92,28 +84,11 @@ def test_ambiguous_or_missing_targets_ask_instead_of_planning(service):
 
 
 def test_missing_or_no_op_values_are_reported(service):
-    with pytest.raises(ValidationError, match="어느 항목"):
-        build_plan(service, "checklist_update", {"person_id": "DEMO-002", "status": "완료"})
-    with pytest.raises(ValidationError, match="사유"):
-        build_plan(service, "checklist_update", {"person_id": "DEMO-002", "item": "방문예약", "status": "해당 없음"})
-    with pytest.raises(ValidationError, match="이미 '미진행'"):
-        build_plan(service, "checklist_update", {"person_id": "DEMO-002", "item": "계정 신청", "status": "미진행"})
     with pytest.raises(ValidationError, match="시작일과 종료일"):
         build_plan(service, "contract_save", {"person_id": "DEMO-002", "mode": "신규"})
 
 
 # --- 확인 후 실행 ----------------------------------------------------------------------
-
-def test_checklist_plan_executes_and_done_needs_check(service):
-    plan = build_plan(service, "checklist_update", {"person_id": "DEMO-002", "item": "ID카드 신청", "status": "완료"})
-    assert plan["check"] and "실제 신청" in plan["check"]
-    with pytest.raises(ValidationError, match="확인란"):
-        run(service, plan, checked=False)
-    assert item_status(service, "DEMO-002", "ID카드 신청")["status"] == "미진행"
-    message = run(service, plan, checked=True)
-    assert "저장했습니다" in message
-    assert item_status(service, "DEMO-002", "ID카드 신청")["status"] == "완료"
-
 
 def test_contract_update_by_number_and_new_contract(service):
     target = contract_of(service, "DEMO-002", "DEMO-C-200")

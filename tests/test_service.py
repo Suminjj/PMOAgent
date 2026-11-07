@@ -89,7 +89,7 @@ def test_invalid_assignment_not_saved(service, changes):
     assert len(service.history()) == 1
 
 
-def test_assignments_overlap_precision_and_checklists(service):
+def test_assignments_overlap_and_precision(service):
     save_person(service)
     token = str(uuid4())
     first = service.save_assignment(assignment(), token=token, actor="테스트")
@@ -100,11 +100,8 @@ def test_assignments_overlap_precision_and_checklists(service):
         save_assignment(service)
     second = save_assignment(service, assignment(project="가상 과제 B"), overlap_reviewed=True)
     assert first != second
-    third = save_assignment(service, assignment(start_date="2026-11-01", end_date="2026-11-30"))
+    save_assignment(service, assignment(start_date="2026-11-01", end_date="2026-11-30"))
     assert len(service.assignments()) == 3
-    with connection(service.path) as con:
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 12
-        assert con.execute("SELECT count(*) FROM checklist WHERE assignment_id=?", (third,)).fetchone()[0] == 4
     save_assignment(service, assignment(project="수정 과제"), assignment_id=first,
                     expected_version=1, overlap_reviewed=True)
     with pytest.raises(ConflictError):
@@ -121,7 +118,6 @@ def test_audit_failure_rolls_back_all_writes(service):
         save_assignment(service)
     assert not service.assignments()
     with connection(service.path) as con:
-        assert con.execute("SELECT count(*) FROM checklist").fetchone()[0] == 0
         assert con.execute("SELECT count(*) FROM requests").fetchone()[0] == 1
 
 

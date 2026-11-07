@@ -57,12 +57,6 @@ def _render_data(tool: str, data) -> None:
         for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입", "past")):
             st.markdown(f"**{title}** ({len(data.get(key, []))}건)")
             table(data.get(key, []), _ASSIGNMENT_FIELDS)
-    elif tool == "checklist_status" and data and "items" in data[0]:
-        for a in data:
-            st.markdown(f"**{a.get('project') or '과제 미입력'}** · {a['start_date']} ~ {a['end_date']}")
-            table(a["items"], ["item", "status", "reason", "drafted_at", "applied_at"])
-    elif tool == "checklist_status":
-        table(data, ["name", "company", "project", "start_date", "done", "total", "open_labels"])
     elif tool == "query_database":
         st.code(data["sql"], language="sql")
         st.caption("LlamaIndex가 만든 SQL을 검사한 뒤 읽기 전용으로 실행했습니다."

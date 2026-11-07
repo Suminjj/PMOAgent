@@ -45,7 +45,6 @@ def questions(s: Service) -> list[dict]:
     not_soon = sorted({c["name"] for c in s.contracts() if c["in_window"] and not c["ending_soon"]}
                       | {c["name"] for c in s.contracts() if c["days_left"] == 15})
     alerts = sorted({a["name"] for a in s.pending_alerts()})
-    preparing = sorted({r["name"] for r in s.checklist_overview()})
     t5, t7 = timeline("EV-05"), timeline("EV-07")
     gamma = s.inspection("감마테크", "C-2026-202", "2026-11", "2026-11")
     alpha = s.inspection("알파솔루션", "C-2026-103", "2026-11", "2026-11")
@@ -168,7 +167,7 @@ def questions(s: Service) -> list[dict]:
         person("명협력", "EV-21", "prepare_assignment_transfer", {"to_project": "APC Analysis", "start_date": "2026-12-01"}),
         target="추가 기능", must_not_include=["옮겼습니다", "변경되었습니다", "저장했습니다"],
         note=f"확인 카드: {myung['project']} 투입 종료일 {myung['end_date']} → 2026-11-30, APC Analysis 신규 투입 "
-             f"2026-12-01~{myung['end_date']}(매출귀속 프로젝트 미정, 등급·단가·준비 상태는 이어받음), "
+             f"2026-12-01~{myung['end_date']}(매출귀속 프로젝트 미정, 등급·단가는 이어받음), "
              "계약 C-2026-206은 연결 투입을 풀어 두 투입을 모두 덮음.")
     baek, choi = s.assignments("EV-22")[0], s.assignments("EV-08")[0]
     add("H01", "staff", "0.5MM = 반 달 근무 (Full time)", "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
@@ -191,14 +190,6 @@ def questions(s: Service) -> list[dict]:
     add("K01", "contract", "만료 후 미확인 알림 확인 제안", "백협력 계약 만료 알림 확인 처리해줘.",
         person("백협력", "EV-22", "prepare_alert_ack"), must_not_include=["확인 처리했습니다", "저장했습니다"])
 
-    # --- 근무 환경 준비 -----------------------------------------------------------
-    add("E01", "environment", "준비 남은 투입", "근무 환경 준비가 남은 사람 알려줘.",
-        [step("checklist_status", {})], must_include=preparing)
-    add("E02", "environment", "항목 상태가 섞임", "오협력 근무 환경 준비 어디까지 됐어?",
-        person("오협력", "EV-13", "checklist_status"), must_include=["계정 신청", "진행 중", "해당 없음"])
-    add("E03", "environment", "상태 변경 제안(저장 안 함)", "서협력 ID카드 신청 진행 중으로 바꿔줘.",
-        person("서협력", "EV-14", "prepare_checklist_update", {"item": "ID카드 신청", "status": "진행 중"}),
-        must_include=["확인"], must_not_include=["변경되었습니다", "저장했습니다"])
 
     # --- 검수 (도구 연결 전) -----------------------------------------------------
     add("I01", "inspection", "검수 금액 + 계산 불가", "감마테크 C-2026-202 11월 검수 금액 알려줘.", None,
@@ -274,9 +265,6 @@ def expect_of(tool: str, result: dict) -> dict:
         return {"ok": True, "end_dates": sorted(r["end_date"] for r in data)}
     if tool in ("contracts_ending", "pending_contract_alerts"):
         return {"ok": True, "count": len(data), "names": sorted({r["name"] for r in data})}
-    if tool == "checklist_status":
-        names = {"names": sorted({r["name"] for r in data})} if data and "name" in data[0] else {}
-        return {"ok": True, "count": len(data), **names}
     if tool.startswith("prepare_"):
         return {"ok": True, "action": data["plan"]["action"]}
     return {"ok": True}

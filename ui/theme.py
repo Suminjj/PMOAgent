@@ -15,7 +15,6 @@ NAVY, BLUE, MUTED = "#0F1B33", "#1D4ED8", "#5B6780"
 NAV_GROUPS = [
     ("홈", ":material/forum:", []),
     ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리"]),
-    ("근무 환경 준비", ":material/task_alt:", []),
     ("구매계약 관리", ":material/description:", ["전체 계약 조회", "계약 등록·수정"]),
     ("검수 관리", ":material/payments:", ["검수하기"]),
     ("계약 종료 알림", ":material/notifications:", []),
@@ -38,7 +37,7 @@ for _group, _icon, _subs in NAV_GROUPS:
         GROUP_OF[_page] = _group
 NAV_LABELS = {"홈": "홈 · PMO Agent"}
 # 홈 화면 업무 카테고리 버튼의 이모티콘 (10/20 담당자). 키는 pmo/agent/agents.py의 AGENTS 키.
-AGENT_ICONS = {"auto": "🤖", "staff": "👤", "environment": "💻", "contract": "📄", "inspection": "💰"}
+AGENT_ICONS = {"auto": "🤖", "staff": "👤", "contract": "📄", "inspection": "💰"}
 
 
 def agent_label(key: str, label: str) -> str:
@@ -88,6 +87,7 @@ header[data-testid="stHeader"] { background: transparent; }
 
 /* ---- 홈: 숫자 카드 ---- */
 .pmo-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 8px; }
+.pmo-kpis.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 900px) { .pmo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pmo-kpi { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 12px; padding: 14px 18px; }
 .pmo-kpi-label { font-size: 13px; color: #5B6780; }
@@ -96,6 +96,9 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-kpi-unit { font-size: 14px; color: #5B6780; font-weight: 500; margin-left: 2px; }
 
 /* ---- 홈: 흰 카드 패널 ---- */
+.st-key-home_mm_calc { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 12px; padding: 12px 16px; gap: 6px; }
+.st-key-home_mm_calc [data-testid="stWidgetLabel"] p { font-size: 12px; color: #5B6780; }
+.st-key-home_mm_calc .pmo-kpi-value { font-size: 24px; }
 .st-key-home_chat_panel, .st-key-home_result_panel {
   background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px;
 }
@@ -205,11 +208,11 @@ def page_header(day, title: str) -> None:
         f'<div class="pmo-h1">{escape(title)}</div>', unsafe_allow_html=True)
 
 
-def kpi_row(items: list[tuple[str, int, str, bool]]) -> None:
+def kpi_row(items: list[tuple[str, int, str, bool]], columns: int = 4) -> None:
     """[(이름, 값, 단위, 강조 여부)] 숫자 카드 한 줄."""
     cards = "".join(
         f'<div class="pmo-kpi"><div class="pmo-kpi-label">{escape(label)}</div>'
         f'<div class="pmo-kpi-value{" warn" if warn else ""}">{value}'
         f'<span class="pmo-kpi-unit">{escape(unit)}</span></div></div>'
         for label, value, unit, warn in items)
-    st.markdown(f'<div class="pmo-kpis">{cards}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="pmo-kpis cols-{columns}">{cards}</div>', unsafe_allow_html=True)

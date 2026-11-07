@@ -54,15 +54,6 @@ AGENTS: dict[str, AgentSpec] = {a.key: a for a in [
                   "이가상 12월 매출귀속 프로젝트 30133686-D047로 바꿔줘",
                   "이가상 12월 1일부터 다른 과제로 옮겨줘",
               ), "인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 계정 ID 입력, 투입 변경·과제 이동·인력 교체"),
-    AgentSpec("environment", "근무 환경 준비",
-              "너는 근무 환경 준비 담당 Agent다. 방문예약·계정 신청·ID카드 신청·OA기기 신청의 현황 조회와 "
-              "상태 변경 준비를 맡는다.",
-              ("find_people", "checklist_status", "query_database", "prepare_checklist_update"),
-              ("work-environment-checklist", "data-change"), (
-                  "이가상 근무 환경 준비 어디까지 됐어?",
-                  "준비가 남은 투입 알려줘",
-                  "이가상 ID카드 신청 진행 중으로 바꿔줘",
-              ), "방문예약·계정 신청·ID카드 신청·OA기기 신청 현황과 상태 변경"),
     AgentSpec("contract", "구매계약",
               "너는 구매계약 담당 Agent다. 인력의 계약 기간, 월·업체별 종료 예정, 미확인 만료 알림 조회와 "
               "계약 등록·수정·삭제, 알림 확인 준비를 맡는다.",

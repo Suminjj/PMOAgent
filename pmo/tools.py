@@ -21,7 +21,6 @@ from pmo.agent.actions import _person, build_plan, typo_message
 from pmo.agent.guardrails import similar_names
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
-from pmo.checklist import ITEMS as CHECKLIST_ITEMS, STATUSES as CHECKLIST_STATUSES
 from pmo.config import TIMEZONE
 from pmo.contracts import CONTRACT_STATUSES
 from pmo.errors import ConflictError, ValidationError
@@ -105,10 +104,6 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
          handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
-    Tool("checklist_status", "근무 환경 준비(방문예약·계정 신청·ID카드 신청·OA기기 신청) 진행 상황을 조회한다. "
-         "person_id를 주면 그 인력의 투입별 항목 상태, 없으면 준비가 남은 투입 목록을 돌려준다.",
-         _obj({"person_id": {"type": "string", "description": "대상 인력의 id 또는 이름. 비우면 준비가 남은 전체 투입"}}),
-         handler=lambda s, a: _checklist_status(s, _pid(s, a["person_id"]) if a.get("person_id") else None)),
     Tool("pending_contract_alerts", "계약 종료 14일 전부터 표시되는 미확인 만료 알림 목록을 조회한다.",
          _obj({}),
          handler=lambda s, a: s.pending_alerts()),
@@ -118,10 +113,6 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          _obj({"question": STR}, ("question",)),
          handler=lambda s, a: _query_database(s, a["question"])),
     # --- 등록·수정·삭제 제안: 값만 채우고 저장하지 않는다 ---
-    Tool("prepare_checklist_update", "근무 환경 준비 항목의 상태 변경을 준비한다(저장 안 함). "
-         "투입이 여러 건이면 project에 과제명을 넣는다. 사용자가 화면에서 확인해야 저장된다.",
-         _obj({"person_id": PERSON, "item": _enum(CHECKLIST_ITEMS), "status": _enum(CHECKLIST_STATUSES),
-               "reason": STR, "project": STR}), handler=_plan("checklist_update")),
     Tool("prepare_contract_save", "구매계약 신규 등록 또는 수정(기간 변경·연장·계약번호 입력 등)을 준비한다(저장 안 함). "
          "수정이면 contract_id에 계약 id나 계약번호를 넣고, 새 계약이면 mode='신규'로 한다. 바꿀 값만 넣는다.",
          _obj({"person_id": PERSON, "mode": _enum(("신규", "수정")), "contract_id": STR, "company": STR,
@@ -182,11 +173,9 @@ TOOL_LABELS = {
     "list_contracts": "구매계약 조회",
     "contracts_ending": "월·업체별 계약 종료 예정",
     "pending_contract_alerts": "미확인 계약 종료 알림",
-    "checklist_status": "근무 환경 준비 현황",
     "monthly_purchase_needs": "월별 구매 필요 인력 (구현 예정)",
     "inspection_amount_by_revenue_project": "매출귀속 프로젝트별 검수 금액 (구현 예정)",
     "query_database": "자유 조회 (Text-to-SQL, 읽기 전용)",
-    "prepare_checklist_update": "근무 환경 준비 상태 변경",
     "prepare_contract_save": "구매계약 등록·수정",
     "prepare_contract_delete": "구매계약 삭제",
     "prepare_account_id": "계정 ID 입력",
@@ -355,17 +344,6 @@ def _query_database(service: Service, question: str) -> dict:
     """v2 권한: 과제 리더는 볼 수 있는 행만 담은 임시 DB에서 Text-to-SQL을 실행한다."""
     with service.read_snapshot() as path:
         return query_database(path, service.clock(), question)
-
-
-def _checklist_status(service: Service, person_id: str | None) -> list[dict]:
-    if not person_id:
-        return [{k: r[k] for k in ("id", "name", "company", "project", "start_date", "done", "total",
-                                   "open_labels")} for r in service.checklist_overview()]
-    return [{"assignment_id": a["id"], "project": a["project"], "start_date": a["start_date"],
-             "end_date": a["end_date"],
-             "items": [{k: c[k] for k in ("item", "status", "reason", "drafted_at", "applied_at")}
-                       for c in service.checklist(a["id"])]}
-            for a in service.assignments(person_id)]
 
 
 def tool_specs(include_planned: bool = False, names=None) -> list[dict]:

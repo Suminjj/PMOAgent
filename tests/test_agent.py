@@ -229,24 +229,24 @@ def test_history_is_passed_and_tool_results_are_returned(service):
 
 def test_missing_person_is_filled_from_the_question(service):
     """모델이 prepare_* 도구에 대상 인력을 빠뜨려도 질문 속 이름으로 채운다."""
-    client = ScriptedClient([tool_call("prepare_checklist_update", item="ID카드 신청", status="진행 중"),
+    client = ScriptedClient([tool_call("prepare_contract_save", end_date="2026-12-31"),
                              text("확인 카드에서 확인 후 저장을 눌러 주세요.")])
-    result = ask(service, "이가상 ID카드 신청 진행 중으로 바꿔줘", client)
+    result = ask(service, "이가상 계약 종료일 12월 31일로 바꿔줘", client)
     call = result["calls"][0]
     assert call["ok"] and call["arguments"]["person_id"] == "이가상"
     assert "DEMO-002" in call["data"]["plan"]["rows"][0]["현재"]
 
 
 def test_missing_person_uses_recent_user_message_and_namesakes_still_ask(service):
-    follow = ScriptedClient([tool_call("prepare_checklist_update", item="계정 신청", status="진행 중"),
+    follow = ScriptedClient([tool_call("prepare_contract_save", end_date="2026-12-31"),
                              text("확인해 주세요.")])
-    history = [{"role": "user", "content": "이가상 근무 환경 준비 어디까지 됐어?"},
-               {"role": "assistant", "content": "ID카드 신청이 미진행입니다."}]
-    result = ask(service, "계정 신청 진행 중으로 바꿔줘", follow, history=history)
+    history = [{"role": "user", "content": "이가상 구매계약 언제까지야?"},
+               {"role": "assistant", "content": "이가상의 계약은 곧 끝납니다."}]
+    result = ask(service, "계약 종료일 12월 31일로 연장해줘", follow, history=history)
     assert result["calls"][0]["ok"] and result["calls"][0]["arguments"]["person_id"] == "이가상"
-    namesake = ScriptedClient([tool_call("prepare_checklist_update", item="계정 신청", status="진행 중"),
+    namesake = ScriptedClient([tool_call("prepare_contract_save", end_date="2026-12-31"),
                                text("어느 김가상인가요?")])
-    result = ask(service, "김가상 계정 신청 진행 중으로 바꿔줘", namesake)
+    result = ask(service, "김가상 계약 종료일 12월 31일로 바꿔줘", namesake)
     assert result["calls"][0]["ok"] is False and "2명" in result["calls"][0]["error"]
 
 

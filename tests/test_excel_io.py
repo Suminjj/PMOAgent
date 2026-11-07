@@ -71,7 +71,6 @@ def test_import_saves_everything_in_one_go(service):
     p1 = next(p for p in service.people() if p["name"] == "가상일")
     full = service.assignments(p1["id"])[0]
     assert full["mm"] == "0.445"                                     # Full time은 입력 MM(9)을 무시하고 계산
-    assert len(service.checklist(full["id"])) == 4                   # 근무 환경 준비 항목 생성
     contracts = sorted(service.contracts(p1["id"]), key=lambda c: c["start_date"])
     assert contracts[1]["previous_contract_id"] == contracts[0]["id"]
     assert contracts[1]["assignment_id"] == full["id"]
