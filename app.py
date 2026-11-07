@@ -1,4 +1,5 @@
 """Run with: python -m streamlit run app.py"""
+from html import escape
 import os
 import sqlite3
 import json
@@ -351,12 +352,12 @@ def confirm() -> None:
         st.rerun()
 
 
+@st.dialog("🧮 MM 계산기 · Full time", width="medium")
 def mm_calculator(day: date) -> None:
-    """홈 MM 계산기(11/07 담당자): Full time 기간을 넣으면 구매시스템 방식 MM을 바로 보여준다. 저장하지 않는다."""
-    st.markdown('<div class="pmo-kpi-label">MM 계산기 · Full time</div>', unsafe_allow_html=True)
+    """홈 MM 계산기(11/07 담당자): 버튼을 누르면 모달로 열린다. Full time 기간을 넣으면 구매시스템 방식 MM을
+    바로 보여준다. 저장하지 않는다."""
     left, right = st.columns(2, gap="small")
-    month_start = day.replace(day=1)
-    start = left.date_input("시작일", value=month_start, key="mm_calc_start", format="YYYY-MM-DD")
+    start = left.date_input("시작일", value=day.replace(day=1), key="mm_calc_start", format="YYYY-MM-DD")
     end = right.date_input("종료일", value=day, key="mm_calc_end", format="YYYY-MM-DD")
     if not start or not end:
         st.caption("시작일과 종료일을 고르세요.")
@@ -368,20 +369,19 @@ def mm_calculator(day: date) -> None:
         return
     months = result["months"]
     days = sum(m["assigned_days"] for m in months)
-    st.markdown(f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div>',
+    detail = (f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일" if len(months) == 1
+              else f"{len(months)}개월 · 투입 근무일 {days}일")
+    st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">투입 MM · {escape(detail)}</div>'
+                f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div></div>',
                 unsafe_allow_html=True)
-    if len(months) == 1:
-        st.caption(f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일")
-    else:
-        st.caption(f"{len(months)}개월 · 투입 근무일 {days}일")
-    with st.popover("월별 근거"):
-        st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
-                                    "전체 근무일": m["working_days"],
-                                    "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
-                                    "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
-                                   for m in months]), hide_index=True, width="stretch")
-        st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
-                   "Part time은 수동 입력이라 계산하지 않습니다.")
+    st.markdown("**월별 근거**")
+    st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
+                                "전체 근무일": m["working_days"],
+                                "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
+                                "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
+                               for m in months]), hide_index=True, width="stretch")
+    st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
+               "Part time은 수동 입력이라 계산하지 않습니다.")
 
 
 if page == "홈":
@@ -402,7 +402,8 @@ if page == "홈":
         theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
                        (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
                        ("등록 인력", _people_count, "명", False)], columns=3)
-    with calc_col, st.container(key="home_mm_calc"):
+    # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
+    if calc_col.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
         mm_calculator(day)
     chat_col, result_col = st.columns(2, gap="large")
 

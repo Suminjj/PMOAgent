@@ -71,7 +71,7 @@ def test_question_shows_answer_and_tool_results(app):
     assert not app.exception
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
     assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 오른쪽 결과 패널 제목
-    assert app.dataframe and len(app.dataframe[-1].value) == 2   # [0]은 홈 MM 계산기의 월별 근거 표
+    assert app.dataframe and len(app.dataframe[-1].value) == 2
 
 
 def test_follow_up_keeps_conversation(app):
@@ -148,12 +148,16 @@ def test_auto_category_keeps_all_tools(app):
 
 
 def test_home_mm_calculator_replaces_account_card(app):
-    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기를 둔다(11/07 담당자)."""
+    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기 버튼을 둔다. 누르면 모달로 연다(11/07 담당자)."""
     assert not any("계정 ID 미발급" in m.value for m in app.markdown)
+    assert not app.date_input                                        # 처음에는 버튼만
+    app.button(key="home_mm_calc").click().run()
+    # 화면에서는 모달 안의 입력만 다시 실행되지만, AppTest는 전체를 다시 실행하므로 버튼도 함께 누른다.
+    app.button(key="home_mm_calc").click()
     app.date_input(key="mm_calc_start").set_value(date(2026, 10, 1))
     app.date_input(key="mm_calc_end").set_value(date(2026, 10, 10)).run()
     assert not app.exception
-    assert any(">0.250<" in m.value for m in app.markdown)            # 10월 1~10일 = 5/20 (구매시스템)
-    assert any(c.value == "근무일 5/20일" for c in app.caption)
+    assert any(">0.250<" in m.value and "근무일 5/20일" in m.value for m in app.markdown)   # 10월 1~10일 = 5/20
+    app.button(key="home_mm_calc").click()
     app.date_input(key="mm_calc_end").set_value(date(2026, 9, 1)).run()
     assert any("종료일은 시작일보다" in e.value for e in app.error)

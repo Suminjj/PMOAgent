@@ -96,9 +96,10 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-kpi-unit { font-size: 14px; color: #5B6780; font-weight: 500; margin-left: 2px; }
 
 /* ---- 홈: 흰 카드 패널 ---- */
-.st-key-home_mm_calc { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 12px; padding: 12px 16px; gap: 6px; }
-.st-key-home_mm_calc [data-testid="stWidgetLabel"] p { font-size: 12px; color: #5B6780; }
-.st-key-home_mm_calc .pmo-kpi-value { font-size: 24px; }
+.st-key-home_mm_calc button { min-height: 86px; height: 100%; background: #0F1B33; border: 1px solid #0F1B33; border-radius: 12px; }
+.st-key-home_mm_calc button p { color: #FFFFFF; font-size: 18px; font-weight: 600; }
+.st-key-home_mm_calc button:hover { background: #1E2E52; border-color: #1E2E52; }
+.st-key-home_mm_calc button:focus:not(:active) { background: #0F1B33; border-color: #3B82F6; }
 .st-key-home_chat_panel, .st-key-home_result_panel {
   background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px;
 }
