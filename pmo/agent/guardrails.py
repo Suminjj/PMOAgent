@@ -3,7 +3,7 @@
 프롬프트에만 맡기지 않고 코드로 막는다(작은 로컬 모델은 지시를 늘 따르지는 않음, v2 평가 11/04).
 
 - 사전 검사(precheck): LLM을 부르기 전에 정해진 방식으로 답한다.
-  지시 무시 시도 · 관리하지 않는 정보(연봉·연락처 등) · 업무 범위 밖 · 다른 카테고리 업무 · 검수 금액(도구 연결 전)
+  지시 무시 시도 · 관리하지 않는 정보(연봉·연락처 등) · 업무 범위 밖 · 다른 카테고리 업무
 - 도구 입력 정리: 자리표시 값('미입력' 등) 제거, 사용자가 말하지 않은 인력·날짜 차단, '12월' 같은 달 보완
 - 답변 검사: 도구 결과·사용자 문장에 없는 인력 이름이 답변에 있으면 답변 보류, 카테고리 안내 바로잡기
 
@@ -69,7 +69,7 @@ def _vocabulary(service) -> set[str]:
 
 
 def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str],
-             history: list[dict] | None = None, inspection_ready: bool = False) -> dict | None:
+             history: list[dict] | None = None) -> dict | None:
     """LLM을 부르기 전에 답이 정해진 요청이면 {"kind", "answer"}를 돌려준다. 아니면 None."""
     q = question.strip()
     access = getattr(service, "access", None)
@@ -94,8 +94,6 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
     known = any(w in q for w in _vocabulary(service))
     if owner is None and not follow_up and not known and not any(w in q for w in BUSINESS_WORDS):
         return {"kind": "out_of_scope", "answer": ANSWERS["out_of_scope"]}
-    if owner == "inspection" and not inspection_ready and agent_key == "auto":
-        return {"kind": "inspection", "answer": None}      # 검수 Agent의 정해진 안내(agents.py planned_notice)로 답한다
     if agent_key != "auto" and owner and owner != agent_key and scores(q)[agent_key] == 0 and not follow_up:
         return {"kind": "redirect", "answer": ANSWERS["redirect"].format(here=agent_labels[agent_key],
                                                                          there=agent_labels[owner])}

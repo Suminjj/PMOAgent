@@ -164,7 +164,8 @@
   MM은 투입 ∩ 계약 ∩ 조회 기간을 구매시스템 방식으로 다시 계산, 건별 원 미만 절사 후 합산, 부가세 별도.
   계약 행에 연결 투입이 있으면 그 투입만, 없으면 그 인력의 모든 투입을 계약 기간으로 자른다.
   Part time은 조회 기간이 투입 전체를 덮을 때만 계산, 매입단가 미입력·단위가 원/MM이 아님·Type 미입력은 '계산 불가'(0원 아님)로 합계에서 빼고 건수를 알린다.
-  검수 Agent 도구(inspection_amount_by_revenue_project)는 규칙 확정 후 연결한다(아직 고정 안내).
+  [확정] 11/07 담당자: 검수 Agent가 실제로 답하도록 같은 계산을 Agent 도구(inspection_amount_by_revenue_project)로 연결했다
+  (규칙은 위 기본안 그대로, 답변에 '기본안·구매시스템 대조 전'을 밝힘).
 
 ### 5.4 자연어 요청
 
@@ -245,8 +246,10 @@
   - 인력관리: find_people, search_people, get_assignment_timeline, get_project_members, query_database, prepare_account_id,
     prepare_assignment_update, prepare_assignment_transfer, prepare_assignment_replace
   - 구매계약: find_people, list_contracts, search_contracts, contracts_ending, pending_contract_alerts, query_database, monthly_purchase_needs(구현 예정), prepare_contract_save, prepare_contract_delete, prepare_alert_ack
-  - 검수: inspection_amount_by_revenue_project(구현 예정). 도구가 모두 구현 예정이라 LLM 없이 정해진 안내로 답한다
-    (평가에서 작은 모델이 도구를 부르지 않고 엉뚱한 카테고리를 안내해서). 규칙이 확정되어 도구를 구현하면 LLM을 쓴다.
+  - 검수: inspection_amount_by_revenue_project, search_contracts (11/07 연결. 이전에는 도구가 구현 예정이라 LLM 없이 정해진 안내로 답함)
+    [제안] 도구 입력은 업체(필수)·계약번호·연·월(선택). 계약번호가 없으면 업체의 계약이 1건일 때 그 계약, 여러 건이면 계약번호 목록으로 되묻는다.
+    업체 칸의 계약번호도 받는다. 월이 없으면 이번 달. 금액은 원 단위 문장으로 돌려줘 모델이 다시 계산하지 않게 하고, 조회 월에 투입이
+    없으면 '해당 없음'(0원·계산 불가와 구분). 과제 리더는 단가 권한으로 막는다(`Service._require_rates`).
   - 자동(전체): 구현된 모든 도구('구현 예정' 도구 제외, v1.2), 업무 지침 미주입 (기존 단일 Agent, 비교 기준)
 - [제안] 전문 Agent의 시스템 프롬프트 = 공통 규칙(`prompts.py`) + 역할 + `agent_skills/` 업무 지침 본문.
   지침의 앞머리·'성공 기준' 절과, 그 Agent가 쓸 수 없는 도구의 표 행은 빼고 넣는다.
@@ -290,7 +293,7 @@
 - [제안] 프롬프트에만 맡기지 않고 코드로 막는다. v2 평가(11/04)에서 나온 문제를 근거로 정했다.
   - 사전 검사(LLM 호출 없이 정해진 문장): 지시 무시 시도(O03), 관리하지 않는 정보(연봉·연락처 등, G01),
     업무 범위 밖(업무 말·등록 인력·업체·과제명이 없음, O01·O02), 전문 Agent에 다른 카테고리 업무(키워드 점수로 판정),
-    자동(전체)에 검수 금액(도구 연결 전, I01·I02 → 검수 Agent 안내와 같은 문장). 되물음에 대한 짧은 대답은 검사하지 않는다.
+    되물음에 대한 짧은 대답은 검사하지 않는다. (자동(전체)의 검수 금액 고정 안내는 11/07 검수 도구 연결로 없앴다.)
   - 카테고리 안내 바로잡기: 맡은 업무인데 다른 카테고리로 보내면 한 번 다시 시킨다(A02). 없는 카테고리 이름(A01 '계정 관리')은
     맞는 카테고리나 범위 밖 안내로 바꾼다.
   - 도구 입력: '미입력'·'없음' 같은 자리표시 값은 값을 안 준 것으로 본다(X02). 투입 변경·이동·교체의 종료일은 사용자가 말했을 때만
@@ -360,7 +363,7 @@
    v2.1 채점 정리: C09·C10·A01은 조건 조회 도구로 자동 채점, S11(과제 인력)은 현재·예정 인력이 모두 있으면 정답(과거 인력을 함께 보여줘도 됨),
    S10(없는 인력)은 '없습니다'·'등록되어 있지 않습니다' 모두 정답(답변 채점).
    실행: `python -m scripts.run_evals --set eval --model qwen3:8b`. 화면 확인: `scripts.seed_demo --eval` + PMO_TODAY=2026-11-15.
-   v3(11/04): V01(과제 리더 단가 권한)·G03(연락처) 추가. 가드레일이 막은 호출(blocked)은 도구 순서 채점에서 뺀다.
+   v3(11/04): V01(과제 리더 단가 권한)·G03(연락처) 추가. 11/07: I01·I02를 검수 도구 자동 채점(검수 금액·계약 총액 원 단위 비교)으로 바꿈. 가드레일이 막은 호출(blocked)은 도구 순서 채점에서 뺀다.
 9. [TODO] v4: 답변 채점 저지(여러 LLM)·사람 검토, 토큰·시간 tracing(Langfuse 자체 설치). v2 권한 질문은 사용자 계정별 실행 필요
 
 ## 8. 개발용 스킬과 서비스 Agent 업무 지침
