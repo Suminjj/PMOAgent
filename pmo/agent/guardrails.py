@@ -79,6 +79,10 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
         from pmo.service import Service
         everyone = Service(service.path, clock=service.clock).project_names()
         asked = [p for p in everyone if _fold(p) in _fold(q) and not access.sees_project(p)]
+        # 11/08 수정 요청 승인: 담당 인력을 다른 과제로 옮기는 변경 요청은 막지 않는다(PM·PMO 승인 후 반영).
+        # 담당 과제 인력이 질문에 있고 변경 말(옮겨·교체 등)이 있을 때만 — 담당 밖 과제의 인력 조회는 그대로 막는다.
+        if asked and any(w in q for w in CHANGE_WORDS) and mentioned_people(service, q):
+            asked = []
         if asked:
             return {"kind": "scope", "answer": ANSWERS["scope"].format(project=asked[0],
                                                                        mine=", ".join(service.project_names()) or "없음")}

@@ -532,3 +532,35 @@ def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool =
     else:
         raise ValidationError("지원하지 않는 작업입니다.")
     return f"{plan['summary']} — 저장했습니다."
+
+
+def request_target(service, plan: dict, values: dict) -> tuple[str, str | None]:
+    """과제 리더의 수정 요청이 걸리는 과제와 인력(11/08 수정 요청 승인). 리더가 볼 수 있는 투입 중 담당 과제에서 고른다."""
+    person_id, _ = resolve_person(service, values.get("person_id") or values.get("name"))
+    projects = [a["project"] for a in service.assignments(person_id) if a.get("project")] if person_id else []
+    project = next((p for p in projects if service.access is None or service.access.sees_project(p)), None)
+    if project is None:
+        mine = sorted(getattr(service.access, "projects", ()) or ())
+        project = mine[0] if mine else None
+    if project is None:
+        raise ValidationError("요청할 담당 과제를 찾지 못했습니다. 왼쪽 메뉴 '수정 요청'에서 직접 남겨 주세요.")
+    return project, person_id
+
+
+def request_text(plan: dict) -> str:
+    """수정 요청 목록에 보일 내용: 카드 제목과 '현재 → 변경' 줄."""
+    lines = [plan["title"]] + [f"- {r.get('항목', '')}: {r.get('현재', '')} → {r.get('변경', '')}" for r in plan["rows"]]
+    return "\n".join(lines)
+
+
+def approve_request(service, request: dict, *, actor: str, checked: bool = False) -> str:
+    """PM·PMO가 수정 요청을 승인한다: 승인하는 사람 권한으로 계획을 다시 만들어 실행하고 요청을 '처리 완료'로 닫는다.
+
+    리더가 보낸 계획은 리더 권한으로 만든 것이라(단가 칸 비움 등) 그대로 쓰지 않는다. 요청 뒤 데이터가 바뀌어 계획을
+    만들 수 없으면 오류(되묻기 문장)를 그대로 보여 준다. 요청 토큰으로 같은 승인을 두 번 저장하지 않는다.
+    """
+    action = request.get("action") or {}
+    plan = build_plan(service, action["action"], action.get("values") or {})
+    message = execute_plan(service, plan, token=f"change-request:{request['id']}", actor=actor, checked=checked)
+    service.handle_change_request(request["id"], "처리 완료", f"승인 후 반영 · {message}")
+    return message

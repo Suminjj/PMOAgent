@@ -13,7 +13,7 @@
 | run_log | operation, actor, input_json, ok, result, error, duration_ms, started_at | 업무 함수·도구 실행 기록 (하네스) |
 | users | id, login, name, role(PMO·PM·과제 리더), password_hash, salt, active, created_at, version | 로그인 사용자 (v7). 비밀번호는 PBKDF2 해시만 저장 |
 | user_projects | user_id, project | 과제 리더의 담당 과제(투입 과제) (v7) |
-| change_requests | id, requester_id, requester_name, person_id, project, content, status(요청·처리 완료·반려), created_at, handled_by, handled_at, note | 과제 리더의 수정 요청 (v7) |
+| change_requests | id, requester_id, requester_name, person_id, project, content, status(요청·처리 완료·반려), created_at, handled_by, handled_at, note, action_json(v9: Agent 수정 요청 카드의 변경 종류·입력값, 승인 시 PM·PMO 권한으로 다시 계획) | 과제 리더의 수정 요청 (v7, v9 승인 후 반영) |
 
 ## 식별과 필드 원본
 

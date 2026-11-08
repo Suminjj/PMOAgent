@@ -91,7 +91,8 @@ def test_agent_tools_follow_login_not_the_question(db):
     result = call_tool(s, "contracts_ending", {"year": 2026, "month": 11})
     assert {r["name"] for r in result["data"]} <= SOFTLAB_PEOPLE
     plan = call_tool(s, "prepare_contract_save", {"person_id": "서협력", "end_date": "2026-12-31"})
-    assert not plan["ok"] and "수정 요청" in plan["error"]                # 확인 카드도 만들지 않음
+    # 11/08 수정 요청 승인: 리더에게는 저장 카드 대신 '수정 요청' 카드(담당 과제로 요청, 저장 함수는 그대로 막힘)
+    assert plan["ok"] and plan["data"]["plan"]["request"]["project"] == "Soft Lab 고도화"
 
 
 def test_text_to_sql_runs_on_rows_the_leader_may_see(db, monkeypatch):

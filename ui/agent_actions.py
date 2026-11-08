@@ -24,10 +24,17 @@ def render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_inde
 def _render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_index: int) -> None:
     done = turn.setdefault("done", {})
     verb = "삭제" if plan["action"] == "contract_delete" else "저장"
-    st.markdown(f"**확인 후 {verb} · {plan['title']}**  \n아래 내용으로 바꿀까요? 아직 {verb}되지 않았습니다.")
+    if plan.get("request"):
+        st.markdown(f"**수정 요청 · {plan['title']}**  \n과제 리더 권한이라 바로 바꾸지 않습니다. "
+                    "요청을 보내면 PM·PMO가 승인해야 반영됩니다.")
+    else:
+        st.markdown(f"**확인 후 {verb} · {plan['title']}**  \n아래 내용으로 바꿀까요? 아직 {verb}되지 않았습니다.")
     st.table(plan["rows"])
     if call_index in done:
         (st.info if done[call_index].startswith("취소") else st.success)(done[call_index])
+        return
+    if plan.get("request"):
+        _render_request(service, plan, key, turn, call_index)
         return
     token = turn.setdefault("tokens", {}).setdefault(call_index, str(uuid4()))
     checked = True
@@ -58,3 +65,25 @@ def _render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_ind
         done[call_index] = "취소했습니다. 저장하지 않았습니다."
         st.rerun()
     st.caption("값을 바꾸려면 채팅으로 다시 요청하거나 왼쪽 메뉴 화면을 이용하세요.")
+
+
+def _render_request(service, plan: dict, key: str, turn: dict, call_index: int) -> None:
+    """과제 리더의 확인 카드: '수정 요청 보내기'(11/08 수정 요청 승인). 저장하지 않고 PM·PMO 승인 대기 요청만 남긴다."""
+    from pmo.agent.actions import request_text
+    done = turn.setdefault("done", {})
+    send, cancel = st.columns(2)
+    if send.button("수정 요청 보내기", type="primary", key=f"{key}_request"):
+        req = plan["request"]
+        try:
+            service.create_change_request(project=req["project"], person_id=req["person_id"],
+                                          content=request_text(plan), action=req["action"])
+            done[call_index] = "수정 요청을 보냈습니다. PM·PMO가 승인하면 반영됩니다. 왼쪽 메뉴 '수정 요청'에서 상태를 볼 수 있습니다."
+            st.session_state["saved_message"] = done[call_index]
+            st.rerun()
+        except (ValidationError, ConflictError) as exc:
+            st.error(str(exc))
+        except sqlite3.Error:
+            st.error("요청을 저장하지 못했습니다. 다시 시도하세요.")
+    if cancel.button("취소", key=f"{key}_cancel"):
+        done[call_index] = "취소했습니다. 요청을 보내지 않았습니다."
+        st.rerun()
