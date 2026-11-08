@@ -75,8 +75,8 @@ def classify_with_llm(client: ChatClient, question: str, tokens: dict,
 
 def hard_to_judge(question: str, score: dict[str, int], multi: bool) -> str | None:
     """규칙만으로 고르기 어려운 질문이면 그 이유(LLM 분류 대상). 짧고 분명하면 None."""
-    # 문장 끝: 마침표·물음표·느낌표·줄바꿈. '0.5MM'의 소수점은 문장 끝이 아니다.
-    sentences = [x for x in re.split(r"(?<!\d)[.?!。](?!\d)|\n", question) if x and x.strip()]
+    # 문장 끝: 뒤에 공백·끝이 오는 마침표·물음표·느낌표, 줄바꿈. '0.5MM'·'lee.fake'·'C-2026.1' 안의 점은 문장 끝이 아니다.
+    sentences = [x for x in re.split(r"[.?!。](?=\s|$)|\n", question) if x and x.strip()]
     if len(question) >= LONG_CHARS or len(sentences) >= 2:
         return "long"
     top = sorted((v for v in score.values() if v > 0), reverse=True)

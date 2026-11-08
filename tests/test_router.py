@@ -100,6 +100,8 @@ def test_long_or_hard_questions_go_to_llm(service):
     from pmo.agent.guardrails import scores
     assert hard_to_judge("김정직 지금 무슨 과제야?", scores("김정직 지금 무슨 과제야?"), False) is None
     assert hard_to_judge("백협력 0.5MM는 반 달만 일한 거야?", scores("백협력 0.5MM는 반 달만 일한 거야?"), False) is None  # 소수점
+    q = "이가상 계정 ID lee.fake로 넣어줘"                                   # 계정 ID 안의 점(PC 화면 테스트)
+    assert hard_to_judge(q, scores(q), False) is None
     long_q = ("서협력 님 다음 달에도 계속 일할 수 있는지 궁금한데요, 과제 얘기가 아니라 구매계약이 언제 끝나는지가 궁금해요.")
     assert route(service, long_q)["agents"] == ["staff", "contract"]          # 규칙만이면 두 업무로 잘못 봄
     client = ScriptedClient([text("구매계약")])
