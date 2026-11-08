@@ -7,6 +7,9 @@
    - 한 업무만 점수가 있거나 1등이 하나면 그 Agent.
    - 두 업무 이상에 점수가 있고 '그리고·와/과·랑·,' 같은 연결 말이 있으면 여러 업무 질문 → Agent를 차례로 불러 답을 합친다.
 4. 키워드로 정하지 못하면(점수 없음·동점) LLM에 카테고리만 묻는다(도구 없이 한 번). 그래도 모르면 자동(전체) 단일 Agent.
+5. 11/08 담당자: 짧고 분명한 질문은 규칙으로 바로, 길게 쓴 질문(40자 이상·문장 둘 이상)이나 판단하기 어려운 질문
+   (1·2등 점수 차 1 이하, 긴 여러 업무 질문)은 LLM이 맥락(직전 대화 포함)을 보고 고른다. LLM 답을 알아들을 수 없으면
+   규칙 판정을 그대로 쓴다.
 
 라우팅 결과(고른 Agent·방법·점수)는 답변과 함께 돌려주고 화면·평가·실행 기록에 남긴다.
 """
@@ -26,12 +29,15 @@ ROUTER_LABEL = "자동 배정"
 JOINERS = re.compile(r"그리고|및|하고\s|이랑\s|랑\s|,|와\s|과\s|도\s*(같이|함께)|또한?\s|이고\s|이며\s")
 FOLLOW_UP_CHARS = 20
 
-CLASSIFY_PROMPT = """너는 질문 분류기다. 아래 질문을 처리할 업무 카테고리 하나를 고른다. 설명 없이 카테고리 이름만 답한다.
+LONG_CHARS = 40
+CLASSIFY_PROMPT = """너는 질문 분류기다. 사용자가 실제로 원하는 것을 보고, 처리할 업무 카테고리를 고른다. 설명 없이 카테고리 이름만 답한다.
 - 인력관리: 인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 기간 MM 계산, 계정 ID 입력, 투입 변경·과제 이동·인력 교체
 - 구매계약: 구매계약 기간·종료 예정·만료 알림 조회, 계약 등록·수정·삭제, 알림 확인
 - 검수: 업체·계약번호의 월 검수 금액(원)·계약 총액
 - 없음: 위 업무가 아님
-답: 인력관리 / 구매계약 / 검수 / 없음 중 하나"""
+질문 속에 다른 업무의 단어가 나와도 사용자가 원하는 업무만 고른다("과제 말고 계약이 궁금해" → 구매계약).
+정말로 두 업무를 함께 물었을 때만 질문에 나온 순서로 쉼표로 이어 답한다(예: 인력관리, 구매계약).
+답: 인력관리 / 구매계약 / 검수 / 없음"""
 _LABEL_TO_KEY = {AGENTS[k].label: k for k in SPECIALISTS}
 
 
@@ -46,17 +52,39 @@ def _positions(question: str) -> dict[str, int]:
     return found
 
 
-def classify_with_llm(client: ChatClient, question: str, tokens: dict) -> str | None:
-    """키워드로 정하지 못한 질문만 LLM에 카테고리를 묻는다. 고르지 못하면 None."""
+def classify_with_llm(client: ChatClient, question: str, tokens: dict,
+                      history: list[dict] | None = None) -> list[str] | None:
+    """LLM에 카테고리만 묻는다(도구 없음). 고른 업무 목록(답에 나온 순서), '없음'이면 [], 알아들을 수 없으면 None."""
+    context = ""
+    if history:     # 직전 대화 한 쌍만 맥락으로(되물음에 이어지는 긴 대답)
+        last = [m for m in history if m.get("role") in ("user", "assistant")][-2:]
+        context = "직전 대화:\n" + "\n".join(f"{'사용자' if m['role'] == 'user' else 'Agent'}: {m['content'][:200]}"
+                                           for m in last) + "\n\n분류할 질문:\n"
     reply = client.chat([{"role": "system", "content": CLASSIFY_PROMPT},
-                         {"role": "user", "content": question}], [])
+                         {"role": "user", "content": context + question}], [])
     usage = reply.get("usage") or {}
     tokens["llm_calls"] += 1
     tokens["prompt"] += int(usage.get("prompt_tokens") or 0)
     tokens["completion"] += int(usage.get("completion_tokens") or 0)
     text = reply.get("content") or ""
-    hits = [key for label, key in _LABEL_TO_KEY.items() if label in text]
-    return hits[0] if len(hits) == 1 else None
+    found = sorted((text.find(label), key) for label, key in _LABEL_TO_KEY.items() if label in text)
+    if found:
+        return [key for _, key in found]
+    return [] if "없음" in text else None
+
+
+def hard_to_judge(question: str, score: dict[str, int], multi: bool) -> str | None:
+    """규칙만으로 고르기 어려운 질문이면 그 이유(LLM 분류 대상). 짧고 분명하면 None."""
+    # 문장 끝: 마침표·물음표·느낌표·줄바꿈. '0.5MM'의 소수점은 문장 끝이 아니다.
+    sentences = [x for x in re.split(r"(?<!\d)[.?!。](?!\d)|\n", question) if x and x.strip()]
+    if len(question) >= LONG_CHARS or len(sentences) >= 2:
+        return "long"
+    top = sorted((v for v in score.values() if v > 0), reverse=True)
+    if not top:
+        return "no_keyword"
+    if len(top) >= 2 and top[0] - top[1] <= 1 and not multi:
+        return "close"
+    return None
 
 
 def route(service: Service, question: str, client: ChatClient | None = None,
@@ -73,20 +101,26 @@ def route(service: Service, question: str, client: ChatClient | None = None,
     if history and previous and len(q) <= FOLLOW_UP_CHARS and len(positive) <= 1 \
             and (not positive or positive[0] in previous):
         return {"agents": list(previous), "method": "follow_up", "scores": score}
-    if len(positive) >= 2 and JOINERS.search(q):
+    # 규칙 판정(빠른 길)
+    multi = len(positive) >= 2 and bool(JOINERS.search(q))
+    if multi:
         order = _positions(q)
-        return {"agents": sorted(positive, key=lambda k: order.get(k, 999)), "method": "multi", "scores": score}
-    best = guardrails.owner_of(q)
-    if best in SPECIALISTS:
-        return {"agents": [best], "method": "keyword", "scores": score}
-    if client is not None:
-        try:
-            picked = classify_with_llm(client, q, tokens)
-        except LLMError:
-            picked = None
-        if picked:
-            return {"agents": [picked], "method": "llm", "scores": score}
-    return {"agents": [AUTO], "method": "fallback", "scores": score}
+        rule = {"agents": sorted(positive, key=lambda k: order.get(k, 999)), "method": "multi", "scores": score}
+    else:
+        best = guardrails.owner_of(q)
+        rule = ({"agents": [best], "method": "keyword", "scores": score} if best in SPECIALISTS
+                else {"agents": [AUTO], "method": "fallback", "scores": score})
+    reason = hard_to_judge(q, score, multi) or (None if rule["method"] != "fallback" else "tie")
+    if reason is None or client is None:
+        return rule
+    # 길거나 판단하기 어려운 질문: LLM이 맥락을 보고 고른다. 알아들을 수 없으면 규칙 판정
+    try:
+        picked = classify_with_llm(client, q, tokens, history)
+    except LLMError:
+        picked = None
+    if picked:
+        return {"agents": picked[:3], "method": "llm", "scores": score, "reason": reason, "rule": rule["agents"]}
+    return dict(rule, reason=reason)       # '없음'·알아들을 수 없는 답 → 규칙 판정(사전 검사는 이미 통과)
 
 
 def focus_note(key: str, keys: list[str]) -> str:

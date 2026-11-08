@@ -1645,6 +1645,125 @@
         ],
         "note": "구매계약 → 인력관리 순서(질문에 나온 순서). 11월 MM은 투입과 겹치는 날로 계산(calculate_mm) 또는 월별 MM 요약."
       }
+    },
+    {
+      "id": "L01",
+      "agent": "staff",
+      "case": "긴 질문 → 인력관리",
+      "question": "아 그 알파솔루션에 있는 이협력 있잖아요, 요즘 어느 과제에서 일하는지 자꾸 헷갈려서요. 지금 어디 들어가 있는지 좀 알려줄래요?",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "이협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "get_assignment_timeline",
+          "args": {
+            "person_id": "EV-05"
+          },
+          "or_find": true,
+          "expect": {
+            "ok": true,
+            "current_projects": [
+              "Soft Lab 고도화"
+            ]
+          }
+        }
+      ],
+      "answer": {
+        "target": "v3.1",
+        "must_include": [
+          "Soft Lab 고도화"
+        ],
+        "note": "문장 두 개 → LLM 분류. 과제·투입 업무."
+      }
+    },
+    {
+      "id": "L02",
+      "agent": "contract",
+      "case": "긴 질문 + 다른 업무 단어 → 구매계약",
+      "question": "서협력 님 다음 달에도 계속 일할 수 있는지 궁금한데요, 과제 얘기가 아니라 구매계약이 언제 끝나는지가 궁금해요.",
+      "steps": [
+        {
+          "tool": "find_people",
+          "args": {
+            "name": "서협력"
+          },
+          "optional": true,
+          "expect": {
+            "ok": true,
+            "count": 1
+          }
+        },
+        {
+          "tool": "list_contracts",
+          "args": {
+            "person_id": "EV-14"
+          },
+          "or_find": true,
+          "expect": {
+            "ok": true,
+            "end_dates": [
+              "2027-05-31"
+            ]
+          }
+        }
+      ],
+      "answer": {
+        "target": "v3.1",
+        "must_include": [
+          "2027-05-31"
+        ],
+        "note": "'과제'(인력관리)와 '계약'(구매계약)이 함께 나와 규칙은 두 업무로 판정한다. LLM이 맥락으로 구매계약만 고른다."
+      }
+    },
+    {
+      "id": "L03",
+      "agent": "inspection",
+      "case": "업무 단어 적은 질문 → 검수",
+      "question": "감마테크에 이번 달에 얼마 줘야 하는지 C-2026-202 기준으로 알려줄 수 있어요?",
+      "steps": [
+        {
+          "tool": "inspection_amount_by_revenue_project",
+          "args": {
+            "company": "감마테크",
+            "contract_no": "C-2026-202"
+          },
+          "expect": {
+            "ok": true,
+            "inspection_total_won": 11500000,
+            "contract_total_won": 54000000
+          }
+        }
+      ],
+      "answer": {
+        "target": "v3.1",
+        "note": "검수·금액이라는 말이 없어 규칙은 고르지 못한다(점수 없음 → LLM). 이번 달 = 기준일 11월."
+      }
+    },
+    {
+      "id": "L04",
+      "agent": [
+        "staff",
+        "contract"
+      ],
+      "case": "긴 여러 업무 질문",
+      "question": "정협력 관련해서 두 가지만 확인 부탁드려요. 하나는 8월 MM이 얼마나 나왔는지고, 다른 하나는 구매계약이 언제까지인지예요.",
+      "steps": null,
+      "answer": {
+        "target": "v3.1",
+        "must_include": [
+          "2026-12-31"
+        ],
+        "note": "긴 여러 업무 질문 → LLM이 두 업무를 질문 순서대로 고른다(인력관리 → 구매계약)."
+      }
     }
   ]
 }

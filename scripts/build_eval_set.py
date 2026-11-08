@@ -244,6 +244,24 @@ def questions(s: Service) -> list[dict]:
     add("M02", ["contract", "staff"], "계약 + MM (Agent 두 개)", "박협력 계약 종료일이랑 11월 투입 MM 알려줘.", None,
         target="v3.1", must_include=[park_end],
         note="구매계약 → 인력관리 순서(질문에 나온 순서). 11월 MM은 투입과 겹치는 날로 계산(calculate_mm) 또는 월별 MM 요약.")
+
+    # --- v3.1 길게 쓴 질문 (라우터가 규칙 대신 LLM 분류로 맥락을 보고 고름, 11/08 담당자) ------------------
+    add("L01", "staff", "긴 질문 → 인력관리", "아 그 알파솔루션에 있는 이협력 있잖아요, 요즘 어느 과제에서 일하는지 자꾸 헷갈려서요. "
+        "지금 어디 들어가 있는지 좀 알려줄래요?",
+        person("이협력", "EV-05", "get_assignment_timeline"), target="v3.1",
+        must_include=[t5["current"][0]["project"]], note="문장 두 개 → LLM 분류. 과제·투입 업무.")
+    seo_end = max(c["end_date"] for c in s.contracts("EV-14"))
+    add("L02", "contract", "긴 질문 + 다른 업무 단어 → 구매계약", "서협력 님 다음 달에도 계속 일할 수 있는지 궁금한데요, "
+        "과제 얘기가 아니라 구매계약이 언제 끝나는지가 궁금해요.",
+        person("서협력", "EV-14", "list_contracts"), target="v3.1", must_include=[seo_end],
+        note="'과제'(인력관리)와 '계약'(구매계약)이 함께 나와 규칙은 두 업무로 판정한다. LLM이 맥락으로 구매계약만 고른다.")
+    add("L03", "inspection", "업무 단어 적은 질문 → 검수", "감마테크에 이번 달에 얼마 줘야 하는지 C-2026-202 기준으로 알려줄 수 있어요?",
+        [step(INSPECT, {"company": "감마테크", "contract_no": "C-2026-202"})], target="v3.1",
+        note="검수·금액이라는 말이 없어 규칙은 고르지 못한다(점수 없음 → LLM). 이번 달 = 기준일 11월.")
+    jung_end = max(c["end_date"] for c in s.contracts("EV-07"))
+    add("L04", ["staff", "contract"], "긴 여러 업무 질문", "정협력 관련해서 두 가지만 확인 부탁드려요. 하나는 8월 MM이 얼마나 "
+        "나왔는지고, 다른 하나는 구매계약이 언제까지인지예요.", None, target="v3.1", must_include=[jung_end],
+        note="긴 여러 업무 질문 → LLM이 두 업무를 질문 순서대로 고른다(인력관리 → 구매계약).")
     return q
 
 

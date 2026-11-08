@@ -92,3 +92,38 @@ def test_router_eval_reports_routing_accuracy():
     assert rows["M01"]["routed"] == ["staff", "contract"] and rows["M01"]["route_ok"]
     assert "route_ok" not in rows["O01"]                                    # 태그 없는(가드레일) 질문은 채점 안 함
     assert report["routing"]["checked"] == 4 and report["routing"]["correct"] == 4
+
+
+def test_long_or_hard_questions_go_to_llm(service):
+    """11/08 담당자: 짧고 분명하면 규칙, 길게 쓰거나 판단하기 어려우면 LLM이 맥락을 보고 고른다."""
+    from pmo.agent.router import hard_to_judge
+    from pmo.agent.guardrails import scores
+    assert hard_to_judge("김정직 지금 무슨 과제야?", scores("김정직 지금 무슨 과제야?"), False) is None
+    assert hard_to_judge("백협력 0.5MM는 반 달만 일한 거야?", scores("백협력 0.5MM는 반 달만 일한 거야?"), False) is None  # 소수점
+    long_q = ("서협력 님 다음 달에도 계속 일할 수 있는지 궁금한데요, 과제 얘기가 아니라 구매계약이 언제 끝나는지가 궁금해요.")
+    assert route(service, long_q)["agents"] == ["staff", "contract"]          # 규칙만이면 두 업무로 잘못 봄
+    client = ScriptedClient([text("구매계약")])
+    decision = route(service, long_q, client)
+    assert decision["agents"] == ["contract"] and decision["method"] == "llm" and decision["reason"] == "long"
+    assert decision["rule"] == ["staff", "contract"]                          # 규칙 판정도 남김(평가·기록용)
+
+
+def test_llm_can_pick_several_agents_in_order(service):
+    question = "정협력 관련해서 두 가지만 확인 부탁드려요. 하나는 8월 MM이 얼마나 나왔는지고, 다른 하나는 구매계약이 언제까지인지예요."
+    decision = route(service, question, ScriptedClient([text("인력관리, 구매계약")]))
+    assert decision["agents"] == ["staff", "contract"] and decision["method"] == "llm"
+
+
+def test_unusable_llm_answer_keeps_rule_decision(service):
+    question = "아 그 알파솔루션에 있는 이협력 있잖아요, 요즘 어느 과제에서 일하는지 자꾸 헷갈려서요. 지금 어디 들어가 있는지 좀 알려줄래요?"
+    for reply in ("음… 잘 모르겠어요", "없음"):
+        decision = route(service, question, ScriptedClient([text(reply)]))
+        assert decision["agents"] == ["staff"] and decision["method"] == "keyword" and decision["reason"] == "long"
+
+
+def test_llm_sees_previous_turn_as_context(service):
+    client = ScriptedClient([text("구매계약")])
+    history = [{"role": "user", "content": "박협력 구매계약 언제까지야?"},
+               {"role": "assistant", "content": "박협력 계약은 11월 27일까지입니다."}]
+    route(service, "그럼 그거 연장하려면 언제까지 처리해야 되는지도 궁금하고 그 다음 계약도 알려줄래요?", client, history=history)
+    assert "직전 대화" in client.seen[0][0][1]["content"] and "11월 27일" in client.seen[0][0][1]["content"]
