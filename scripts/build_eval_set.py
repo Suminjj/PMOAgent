@@ -51,16 +51,18 @@ def questions(s: Service) -> list[dict]:
     alpha = s.inspection("알파솔루션", "C-2026-103", "2026-11", "2026-11")
     month_mm = {r["start_date"]: r["months"] for r in s.monthly_mm(2026) if r["name"] in ("정협력", "한협력")}
 
-    def step(tool, args, optional=False, or_find=False):
+    def step(tool, args, optional=False, or_find=False, alt=()):
         return {"tool": tool, "args": args, **({"optional": True} if optional else {}),
-                **({"or_find": True} if or_find else {})}
+                **({"or_find": True} if or_find else {}), **({"alt": list(alt)} if alt else {})}
 
     # 투입·계약 조회는 find_people 결과의 summary로도 답할 수 있다(v1.2): 인력 찾기를 불렀으면 조회 도구를 생략해도 정답.
     SUMMARY_TOOLS = ("get_assignment_timeline", "list_contracts")
 
-    def person(name, pid, tool, extra=None):
+    def person(name, pid, tool, extra=None, alt=()):
         return [step(FIND, {"name": name}, optional=True),
-                step(tool, {"person_id": pid, **(extra or {})}, or_find=tool in SUMMARY_TOOLS)]
+                step(tool, {"person_id": pid, **(extra or {})}, or_find=tool in SUMMARY_TOOLS, alt=alt)]
+
+    MM_ALT = ("calculate_mm",)   # v3.1: MM 질문은 기간 MM 계산 도구(인력 지정)로 답해도 정답(성공 여부만 확인)
 
     q = []
 
@@ -85,7 +87,7 @@ def questions(s: Service) -> list[dict]:
          step("get_assignment_timeline", {"person_id": "EV-04"}, or_find=True)],
         must_include=["2026-10-01", "2026-12-31"])
     add("S07", "staff", "과제 교체 + 투입 MM", "정협력 투입 과제별 MM 알려줘.",
-        person("정협력", "EV-07", "get_assignment_timeline"),
+        person("정협력", "EV-07", "get_assignment_timeline", alt=MM_ALT),
         must_include=[mm(t7["past"][0]["mm"]), mm(t7["current"][0]["mm"])])
     add("S08", "staff", "월별 MM (도구 없음)", "정협력 8월 MM 얼마야?", None, target="v3", hold_ok=True,
         must_include=[mm(month_mm["2026-07-01"]["2026-08"]), mm(month_mm["2026-08-10"]["2026-08"])],
@@ -172,11 +174,11 @@ def questions(s: Service) -> list[dict]:
              "계약 C-2026-206은 연결 투입을 풀어 두 투입을 모두 덮음.")
     baek, choi = s.assignments("EV-22")[0], s.assignments("EV-08")[0]
     add("H01", "staff", "0.5MM = 반 달 근무 (Full time)", "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
-        person("백협력", "EV-22", "get_assignment_timeline"), must_include=[baek["start_date"], baek["end_date"]],
+        person("백협력", "EV-22", "get_assignment_timeline", alt=MM_ALT), must_include=[baek["start_date"], baek["end_date"]],
         note=f"{baek['assignment_type']} {baek['start_date']}~{baek['end_date']} = {mm(baek['mm'])}MM: 10월 근무일 20일 중 10일만 "
              "근무(반 달). 한 달 내내 반씩 일한 것이 아니다.")
     add("H02", "staff", "0.5MM = 한 달 병행 (Part time)", "최협력 11월 0.5MM는 반 달만 일하는 거야?",
-        person("최협력", "EV-08", "get_assignment_timeline"), must_include=[choi["start_date"], choi["end_date"]],
+        person("최협력", "EV-08", "get_assignment_timeline", alt=MM_ALT), must_include=[choi["start_date"], choi["end_date"]],
         note=f"{choi['assignment_type']} {choi['start_date']}~{choi['end_date']} = {mm(choi['mm'])}MM: 한 달 내내 다른 업무와 "
              "반씩 병행. 반 달만 일하는 것이 아니다.")
     add("N01", "staff", "등록만 되고 투입 없음", "노협력 지금 무슨 과제야?",
@@ -231,6 +233,35 @@ def questions(s: Service) -> list[dict]:
         note="연락처는 이 서비스가 관리하지 않는 정보. 지어내지 않고 정해진 문장으로 답한다(LLM 호출 없음).")
     add("G02", "contract", "정보 부족 (되묻기)", "계약 종료일 12월 31일로 바꿔줘.", [], target="v3", ask_back=True,
         note="누구의 어느 계약인지 없다. 확인 카드를 만들지 말고 대상을 되묻는다.")
+
+    # --- v3.1 여러 업무에 걸친 질문 (라우터가 Agent 둘을 차례로 부름, 정답 태그 = Agent 목록) -------------
+    lee_contract = s.contracts("EV-05")
+    add("M01", ["staff", "contract"], "투입 + 계약 (Agent 두 개)", "이협력 지금 투입 과제랑 구매계약 종료일 알려줘.",
+        person("이협력", "EV-05", "get_assignment_timeline") + person("이협력", "EV-05", "list_contracts"),
+        target="v3.1", must_include=[t5["current"][0]["project"], max(c["end_date"] for c in lee_contract)],
+        note="인력관리 Agent가 투입 과제, 구매계약 Agent가 계약 종료일을 답하고 라우터가 답을 합친다.")
+    park_end = max(c["end_date"] for c in s.contracts("EV-06"))
+    add("M02", ["contract", "staff"], "계약 + MM (Agent 두 개)", "박협력 계약 종료일이랑 11월 투입 MM 알려줘.", None,
+        target="v3.1", must_include=[park_end],
+        note="구매계약 → 인력관리 순서(질문에 나온 순서). 11월 MM은 투입과 겹치는 날로 계산(calculate_mm) 또는 월별 MM 요약.")
+
+    # --- v3.1 길게 쓴 질문 (라우터가 규칙 대신 LLM 분류로 맥락을 보고 고름, 11/08 담당자) ------------------
+    add("L01", "staff", "긴 질문 → 인력관리", "아 그 알파솔루션에 있는 이협력 있잖아요, 요즘 어느 과제에서 일하는지 자꾸 헷갈려서요. "
+        "지금 어디 들어가 있는지 좀 알려줄래요?",
+        person("이협력", "EV-05", "get_assignment_timeline"), target="v3.1",
+        must_include=[t5["current"][0]["project"]], note="문장 두 개 → LLM 분류. 과제·투입 업무.")
+    seo_end = max(c["end_date"] for c in s.contracts("EV-14"))
+    add("L02", "contract", "긴 질문 + 다른 업무 단어 → 구매계약", "서협력 님 다음 달에도 계속 일할 수 있는지 궁금한데요, "
+        "과제 얘기가 아니라 구매계약이 언제 끝나는지가 궁금해요.",
+        person("서협력", "EV-14", "list_contracts"), target="v3.1", must_include=[seo_end],
+        note="'과제'(인력관리)와 '계약'(구매계약)이 함께 나와 규칙은 두 업무로 판정한다. LLM이 맥락으로 구매계약만 고른다.")
+    add("L03", "inspection", "업무 단어 적은 질문 → 검수", "감마테크에 이번 달에 얼마 줘야 하는지 C-2026-202 기준으로 알려줄 수 있어요?",
+        [step(INSPECT, {"company": "감마테크", "contract_no": "C-2026-202"})], target="v3.1",
+        note="검수·금액이라는 말이 없어 규칙은 고르지 못한다(점수 없음 → LLM). 이번 달 = 기준일 11월.")
+    jung_end = max(c["end_date"] for c in s.contracts("EV-07"))
+    add("L04", ["staff", "contract"], "긴 여러 업무 질문", "정협력 관련해서 두 가지만 확인 부탁드려요. 하나는 8월 MM이 얼마나 "
+        "나왔는지고, 다른 하나는 구매계약이 언제까지인지예요.", None, target="v3.1", must_include=[jung_end],
+        note="긴 여러 업무 질문 → LLM이 두 업무를 질문 순서대로 고른다(인력관리 → 구매계약).")
     return q
 
 

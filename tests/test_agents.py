@@ -131,7 +131,7 @@ def test_category_routing_in_eval_harness():
     assert any("[업무 지침: contract-expiry]" in p for p, _ in client.prompts)
     assert any("[업무 지침: inspection-amount]" in p for p, _ in client.prompts)   # 11/07: 검수 Agent도 LLM으로 답함
     with pytest.raises(ValueError):
-        AgentPlanner(client, "router")
+        AgentPlanner(client, "nonsense")
 
 
 def test_request_outside_category_is_not_turned_into_another_change(service):
@@ -170,8 +170,9 @@ def test_out_of_scope_prompt_names_the_right_category():
 
 def test_answer_does_not_leak_tool_names(service):
     """PC 확인 10/18: 모델이 지시문과 도구 이름을 답변에 그대로 옮겨 적음."""
-    client = ScriptedClient([text("도구가 `ok: false`이면 오류를 설명한다. '계약 삭제' 요청은 `prepare_*` 도구로 "
-                                  "처리할 수 없습니다. prepare_contract_delete는 구매계약에서 씁니다.")])
+    leak = text("도구가 `ok: false`이면 오류를 설명한다. '계약 삭제' 요청은 `prepare_*` 도구로 "
+                "처리할 수 없습니다. prepare_contract_delete는 구매계약에서 씁니다.")
+    client = ScriptedClient([leak, leak])        # v3.1: 등록 인력이 있는데 도구 없이 답하면 한 번 다시 시킨다
     answer = ask(service, "박가상 그거 처리해줘", client, agent="staff")["answer"]
     assert "prepare_" not in answer and "ok: false" not in answer and "`" not in answer
     assert "'구매계약 삭제'" in answer

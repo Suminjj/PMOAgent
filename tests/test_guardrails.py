@@ -248,3 +248,26 @@ def test_tool_result_is_kept_in_run_log(service):
     row = next(r for r in service.run_log(10) if r["operation"] == "tool:calculate_mm")
     assert json.loads(row["input_json"])["kwargs"] == {"start_date": "2026-11-02", "end_date": "2026-11-15"}
     assert json.loads(row["result"])["mm"] == "0.476"                 # 결과 전체(JSON)
+
+
+def test_v31_pc_eval_fixes(service):
+    """v3.1 PC 평가(11/08) 보완: 도구 없이 답함(S07·H01·V01), 지어낸 이름 찾기(G02), 교체 대상에 과제명(X01), MM에 인력 빠짐(S09)."""
+    # 등록 인력이 있는데 도구 없이 답하면 한 번 다시 시킨다
+    client = ScriptedClient([text("인력 이름을 알려주세요."), tool_call("find_people", name="정협력"), text("정협력 투입입니다.")])
+    result = ask(service, "정협력 투입 과제별 MM 알려줘.", client, agent="staff")
+    assert result["guardrail"] == "tool_retry" and [c["tool"] for c in result["calls"]] == ["find_people"]
+    # 사용자가 말하지 않은 이름으로 인력 찾기 → 실행하지 않음
+    client = ScriptedClient([tool_call("find_people", name="김민수"), text("누구의 계약인가요?")])
+    result = ask(service, "계약 종료일 12월 31일로 바꿔줘.", client, agent="contract")
+    assert result["calls"][0]["blocked"] and "지어내지" in result["calls"][0]["error"]
+    # 교체: 기존 인력 자리에 과제명 앞부분 → 질문의 다른 인력으로 바로잡고 과제를 채운다
+    client = ScriptedClient([tool_call("prepare_assignment_replace", person_id="전표작성", new_person_id="노협력",
+                                       start_date="2026-12-01", grade="L6"), text("준비했습니다.")])
+    result = ask(service, "전표작성 자동화 류협력을 12월 1일부터 노협력(L6)으로 교체해줘.", client, agent="staff")
+    call = result["calls"][0]
+    assert call["ok"] and call["arguments"]["person_id"] == "류협력" and call["arguments"]["project"] == "전표작성 자동화"
+    # 기간 MM 계산에 인력을 빼면 질문 속 인력으로 채운다(한협력 9/15 시작 → 9월 0.5MM)
+    client = ScriptedClient([tool_call("calculate_mm", start_date="2026-09-01", end_date="2026-09-30"), text("0.5MM")])
+    result = ask(service, "한협력 9월 MM 얼마야?", client, agent="staff")
+    data = result["calls"][0]["data"]
+    assert result["calls"][0]["arguments"]["person_id"] == "한협력" and data["mm"] == "0.500" and "summary" in data

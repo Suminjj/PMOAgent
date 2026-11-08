@@ -151,14 +151,17 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
    .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b,gemma4:12b,qwen3:14b
    # 자동(전체) 단일 Agent와 카테고리별 전문 Agent 비교
    .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b --routing auto,category
+   # v3.1: 단일 Agent·전문 Agent(정답 카테고리)·자동 라우터 비교 (라우터는 라우팅 정확도도 표시)
+   .venv\Scripts\python.exe -m scripts.run_evals --set eval --model qwen3:8b --routing auto,category,router
    ```
 
 4. 앱 첫 화면인 '홈'에서 질문합니다. 채팅창처럼 질문과 답변이 한 화면에 차례로 나오고, 답변 아래 '조회 결과'를 펼치면 Agent가 사용한 도구와 조회 결과 표를 볼 수 있습니다.
    이전 질문의 조회 결과·확인 카드도 대화 위쪽에 그대로 남아 있습니다. 터미널에서 한 번 물어볼 수도 있습니다.
    질문이 여러 개면 오른쪽 위에서 결과를 볼 질문을 고를 수 있습니다. 터미널에서 한 번 물어볼 수도 있습니다.
 
-   입력창 위의 **업무 카테고리**(자동(전체) · 인력관리 · 구매계약 · 검수)를 고르면
-   그 업무 전문 Agent가 필요한 도구와 업무 지침(`agent_skills/`)만 가지고 답합니다. 자동(전체)은 모든 도구를 쓰는 단일 Agent입니다.
+   입력창 위의 **업무 카테고리**는 기본이 **자동 배정**(v3.1 라우터)입니다. 질문을 보고 맞는 전문 Agent(인력관리·구매계약·검수)를
+   자동으로 고르고, "이가상 투입 과제랑 계약 종료일 알려줘"처럼 여러 업무를 한 번에 물으면 Agent를 차례로 불러 답을 합칩니다.
+   답변 위에 어느 Agent가 처리했는지 표시됩니다. 카테고리를 직접 고르면 그 Agent만 필요한 도구와 업무 지침(`agent_skills/`)으로 답하고,
    맡은 업무 밖의 질문이면 다른 카테고리를 고르라고 안내합니다. 터미널에서는 `--agent contract`처럼 지정합니다.
 
    ```powershell

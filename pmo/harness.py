@@ -35,31 +35,56 @@ class OraclePlanner:
         return [(s["tool"], s["args"]) for s in question["steps"] or []]
 
 
-ROUTINGS = ("auto", "category")
+ROUTINGS = ("auto", "category", "router")
+
+
+def tag_agents(tag) -> list[str]:
+    """질문의 정답 카테고리 태그(문자열 또는 여러 업무 질문의 목록)를 목록으로."""
+    if not tag:
+        return []
+    return list(tag) if isinstance(tag, (list, tuple)) else [tag]
 
 
 class AgentPlanner:
     """LLM Agent에 질문을 그대로 묻고, Agent가 호출한 도구를 돌려준다.
 
     routing="auto": 자동(전체) 단일 Agent(모든 도구, 업무 지침 미주입)
-    routing="category": 질문의 agent 태그에 맞는 전문 Agent(도구 제한 + 업무 지침 주입)
+    routing="category": 질문의 agent 태그에 맞는 전문 Agent(도구 제한 + 업무 지침 주입). 태그가 여럿이면 차례로 부른다
+    routing="router": v3.1 자동 라우터가 Agent를 고른다. 고른 Agent를 정답 태그와 비교해 라우팅 정확도를 잰다
     """
 
     def __init__(self, client, routing: str = "auto"):
         from pmo.agent.runner import ask  # LLM 없이 oracle만 쓸 때 불필요한 import를 피한다
+        from pmo.agent.router import ask_agents, ask_routed
         if routing not in ROUTINGS:
             raise ValueError(f"routing은 {', '.join(ROUTINGS)} 중 하나여야 합니다.")
-        self._ask = ask
+        self._ask, self._ask_agents, self._ask_routed = ask, ask_agents, ask_routed
         self.client = client
         self.routing = routing
-        self.name = client.name.replace(":", "-").replace("/", "-") + ("" if routing == "auto" else "-category")
+        self.name = client.name.replace(":", "-").replace("/", "-") + ("" if routing == "auto" else f"-{routing}")
         self.last: dict = {}
 
     def plan(self, question: dict, tools: list[dict], service: Service) -> list[tuple[str, dict]]:
-        agent = question.get("agent") if self.routing == "category" else None
-        self.last = self._ask(service, question["question"], self.client, agent=agent)
+        text = question["question"]
+        keys = tag_agents(question.get("agent"))
+        if self.routing == "router":
+            self.last = self._ask_routed(service, text, self.client)
+        elif self.routing == "category" and len(keys) > 1:
+            self.last = self._ask_agents(service, text, self.client, keys)
+        else:
+            self.last = self._ask(service, text, self.client,
+                                  agent=keys[0] if self.routing == "category" and keys else None)
         # v3: 가드레일이 막아 실행하지 않은 호출(blocked)은 부르지 않은 것으로 본다
-        return [(c["tool"], c["arguments"]) for c in self.last["calls"] if not c.get("blocked")]
+        return [_as_called(c) for c in self.last["calls"] if not c.get("blocked")]
+
+
+def _as_called(call: dict) -> tuple[str, dict]:
+    """채점용 (도구, 입력). 조건 조회 업체 칸에 인력 이름을 넣어 도구가 인력 찾기 결과를 돌려준 호출은 인력 찾기로 본다
+    (v3.1 PC 평가 R01: search_people(company='신협력')로 정답을 답했는데 도구 순서로 틀림)."""
+    data = call.get("data")
+    if call["tool"] in ("search_people", "search_contracts") and isinstance(data, dict) and "people" in data:
+        return FIND_TOOL, {"name": call["arguments"].get("company")}
+    return call["tool"], call["arguments"]
 
 
 def check(expect: dict, result: dict) -> list[str]:
@@ -98,7 +123,26 @@ def _attach_answer(row: dict, last: dict | None) -> bool:
         return False
     row.update(answer=last["answer"], agent_error=last["error"],
                agent_ms=last["duration_ms"], agent_used=last.get("agent"), tokens=last.get("tokens"))
+    if last.get("routing"):    # v3.1 라우터: 고른 Agent와 정답 카테고리 태그 비교(태그가 없는 질문은 채점하지 않음)
+        routed = last["routing"]["agents"]
+        row.update(routed=routed, route_method=last["routing"]["method"])
+        # 가드레일 사전 검사로 정해진 문장을 답한 질문(범위 밖·관리하지 않는 정보·담당 밖 과제)은 라우팅 채점에서 뺀다
+        if row.get("route_tag") and last["routing"]["method"] != "precheck":
+            row["route_ok"] = routed == row["route_tag"]
     return bool(last["error"])
+
+
+def routing_summary(rows: list[dict]) -> dict | None:
+    """v3.1 라우팅 정확도: 정답 카테고리 태그가 있는 질문 중 라우터가 같은 Agent(여러 업무면 같은 순서)를 고른 비율."""
+    checked = [r for r in rows if "route_ok" in r]
+    if not checked:
+        return None
+    wrong = [f"{r['id']}: {'+'.join(r['routed'])} (정답 {'+'.join(r['route_tag'])})" for r in checked if not r["route_ok"]]
+    methods: dict[str, int] = {}
+    for r in rows:
+        if r.get("route_method"):
+            methods[r["route_method"]] = methods.get(r["route_method"], 0) + 1
+    return {"checked": len(checked), "correct": len(checked) - len(wrong), "wrong": wrong, "methods": methods}
 
 
 def token_summary(rows: list[dict]) -> dict | None:
@@ -115,6 +159,11 @@ def token_summary(rows: list[dict]) -> dict | None:
 FIND_TOOL = "find_people"
 
 
+def _match(step: dict, called: str) -> str:
+    """기대 단계와 실제 호출 비교용 이름. 단계에 대체 도구(alt)가 있고 그것을 불렀으면 같은 단계로 본다."""
+    return called if called in step.get("alt", ()) else step["tool"]
+
+
 def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
     """채점할 기대 도구 순서.
 
@@ -126,7 +175,8 @@ def _expected_steps(steps: list[dict], called: list[str]) -> list[dict]:
     spare.subtract(Counter(st["tool"] for st in steps if not st.get("optional")))
     kept = []
     for st in steps:
-        if st.get("or_find") and st["tool"] not in called and FIND_TOOL in called:
+        if st.get("or_find") and st["tool"] not in called and not set(st.get("alt", ())) & set(called) \
+                and FIND_TOOL in called:
             continue
         if st.get("optional"):
             if spare[st["tool"]] <= 0:
@@ -176,6 +226,7 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
             if q["steps"] is None:
                 # 답변 채점 질문: 맞는 도구가 없거나 답변 내용이 핵심. 기록만 하고 v4 저지가 answer 키로 채점한다.
                 row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"), "tools": called,
+                       "route_tag": tag_agents(q.get("agent")),
                        "graded": False, "success": None, "problems": [], "answer_key": q.get("answer"),
                        "duration_ms": round((time.perf_counter() - t0) * 1000)}
                 _attach_answer(row, getattr(planner, "last", None))
@@ -186,13 +237,15 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
             # optional 단계(예: 이름을 받는 도구 앞의 find_people)는 건너뛰어도 된다. 코드가 이름을 관리번호로 바꾼다.
             steps = _expected_steps(q["steps"], called)
             problems = []
-            if called != [st["tool"] for st in steps]:
+            if called != [_match(st, name) for st, name in zip(steps, called)] or len(called) != len(steps):
                 want = [st["tool"] + ("(생략 가능)" if st.get("optional") else "") for st in q["steps"]]
                 problems.append(f"도구 순서 {called} (기대 {want})")
             else:
                 for (name, args), step in zip(calls, steps):
-                    problems += [f"{name}: {p}" for p in check(step["expect"], call_tool(service, name, args))]
+                    expect = step["expect"] if name == step["tool"] else {"ok": True}   # 대체 도구는 성공만 본다
+                    problems += [f"{name}: {p}" for p in check(expect, call_tool(service, name, args))]
             row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"),
+                   "route_tag": tag_agents(q.get("agent")),
                    "tools": [c[0] for c in calls], "graded": True,
                    "success": not problems, "problems": problems, "answer_key": q.get("answer"),
                    "duration_ms": round((time.perf_counter() - t0) * 1000)}
@@ -206,7 +259,8 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
     report = {"planner": planner.name, "today": spec["today"], "questions": Path(questions_path).name,
               "run_at": datetime.now(TIMEZONE).isoformat(), "only": sorted(only) if only else None,
               "passed": sum(bool(r["success"]) for r in graded), "total": len(graded),
-              "ungraded": len(rows) - len(graded), "tokens": token_summary(rows), "results": rows}
+              "ungraded": len(rows) - len(graded), "tokens": token_summary(rows),
+              "routing": routing_summary(rows), "results": rows}
     if save:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         part = "-only-" + "_".join(sorted(only)).replace(" ", "") if only else ""   # 일부만 실행한 결과는 파일 이름으로 구분

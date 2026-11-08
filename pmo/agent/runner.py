@@ -35,9 +35,18 @@ def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> d
     작은 로컬 모델은 find_people을 건너뛰고 person_id를 비워 보내는 일이 있다. 이번 질문을 먼저 보고,
     없으면 최근 사용자 메시지를 거슬러 본다. 동명이인은 이름만 넣어 두고 변경 계획 단계에서 되묻는다.
     """
+    names = {p["name"] for p in service.people()}
+    if tool == "prepare_assignment_replace":
+        args = _fix_replace_target(service, args, texts[:1], names)
+    if tool == "calculate_mm":
+        # v3.1 PC 평가 S09: '한협력 9월 MM'에 인력을 빼고 계산(Full time 기준 1.000). 이번 질문에 인력이 한 명이면 채운다.
+        if not str(args.get("person_id") or "").strip():
+            found = guardrails.mentioned_people(service, texts[0]) if texts else []
+            if len(found) == 1:
+                return dict(args, person_id=found[0])
+        return args
     if not tool.startswith("prepare_") or str(args.get("person_id") or "").strip():
         return args
-    names = {p["name"] for p in service.people()}
     for text in texts:
         found = sorted({n for n in names if n and n in text}, key=len, reverse=True)
         found = [n for n in found if not any(n != m and n in m for m in found)]  # 긴 이름 우선
@@ -45,6 +54,29 @@ def _fill_person(service: Service, tool: str, args: dict, texts: list[str]) -> d
             return dict(args, person_id=found[0])
         if found:
             return args   # 여러 사람이 언급되면 추측하지 않는다
+    return args
+
+
+def _fix_replace_target(service: Service, args: dict, texts: list[str], names: set[str]) -> dict:
+    """인력 교체에서 기존 인력 자리에 과제명 앞부분을 넣으면 바로잡는다.
+
+    v3.1 PC 평가 X01: '전표작성 자동화 류협력을 … 노협력(L6)으로 교체'에서 person_id='전표작성'.
+    기존 인력 칸이 등록 인력이 아니고 질문에 인력이 두 명(그중 하나가 교체 인력)이면 나머지를 기존 인력으로,
+    넣은 값이 과제명의 일부면 과제 칸으로 옮긴다.
+    """
+    value = str(args.get("person_id") or "").strip()
+    ids = {p["id"] for p in service.people()}
+    if not value or value in ids or any(n in value for n in names):
+        return args
+    mentioned = guardrails.mentioned_people(service, texts[0]) if texts else []
+    new = str(args.get("new_person_id") or "").strip()
+    others = [n for n in mentioned if n not in new]
+    if len(mentioned) == 2 and len(others) == 1:
+        fixed = dict(args, person_id=others[0])
+        project = next((p for p in service.project_names() if value in p), None)
+        if project and not args.get("project"):
+            fixed["project"] = project
+        return fixed
     return args
 
 
@@ -101,7 +133,25 @@ def _not_saved_yet(answer: str) -> str:
 LABELS = {key: spec.label for key, spec in AGENTS.items()}
 
 
+def _drop_redirect(answer: str) -> str:
+    """'이 요청은 … 카테고리에서 처리할 수 없습니다 … 다시 요청해 주세요.' 문장을 뺀다."""
+    kept = [s for s in re.split(r"(?<=[.!?。])\s+|\n+", answer) if s.strip() and not guardrails.is_redirect(s)
+            and not any(w in s for w in ("다시 요청해 주세요", "다른 Agent", "업무로 확인할 수 없", "카테고리에서 처리"))]
+    return " ".join(kept).strip()
+
+
+def _with_mm_breakdown(answer: str, calls: list[dict]) -> str:
+    """한 기간에 과제가 여럿인 MM을 합계만 답하면 과제별 값을 붙인다(v3 평가 S08: 0.25 + 0.75를 빼고 1.000만 답함)."""
+    for call in calls:
+        data = call.get("data") if call.get("ok") and call["tool"] == "calculate_mm" else None
+        rows = (data or {}).get("assignments") or []
+        if answer and len(rows) > 1 and not all(str(r["mm"]) in answer for r in rows):
+            answer += f"\n\n과제별: {data['summary']}"
+    return answer
+
+
 def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:
+    answer = _with_mm_breakdown(answer, calls)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
     if error is None and not answer:
@@ -119,7 +169,20 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
     """도구 호출 하나를 가드레일을 거쳐 실행하고 calls에 남긴다. LLM에게 돌려줄 tool 메시지를 반환한다."""
     args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
     call["arguments"] = _fill_person(service, call["name"], args, user_texts)
-    problem = (guardrails.missing_target(call["name"], call["arguments"])
+    if call["name"] == "calculate_mm" and not guardrails.period_said(
+            call["arguments"].get("start_date", ""), call["arguments"].get("end_date", ""), user_texts):
+        # v3.1 PC 평가 H01: 기간을 말하지 않았는데 '11월 1~18일'을 지어내 '투입 기록 없음'이라 답함.
+        # 오류만 돌려주면 모델이 사용자에게 '투입 이력을 확인해 주세요'라고 넘겨서(3차), 인력이 있으면 투입 이력 조회로 바꿔 실행한다.
+        person = str(call["arguments"].get("person_id") or "").strip()
+        if person and (allowed is None or "get_assignment_timeline" in allowed):
+            call["name"], call["arguments"] = "get_assignment_timeline", {"person_id": person}
+            problem = None
+        else:
+            problem = ("질문에 기간이 없습니다. 기간을 지어내지 말고 투입 이력 조회(get_assignment_timeline)로 확인하세요.")
+    else:
+        problem = None
+    problem = problem or (guardrails.missing_target(call["name"], call["arguments"])
+               or guardrails.invented_name(call["name"], call["arguments"], texts, guardrails.seen_text(calls))
                or _ungrounded(service, call["name"], call["arguments"], user_texts)
                or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
                                                guardrails.seen_text(calls)))
@@ -159,11 +222,13 @@ def _continue(service, client, messages, tools, tokens, calls, allowed, spec, qu
 
 def ask(service: Service, question: str, client: ChatClient,
         today: date | None = None, max_steps: int = MAX_STEPS,
-        history: list[dict] | None = None, agent: AgentSpec | str | None = None) -> dict:
+        history: list[dict] | None = None, agent: AgentSpec | str | None = None,
+        focus: str | None = None) -> dict:
     """질문 하나를 처리한다. 예외 대신 결과 객체로 성공·실패를 돌려준다.
 
     history: 이전 대화 [{"role": "user"|"assistant", "content": str}] (최근 MAX_HISTORY개만 사용)
     agent: 전문 Agent(AgentSpec 또는 키). 없으면 자동(전체)
+    focus: 여러 업무 질문(v3.1 라우터)에서 이 Agent가 맡을 부분을 알려 주는 지시(시스템 메시지로 덧붙임)
     반환: {"ok", "answer", "calls": [{"tool","arguments","ok","data","error"}], "error", "duration_ms",
           "tokens": {"prompt", "completion", "llm_calls"} (LLM 호출 전체 합),
           "model", "agent", "agent_label"}
@@ -175,15 +240,18 @@ def ask(service: Service, question: str, client: ChatClient,
     # 자동(전체)에는 '구현 예정' 도구를 주지 않는다: 이름이 비슷한 검수 금액 도구를 매출귀속 프로젝트 조회에 고르던 문제
     # (v1·v1.2 평가 R01). 구현 예정 기능은 해당 전문 Agent(검수·구매계약)가 정해진 안내로 답한다.
     tools = tool_specs(include_planned=allowed is not None, names=allowed)
-    messages = [{"role": "system", "content": system_prompt(spec, day.isoformat())},
+    messages = [{"role": "system", "content": system_prompt(spec, day.isoformat())
+                 + (f"\n\n{focus}" if focus else "")},
                 *[{"role": m["role"], "content": str(m["content"])}
                   for m in (history or [])[-MAX_HISTORY:] if m.get("role") in ("user", "assistant")],
-                {"role": "user", "content": question}]
+                {"role": "user", "content": question + (f"\n\n({focus})" if focus else "")}]
     calls: list[dict] = []
     answer, error = "", None
     tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
     # v3 사전 검사: 지시 무시·관리하지 않는 정보·업무 범위 밖·다른 카테고리·검수 금액은 LLM 없이 정해진 방식으로 답한다
-    early = guardrails.precheck(service, question, spec.key, LABELS, history)
+    # 여러 업무 질문(라우터)의 각 Agent는 사전 검사를 다시 하지 않는다: 라우터가 이미 했고, 다른 업무 말 때문에
+    # '다른 카테고리로 요청하라'는 정해진 답이 나오던 문제(v3.1 PC 평가 L04)
+    early = None if focus else guardrails.precheck(service, question, spec.key, LABELS, history)
     if early:
         answer = early["answer"]
         return _finish(service, client, spec, question, t0, started, answer, [], None, tokens, early["kind"])
@@ -197,7 +265,7 @@ def ask(service: Service, question: str, client: ChatClient,
                           "data": result.get("data"), "error": result.get("error")})
         max_steps, answer = 0, spec.planned_notice
     user_texts = [question] + [str(m.get("content") or "") for m in reversed(history or []) if m.get("role") == "user"]
-    nudged = False
+    nudged = tool_nudged = False
     try:
         steps = 0
         while steps < max_steps:
@@ -209,6 +277,20 @@ def ask(service: Service, question: str, client: ChatClient,
             tokens["completion"] += int(usage.get("completion_tokens") or 0)
             if not reply["tool_calls"]:
                 answer = _clean_answer(reply["content"])
+                people = guardrails.mentioned_people(service, question)
+                if not calls and people and not tool_nudged and tools and not guardrails.is_redirect(answer):
+                    # v3.1 PC 평가 S07·H01·V01: 질문에 등록 인력이 있는데 도구 없이 답함('이름을 알려주세요'·'없는 인력'·추측).
+                    # 한 번 다시 시켜 도구로 확인하게 한다.
+                    tool_nudged, guardrail = True, "tool_retry"
+                    messages += [{"role": "assistant", "content": reply["content"]},
+                                 {"role": "system", "content": f"도구를 부르지 않고 답했다. 질문의 인력({', '.join(people)})은 등록된 인력이다. "
+                                                               "맡은 도구로 먼저 조회하고 도구 결과로만 답하라."}]
+                    answer = ""
+                    continue
+                if focus and guardrails.is_redirect(answer):
+                    # 여러 업무 질문: 다른 Agent가 맡은 부분의 '다른 카테고리로 가라' 안내 문장만 뺀다(v3.1)
+                    answer = _drop_redirect(answer) or answer
+                    break
                 if allowed is not None and guardrails.is_redirect(answer) and not any(not c.get("forced") for c in calls):
                     if guardrails.owner_of(question) == spec.key and not nudged:
                         # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다.

@@ -160,6 +160,22 @@ def ungrounded_person(service, tool: str, args: dict, texts: list[str], seen: li
     return None
 
 
+def invented_name(tool: str, args: dict, texts: list[str], seen: list[str]) -> str | None:
+    """인력 찾기에 사용자가 말하지 않은(등록되지도 않은) 이름을 넣으면 실행하지 않는다.
+
+    v3.1 PC 평가 G02(라우터): '계약 종료일 12월 31일로 바꿔줘'에 '김민수'를 지어내 찾고 '등록되지 않았다'고 답함.
+    등록된 이름은 ungrounded_person이 보고, 오타(사용자 문장에 있는 이름)는 도구가 되묻는다.
+    """
+    if tool != "find_people":
+        return None
+    value = str(args.get("name") or "").strip()
+    pool = _fold(" ".join(texts + seen))
+    if not value or _fold(value) in pool or _fold(value.split()[0]) in pool:
+        return None
+    return (f"'{value}'은(는) 사용자가 말한 이름이 아닙니다. 이름을 지어내지 말고, "
+            "누구의 일인지 사용자에게 물어보세요.")
+
+
 def ungrounded_names_in_answer(service, answer: str, texts: list[str], seen: list[str]) -> list[str]:
     """답변에 나온 인력 이름 중 사용자 문장·도구 결과 어디에도 없는 이름."""
     pool = " ".join(texts + seen)
@@ -196,6 +212,35 @@ def date_said(value: str, texts: list[str]) -> bool:
     return any(_fold(f) in pool for f in _date_forms(d))
 
 
+def period_said(start: str, end: str, texts: list[str]) -> bool:
+    """기간 MM 계산의 기간을 사용자가 말했는지: 날짜, 그 달('8월'), '이번 달'처럼 달을 가리키는 말."""
+    if date_said(start, texts) or date_said(end, texts):
+        return True
+    joined = " ".join(texts)
+    if re.search(r"(이번|지난|다음|저번)\s*달|올해|작년|내년|분기", joined):
+        return True
+    months = {int(m) for m in _MONTH_ANY.findall(joined)}
+    try:
+        return bool(months & {date.fromisoformat(str(start)[:10]).month, date.fromisoformat(str(end)[:10]).month})
+    except ValueError:
+        return False
+
+
+_MONTH_ANY = re.compile(r"(\d{1,2})\s*월")
+RATE_FIELDS = ("purchase_rate", "sales_rate", "rate")
+
+
+def drop_bad_rates(args: dict) -> dict:
+    """단가 칸에 숫자가 아닌 값('L6'·'미정' 등)을 넣으면 값을 안 준 것으로 본다(v3.1 PC 평가 X01 '매입단가는 숫자로')."""
+    def numeric(v) -> bool:
+        try:
+            float(str(v).replace(",", "").replace("원", "").strip())
+            return True
+        except ValueError:
+            return False
+    return {k: v for k, v in args.items() if k not in RATE_FIELDS or v in (None, "") or numeric(v)}
+
+
 # 사용자가 말해야 쓰는 선택 날짜(말하지 않으면 도구가 기존 종료일을 쓴다). v2 평가 X01: 모델이 종료일을 지어내 '시작일보다 빠름' 오류
 OPTIONAL_DATES = {"prepare_assignment_update": ("end_date",), "prepare_assignment_transfer": ("end_date",),
                   "prepare_assignment_replace": ("end_date",)}
@@ -211,7 +256,7 @@ def _year_for(month: int, today: date) -> int:
 
 def tidy_args(tool: str, args: dict, question: str, texts: list[str], today: date) -> dict:
     """도구 입력을 가드레일 규칙으로 정리한다."""
-    args = drop_placeholders(args)
+    args = drop_bad_rates(drop_placeholders(args))
     for field in OPTIONAL_DATES.get(tool, ()):
         if args.get(field) and not date_said(args[field], texts):
             args = {k: v for k, v in args.items() if k != field}
