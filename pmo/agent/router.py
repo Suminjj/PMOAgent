@@ -130,14 +130,48 @@ def focus_note(key: str, keys: list[str]) -> str:
             f"{others} 업무 부분은 다른 Agent가 답하므로 답하지도, 다른 카테고리로 안내하지도 않는다.")
 
 
+_ASKING = re.compile(r"알려|보여|얼마|언제|누구|뭐|무엇|어디|확인|\?")
+
+
+def split_question(service: Service, question: str, keys: list[str]) -> dict[str, str]:
+    """여러 업무 질문을 연결 말로 나눠 Agent마다 자기 몫의 질문을 만든다(v3.1 PC 평가 M01·M02: 두 Agent가 같은 답을 반복).
+
+    '이협력 지금 투입 과제랑 구매계약 종료일 알려줘' → 인력관리 '이협력 지금 투입 과제 알려줘', 구매계약 '이협력 구매계약 종료일 알려줘'.
+    조각마다 키워드 1등 업무에 붙이고, 질문 속 인력 이름이 빠진 조각에는 이름을, 묻는 말이 없는 조각에는 끝 조각의 묻는 말을 붙인다.
+    Agent마다 조각이 하나 이상 나오지 않으면 빈 사전(원래 질문 + 지시를 그대로 쓴다).
+    """
+    pieces = [p.strip(" ,") for p in JOINERS.split(question) if p and p.strip(" ,") and not JOINERS.fullmatch(p)]
+    owned: dict[str, list[str]] = {k: [] for k in keys}
+    for piece in pieces:
+        score = guardrails.scores(piece)
+        best = max(keys, key=lambda k: score.get(k, 0))
+        if score.get(best, 0) > 0:
+            owned[best].append(piece)
+    if any(not v for v in owned.values()):
+        return {}
+    names = guardrails.mentioned_people(service, question)
+    ending = next((m.group(0) for m in [re.search(r"(알려\S*|보여\S*|\S*\?)$", pieces[-1])] if m), "알려줘")
+    out = {}
+    for key, parts in owned.items():
+        text = " ".join(parts)
+        missing = [n for n in names if n not in text]
+        if missing:
+            text = " ".join(missing) + " " + text
+        if not _ASKING.search(text):
+            text += " " + ending
+        out[key] = text
+    return out
+
+
 def ask_agents(service: Service, question: str, client: ChatClient, keys: list[str],
                history: list[dict] | None = None, today: date | None = None) -> dict:
     """정해진 Agent들에게 차례로 묻고 답을 합친다(Agent가 하나면 그 결과 그대로)."""
     from pmo.agent.runner import ask
     if len(keys) == 1:
         return ask(service, question, client, today=today, history=history, agent=keys[0])
-    parts = [ask(service, question, client, today=today, history=history, agent=k, focus=focus_note(k, keys))
-             for k in keys]
+    split = split_question(service, question, keys)
+    parts = [ask(service, split.get(k, question), client, today=today, history=history, agent=k,
+                 focus=focus_note(k, keys)) for k in keys]
     answer = "\n\n".join(f"**{AGENTS[k].label}**\n\n{p['answer'] or p['error'] or ''}".strip()
                          for k, p in zip(keys, parts))
     errors = [p["error"] for p in parts if p["error"]]

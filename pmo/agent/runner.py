@@ -136,11 +136,22 @@ LABELS = {key: spec.label for key, spec in AGENTS.items()}
 def _drop_redirect(answer: str) -> str:
     """'이 요청은 … 카테고리에서 처리할 수 없습니다 … 다시 요청해 주세요.' 문장을 뺀다."""
     kept = [s for s in re.split(r"(?<=[.!?。])\s+|\n+", answer) if s.strip() and not guardrails.is_redirect(s)
-            and "다시 요청해 주세요" not in s]
+            and not any(w in s for w in ("다시 요청해 주세요", "다른 Agent", "업무로 확인할 수 없", "카테고리에서 처리"))]
     return " ".join(kept).strip()
 
 
+def _with_mm_breakdown(answer: str, calls: list[dict]) -> str:
+    """한 기간에 과제가 여럿인 MM을 합계만 답하면 과제별 값을 붙인다(v3 평가 S08: 0.25 + 0.75를 빼고 1.000만 답함)."""
+    for call in calls:
+        data = call.get("data") if call.get("ok") and call["tool"] == "calculate_mm" else None
+        rows = (data or {}).get("assignments") or []
+        if answer and len(rows) > 1 and not all(str(r["mm"]) in answer for r in rows):
+            answer += f"\n\n과제별: {data['summary']}"
+    return answer
+
+
 def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:
+    answer = _with_mm_breakdown(answer, calls)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
     if error is None and not answer:
@@ -158,7 +169,13 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
     """도구 호출 하나를 가드레일을 거쳐 실행하고 calls에 남긴다. LLM에게 돌려줄 tool 메시지를 반환한다."""
     args = guardrails.tidy_args(call["name"], call["arguments"] or {}, question, user_texts, day)
     call["arguments"] = _fill_person(service, call["name"], args, user_texts)
-    problem = (guardrails.missing_target(call["name"], call["arguments"])
+    if call["name"] == "calculate_mm" and not guardrails.period_said(
+            call["arguments"].get("start_date", ""), call["arguments"].get("end_date", ""), user_texts):
+        # v3.1 PC 평가 H01: 기간을 말하지 않았는데 '11월 1~18일'을 지어내 '투입 기록 없음'이라 답함
+        problem = ("질문에 기간이 없습니다. 기간을 지어내지 말고 투입 이력 조회(get_assignment_timeline)로 확인하세요.")
+    else:
+        problem = None
+    problem = problem or (guardrails.missing_target(call["name"], call["arguments"])
                or guardrails.invented_name(call["name"], call["arguments"], texts, guardrails.seen_text(calls))
                or _ungrounded(service, call["name"], call["arguments"], user_texts)
                or guardrails.ungrounded_person(service, call["name"], call["arguments"], texts,
@@ -226,7 +243,9 @@ def ask(service: Service, question: str, client: ChatClient,
     answer, error = "", None
     tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
     # v3 사전 검사: 지시 무시·관리하지 않는 정보·업무 범위 밖·다른 카테고리·검수 금액은 LLM 없이 정해진 방식으로 답한다
-    early = guardrails.precheck(service, question, spec.key, LABELS, history)
+    # 여러 업무 질문(라우터)의 각 Agent는 사전 검사를 다시 하지 않는다: 라우터가 이미 했고, 다른 업무 말 때문에
+    # '다른 카테고리로 요청하라'는 정해진 답이 나오던 문제(v3.1 PC 평가 L04)
+    early = None if focus else guardrails.precheck(service, question, spec.key, LABELS, history)
     if early:
         answer = early["answer"]
         return _finish(service, client, spec, question, t0, started, answer, [], None, tokens, early["kind"])

@@ -129,3 +129,41 @@ def test_llm_sees_previous_turn_as_context(service):
                {"role": "assistant", "content": "박협력 계약은 11월 27일까지입니다."}]
     route(service, "그럼 그거 연장하려면 언제까지 처리해야 되는지도 궁금하고 그 다음 계약도 알려줄래요?", client, history=history)
     assert "직전 대화" in client.seen[0][0][1]["content"] and "11월 27일" in client.seen[0][0][1]["content"]
+
+
+def test_multi_question_is_split_per_agent(service):
+    """v3.1 PC 평가 M01·M02: 두 Agent가 같은 답을 반복 → Agent마다 자기 몫의 질문만 준다."""
+    from pmo.agent.router import split_question
+    assert split_question(service, "이협력 지금 투입 과제랑 구매계약 종료일 알려줘.", ["staff", "contract"]) == {
+        "staff": "이협력 지금 투입 과제 알려줘.", "contract": "이협력 구매계약 종료일 알려줘."}
+    assert split_question(service, "박협력 계약 종료일이랑 11월 투입 MM 알려줘.", ["contract", "staff"]) == {
+        "contract": "박협력 계약 종료일 알려줘.", "staff": "박협력 11월 투입 MM 알려줘."}
+    client = ScriptedClient([tool_call("find_people", name="이협력"), text("Soft Lab 고도화입니다."),
+                             tool_call("list_contracts", person_id="이협력"), text("11월 30일까지입니다.")])
+    ask_routed(service, "이협력 지금 투입 과제랑 구매계약 종료일 알려줘.", client)
+    asked = [m[0][1]["content"] for m in client.seen if len(m[0]) == 2]   # Agent마다 첫 호출의 질문
+    assert asked[0].startswith("이협력 지금 투입 과제 알려줘.") and asked[1].startswith("이협력 구매계약 종료일 알려줘.")
+
+
+def test_v31_second_pc_eval_fixes(service):
+    """v3.1 2차 PC 평가: 여러 업무의 Agent가 사전 검사 정해진 답(L04), 기간 지어내기(H01), 단가 칸 숫자 아님(X01), 과제별 MM(S08)."""
+    from pmo.agent.runner import ask
+    # 여러 업무 질문의 Agent는 사전 검사를 다시 하지 않는다
+    q = "정협력 관련해서 두 가지만 확인 부탁드려요. 하나는 8월 MM이 얼마나 나왔는지고, 다른 하나는 구매계약이 언제까지인지예요."
+    result = ask(service, q, ScriptedClient([tool_call("list_contracts", person_id="정협력"), text("구매계약은 12월 31일까지입니다.")]),
+                 agent="contract", focus="구매계약 부분만")
+    assert result["guardrail"] != "redirect" and "12월 31일" in result["answer"]
+    # 기간을 말하지 않았는데 기간 MM 계산 → 실행하지 않음
+    client = ScriptedClient([tool_call("calculate_mm", start_date="2026-11-01", end_date="2026-11-18", person_id="백협력"),
+                             text("투입 이력을 보겠습니다.")])
+    result = ask(service, "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?", client, agent="staff")
+    assert result["calls"][0]["blocked"] and "기간이 없습니다" in result["calls"][0]["error"]
+    # 과제가 둘인 달의 MM을 합계만 답하면 과제별 값을 붙인다
+    client = ScriptedClient([tool_call("calculate_mm", start_date="2026-08-01", end_date="2026-08-31", person_id="정협력"),
+                             text("정협력 8월 MM은 1.000MM입니다.")])
+    result = ask(service, "정협력 8월 MM 얼마야?", client, agent="staff")
+    assert "0.250" in result["answer"] and "0.750" in result["answer"]
+    # 단가 칸에 숫자가 아닌 값 → 값을 안 준 것으로
+    from pmo.agent.guardrails import drop_bad_rates
+    assert drop_bad_rates({"purchase_rate": "L6", "grade": "L6"}) == {"grade": "L6"}
+    assert drop_bad_rates({"purchase_rate": "9,500,000"}) == {"purchase_rate": "9,500,000"}
