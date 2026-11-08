@@ -104,7 +104,7 @@ def test_v7_database_drops_checklist_with_its_history(tmp_path):
                     "VALUES ('update_checklist_item','{}',1,'2026-10-20',1)")
     service = Service(path, clock=lambda: TODAY)
     with connection(path) as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION == 8
+        assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION == 9
         assert not con.execute("SELECT 1 FROM sqlite_master WHERE name='checklist'").fetchall()
         assert not con.execute("SELECT 1 FROM audit WHERE entity='checklist'").fetchall()
         assert not con.execute("SELECT 1 FROM run_log WHERE operation LIKE '%checklist%'").fetchall()

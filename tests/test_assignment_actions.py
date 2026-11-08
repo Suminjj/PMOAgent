@@ -135,12 +135,12 @@ def test_all_or_nothing_and_stale_plan(service):
 
 
 def test_leader_gets_no_card_and_cannot_save(service):
-    """v2: 과제 리더는 투입 변경·이동·교체 카드를 받지 않고, 저장 함수도 막힌다."""
+    """v2: 과제 리더는 저장 함수가 막힌다. 11/08부터 카드는 '수정 요청'(PM·PMO 승인 후 반영)으로 받는다."""
     leader = Service(service.path, clock=lambda: TODAY,
                      access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
     result = call_tool(leader, "prepare_assignment_transfer",
                        {"person_id": "명협력", "to_project": "APC Analysis", "start_date": "2026-12-01"})
-    assert not result["ok"] and "수정 요청" in result["error"]
+    assert result["ok"] and result["data"]["plan"]["request"] and "PM·PMO가 승인" in result["data"]["message"]
     plan = build_plan(service, "assignment_transfer",
                       {"person_id": "명협력", "to_project": "APC Analysis", "start_date": "2026-12-01"})
     with pytest.raises(ValidationError):

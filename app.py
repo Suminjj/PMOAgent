@@ -837,7 +837,37 @@ elif page == "수정 요청":
             st.caption(f"요청 {r['created_at'][:16].replace('T', ' ')}"
                        + (f" · 처리 {r['handled_by']} {r['handled_at'][:16].replace('T', ' ')}" if r["handled_at"] else "")
                        + (f" · 메모: {r['note']}" if r["note"] else ""))
-            if can_write and r["status"] == "요청":
+            if can_write and r["status"] == "요청" and r.get("action"):
+                # 11/08 수정 요청 승인: Agent 카드로 보낸 요청은 승인하는 사람 권한으로 계획을 다시 만들어 보여 주고, 승인하면 반영한다
+                from pmo.agent.actions import approve_request, build_plan
+                try:
+                    plan = build_plan(service, r["action"]["action"], r["action"].get("values") or {})
+                except ValidationError as exc:
+                    plan = None
+                    st.warning(f"지금 데이터로는 변경 계획을 만들 수 없습니다: {exc} 반려하거나 메뉴 화면에서 직접 고치세요.")
+                if plan:
+                    st.markdown(f"**승인하면 반영될 내용 · {plan['title']}**")
+                    st.table(plan["rows"])
+                checked = st.checkbox(plan["check"], key=f"req_check_{r['id']}") if plan and plan.get("check") else True
+                note = st.text_input("처리 메모(반려 사유 등)", key=f"req_note_{r['id']}")
+                approve, reject = st.columns(2)
+                if plan and approve.button("승인 후 반영", type="primary", key=f"req_approve_{r['id']}", disabled=not checked):
+                    try:
+                        message = approve_request(service, r, actor=actor, checked=checked)
+                        st.session_state["saved_message"] = f"요청을 승인하고 반영했습니다. {message}"
+                        st.rerun()
+                    except (ValidationError, ConflictError) as exc:
+                        st.error(str(exc))
+                    except sqlite3.Error:
+                        st.error("반영하지 못했습니다. 다시 시도하세요.")
+                if reject.button("반려", key=f"req_반려_{r['id']}"):
+                    try:
+                        service.handle_change_request(r["id"], "반려", note)
+                        st.session_state["saved_message"] = "요청을 반려했습니다."
+                        st.rerun()
+                    except (ValidationError, ConflictError) as exc:
+                        st.error(str(exc))
+            elif can_write and r["status"] == "요청":
                 note = st.text_input("처리 메모", key=f"req_note_{r['id']}")
                 done, reject = st.columns(2)
                 for column, result in ((done, "처리 완료"), (reject, "반려")):

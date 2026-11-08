@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS change_requests (
     requester_id TEXT NOT NULL REFERENCES users(id), requester_name TEXT NOT NULL,
     person_id TEXT REFERENCES people(id), project TEXT NOT NULL, content TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT '요청' CHECK(status IN ('요청','처리 완료','반려')),
-    created_at TEXT NOT NULL, handled_by TEXT, handled_at TEXT, note TEXT
+    created_at TEXT NOT NULL, handled_by TEXT, handled_at TEXT, note TEXT,
+    action_json TEXT
 );
 """
 
@@ -86,9 +87,9 @@ CREATE TABLE IF NOT EXISTS requests (
     token TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, result_id TEXT NOT NULL
 );
 """.replace("{ASSIGNMENTS}", ASSIGNMENTS_V6.format(name="assignments")) + V4_TABLES + V7_TABLES + \
-    "PRAGMA user_version = 8;"
+    "PRAGMA user_version = 9;"
 
-LATEST_VERSION = 8
+LATEST_VERSION = 9
 # v5: 예전 준비 항목 표에 칸 추가 (v8에서 표 자체를 지우지만, v4 이전 DB를 차례로 올릴 때 필요)
 V5_CHECKLIST_COLUMNS = ("version INTEGER NOT NULL DEFAULT 1", "draft TEXT", "drafted_at TEXT",
                         "applied_at TEXT", "updated_at TEXT", "updated_by TEXT")
@@ -132,6 +133,9 @@ def initialize(path: Path) -> None:
             version = 7
         if version == 7:
             migrate_v7(con, path)
+            version = 8
+        if version == 8:
+            migrate_v8(con, path)
             return
         tables = con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
@@ -289,6 +293,26 @@ def migrate_v6(con: sqlite3.Connection, path: Path) -> None:
             if statement.strip():
                 con.execute(statement)
         con.execute("PRAGMA user_version = 7")
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+
+
+def migrate_v8(con: sqlite3.Connection, path: Path) -> None:
+    """수정 요청 승인(11/08 담당자): 과제 리더가 Agent로 만든 변경 계획을 요청에 담는 칸(action_json)을 더한다. 시작 전에 백업한다."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        if con.execute("PRAGMA user_version").fetchone()[0] >= 9:
+            con.commit()
+            return
+        backup = path.with_name(path.name + ".backup-v8-" + uuid4().hex[:8] + ".db")
+        with closing(sqlite3.connect(path)) as source, closing(sqlite3.connect(backup)) as destination:
+            source.backup(destination)
+        columns = {r[1] for r in con.execute("PRAGMA table_info(change_requests)")}
+        if "action_json" not in columns:
+            con.execute("ALTER TABLE change_requests ADD COLUMN action_json TEXT")
+        con.execute("PRAGMA user_version = 9")
         con.commit()
     except Exception:
         con.rollback()

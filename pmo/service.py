@@ -265,8 +265,13 @@ class Service:
     # ------------------------------------------------------------------
     REQUEST_STATUSES = ("요청", "처리 완료", "반려")
 
-    def create_change_request(self, *, project: str, content: str, person_id: str | None = None) -> int:
-        """로그인 사용자가 수정 요청을 남긴다. 과제 리더는 담당 과제에 대해서만."""
+    def create_change_request(self, *, project: str, content: str, person_id: str | None = None,
+                              action: dict | None = None) -> int:
+        """로그인 사용자가 수정 요청을 남긴다. 과제 리더는 담당 과제에 대해서만.
+
+        action: Agent 확인 카드에서 보낸 요청이면 {"action": 변경 종류, "values": 입력값}(11/08 수정 요청 승인).
+        PM·PMO가 승인하면 그 사람 권한으로 계획을 다시 만들어 '현재 → 변경'을 확인한 뒤 반영한다.
+        """
         if self.access is None:
             raise AccessDenied("로그인한 사용자만 수정 요청을 남길 수 있습니다.")
         project, content = required(project, "과제"), required(content, "요청 내용")
@@ -276,9 +281,10 @@ class Service:
             raise AccessDenied("조회 권한이 없는 인력입니다.")
         with connection(self.path) as con:
             cur = con.execute("""INSERT INTO change_requests(requester_id, requester_name, person_id, project,
-                                 content, created_at) VALUES (?,?,?,?,?,?)""",
+                                 content, created_at, action_json) VALUES (?,?,?,?,?,?,?)""",
                               (self.access.user_id, self.access.name, person_id or None, project, content,
-                               datetime.now(TIMEZONE).isoformat()))
+                               datetime.now(TIMEZONE).isoformat(),
+                               json.dumps(action, ensure_ascii=False) if action else None))
             return int(cur.lastrowid)
 
     def change_requests(self, status: str | None = None) -> list[dict]:
@@ -294,7 +300,10 @@ class Service:
             params.append(status)
         sql += (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY r.status='요청' DESC, r.id DESC"
         with connection(self.path) as con:
-            return [dict(r) for r in con.execute(sql, params)]
+            rows = [dict(r) for r in con.execute(sql, params)]
+        for r in rows:
+            r["action"] = json.loads(r.pop("action_json") or "null")
+        return rows
 
     @writes
     def handle_change_request(self, request_id: int, status: str, note: str = "") -> None:

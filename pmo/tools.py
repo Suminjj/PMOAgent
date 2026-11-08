@@ -56,11 +56,25 @@ PROPOSAL_NOTE = ("저장하지 않았습니다. 답변 아래에 '현재 → 변
                  "사용자가 '확인 후 저장'을 눌러야 반영됩니다.")
 
 
+REQUEST_NOTE = ("저장하지 않았습니다. 과제 리더 권한이라 바로 바꿀 수 없어, 답변 아래 카드에 '수정 요청 보내기'를 띄웠습니다. "
+                "요청을 보내면 PM·PMO가 승인해야 반영됩니다.")
+
+
 def _plan(action: str):
-    """LLM이 넣은 값으로 변경 계획(현재 → 변경)을 만든다. 저장하지 않는다(pmo/agent/actions.py)."""
+    """LLM이 넣은 값으로 변경 계획(현재 → 변경)을 만든다. 저장하지 않는다(pmo/agent/actions.py).
+
+    11/08 담당자(수정 요청 승인): 과제 리더도 담당 과제 인력의 변경 계획까지는 만든다. 카드는 '확인 후 저장' 대신
+    '수정 요청 보내기'이고, PM·PMO가 수정 요청 화면에서 승인해야 반영된다(이전 v2는 리더에게 카드를 만들지 않음).
+    """
     def handler(service: Service, args: dict) -> dict:
-        service._require_write()      # v2: 과제 리더에게는 확인 카드도 만들지 않는다(수정 요청 안내)
-        return {"plan": build_plan(service, action, args), "message": PROPOSAL_NOTE}
+        plan = build_plan(service, action, args)
+        if service.access is not None and not service.access.can_write:
+            from pmo.agent.actions import request_target
+            project, person_id = request_target(service, plan, args)
+            plan = dict(plan, request={"project": project, "person_id": person_id,
+                                       "action": {"action": action, "values": args}})
+            return {"plan": plan, "message": REQUEST_NOTE}
+        return {"plan": plan, "message": PROPOSAL_NOTE}
     return handler
 INT = {"type": "integer"}
 
