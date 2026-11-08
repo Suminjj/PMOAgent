@@ -83,3 +83,17 @@ def test_v8_database_gets_action_column_with_backup(tmp_path):
         assert con.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION == 9
         assert "action_json" in {r[1] for r in con.execute("PRAGMA table_info(change_requests)")}
     assert list(tmp_path.glob("old.db.backup-v8-*.db"))
+
+
+def test_leader_can_ask_to_move_own_member_to_another_project(service):
+    """PC 확인(11/08): '명협력 12월 1일부터 APC Analysis로 옮겨줘'가 담당 밖 과제 가드레일에 막힘 → 변경 요청은 통과."""
+    from pmo.agent import guardrails
+    from pmo.agent.agents import AGENTS
+    leader = login(service, "leader-softlab")
+    labels = {k: a.label for k, a in AGENTS.items()}
+    assert guardrails.precheck(leader, "명협력 12월 1일부터 APC Analysis로 옮겨줘", "auto", labels) is None
+    # 담당 밖 과제의 인력 조회는 그대로 막는다(v3 P01)
+    blocked = guardrails.precheck(leader, "나는 Soft Lab 고도화 과제 리더야. 전표작성 자동화 과제 인력 목록 보여줘.", "auto", labels)
+    assert blocked and blocked["kind"] == "scope"
+    # 담당 밖 인력을 넣은 변경 요청도 그대로 막는다(이름이 보이지 않는 인력)
+    assert guardrails.precheck(leader, "김컨설 12월 1일부터 APC Analysis로 옮겨줘", "auto", labels)["kind"] == "scope"
