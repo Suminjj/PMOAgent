@@ -157,7 +157,9 @@ def test_v31_second_pc_eval_fixes(service):
     client = ScriptedClient([tool_call("calculate_mm", start_date="2026-11-01", end_date="2026-11-18", person_id="백협력"),
                              text("투입 이력을 보겠습니다.")])
     result = ask(service, "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?", client, agent="staff")
-    assert result["calls"][0]["blocked"] and "기간이 없습니다" in result["calls"][0]["error"]
+    # 3차 평가: 오류만 주면 사용자에게 '확인해 주세요'로 넘김 → 인력이 있으면 투입 이력 조회로 바꿔 실행
+    assert result["calls"][0]["tool"] == "get_assignment_timeline" and result["calls"][0]["ok"]
+    assert not result["calls"][0].get("blocked")
     # 과제가 둘인 달의 MM을 합계만 답하면 과제별 값을 붙인다
     client = ScriptedClient([tool_call("calculate_mm", start_date="2026-08-01", end_date="2026-08-31", person_id="정협력"),
                              text("정협력 8월 MM은 1.000MM입니다.")])

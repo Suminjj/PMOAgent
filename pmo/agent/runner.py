@@ -171,8 +171,14 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
     call["arguments"] = _fill_person(service, call["name"], args, user_texts)
     if call["name"] == "calculate_mm" and not guardrails.period_said(
             call["arguments"].get("start_date", ""), call["arguments"].get("end_date", ""), user_texts):
-        # v3.1 PC 평가 H01: 기간을 말하지 않았는데 '11월 1~18일'을 지어내 '투입 기록 없음'이라 답함
-        problem = ("질문에 기간이 없습니다. 기간을 지어내지 말고 투입 이력 조회(get_assignment_timeline)로 확인하세요.")
+        # v3.1 PC 평가 H01: 기간을 말하지 않았는데 '11월 1~18일'을 지어내 '투입 기록 없음'이라 답함.
+        # 오류만 돌려주면 모델이 사용자에게 '투입 이력을 확인해 주세요'라고 넘겨서(3차), 인력이 있으면 투입 이력 조회로 바꿔 실행한다.
+        person = str(call["arguments"].get("person_id") or "").strip()
+        if person and (allowed is None or "get_assignment_timeline" in allowed):
+            call["name"], call["arguments"] = "get_assignment_timeline", {"person_id": person}
+            problem = None
+        else:
+            problem = ("질문에 기간이 없습니다. 기간을 지어내지 말고 투입 이력 조회(get_assignment_timeline)로 확인하세요.")
     else:
         problem = None
     problem = problem or (guardrails.missing_target(call["name"], call["arguments"])
