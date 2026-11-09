@@ -22,7 +22,6 @@ from pmo.agent.guardrails import similar_names
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
 from pmo.config import TIMEZONE
-from pmo.contracts import CONTRACT_STATUSES
 from pmo.errors import ConflictError, ValidationError
 from pmo.service import Service
 
@@ -107,14 +106,14 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("list_contracts", "인력의 구매계약(계약번호·기간·상태·연장 여부)을 조회한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: s.contracts(_pid(s, a["person_id"]))),
-    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: 450012201에 묶인 인력), 업체, 상태(준비·확정), "
+    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: 450012201에 묶인 인력), 업체, "
          "계약번호 미발급(without_number=true). 계약번호를 사람 이름 칸에 넣지 않고 이 도구를 쓴다.",
-         _obj({"contract_no": STR, "company": STR, "status": _enum(CONTRACT_STATUSES),
+         _obj({"contract_no": STR, "company": STR,
                "without_number": {"type": "boolean", "description": "계약번호가 아직 없는 계약만"}}),
          handler=lambda s, a: _company_is_not_a_person(s, a) or [
-             {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "status", "label")}
+             {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "label")}
              | {"contract_no": c["contract_no"] or "미발급"}
-             for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"), bool(a.get("without_number")))]),
+             for c in s.search_contracts(a.get("contract_no"), a.get("company"), None, bool(a.get("without_number")))]),
     Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true). "
          "이름을 모를 때 쓴다. 이름이 있으면 find_people.",
          _obj({"company": STR, "category": _enum(("정", "협력", "컨설팅")), "job_role": STR,
@@ -138,7 +137,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("prepare_contract_save", "구매계약 신규 등록 또는 수정(기간 변경·연장·계약번호 입력 등)을 준비한다(저장 안 함). "
          "수정이면 contract_id에 계약 id나 계약번호를 넣고, 새 계약이면 mode='신규'로 한다. 바꿀 값만 넣는다.",
          _obj({"person_id": PERSON, "mode": _enum(("신규", "수정")), "contract_id": STR, "company": STR,
-               "contract_no": STR, "start_date": DATE, "end_date": DATE, "status": _enum(CONTRACT_STATUSES)}),
+               "contract_no": STR, "start_date": DATE, "end_date": DATE}),
          handler=_plan("contract_save")),
     Tool("prepare_contract_delete", "구매계약 삭제를 준비한다(삭제 안 함). 사용자가 화면에서 확인해야 삭제된다.",
          _obj({"person_id": PERSON, "contract_id": STR}), handler=_plan("contract_delete")),
@@ -399,7 +398,7 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
     person = found[0]
     t = service.assignment_timeline(person["id"])
     contracts = [{"contract_no": c["contract_no"] or "미발급", "company": c["company"], "start_date": c["start_date"],
-                  "end_date": c["end_date"], "status": c["status"], "state": c["label"],
+                  "end_date": c["end_date"], "state": c["label"],
                   "extension_registered": bool(c["has_successor"])} for c in service.contracts(person["id"])]
     summary = {
         "today": t["today"],

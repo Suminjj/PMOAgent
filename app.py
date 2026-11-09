@@ -263,6 +263,8 @@ def person_form(current: dict | None) -> None:
 
 
 RATE_COLUMNS = ("sales_rate", "purchase_rate")
+# 미리보기 표에서 빼는 칸: 계약 상태(계약번호로 자동)·매출단가·단가 기준 단위(입력칸 없음, 11/09 담당자)
+PREVIEW_HIDDEN = {"mm_details", "status", "sales_rate", "rate_unit"}
 STATE_COLORS = {"현재": "#16A34A", "예정": "#DC2626", "종료": "#9CA3AF"}   # 과제 투입 관리 투입 상태 색 (11/09 담당자)
 
 
@@ -321,7 +323,7 @@ def confirm() -> None:
     st.table([{
         "항목": LABELS[k], "기존 값": current.get(k, "") if current else "",
         "저장할 값": value if value is not None else "미입력"
-    } for k, value in display_data.items() if k != "mm_details"])
+    } for k, value in display_data.items() if k not in PREVIEW_HIDDEN])
     if display_data.get("mm_details"):
         with st.expander("저장할 MM 산정 근거"):
             st.json(display_data["mm_details"])
@@ -631,10 +633,9 @@ elif page == "전체 계약 조회":
         st.info("등록된 구매계약이 없습니다. '계약 등록·수정'에서 등록하세요.")
         st.stop()
     soon_count = sum(c["ending_soon"] for c in all_contracts)
-    f1, f2, f3, f4 = st.columns([1, 1, 1, 1.4])
+    f1, f3, f4 = st.columns([1, 1, 1.4])          # 11/09 담당자: 계약 상태 필터·열 없음
     company_filter = f1.selectbox("업체", ["전체"] + sorted({c["company"] for c in all_contracts}),
                                   key="contract_company")
-    status_filter = f2.selectbox("계약 상태", ["전체", "준비", "확정"], key="contract_status")
     month_filter = f3.selectbox("종료 월", ["전체"] + sorted({c["end_date"][:7] for c in all_contracts}),
                                 key="contract_month",
                                 format_func=lambda m: m if m == "전체" else f"{m[:4]}년 {int(m[5:])}월")
@@ -642,14 +643,13 @@ elif page == "전체 계약 조회":
     only_soon = f4.toggle(f"계약 종료 예정만 보기 ({soon_count}명)", key="contract_only_soon")
     rows = [c for c in all_contracts
             if (company_filter == "전체" or c["company"] == company_filter)
-            and (status_filter == "전체" or c["status"] == status_filter)
             and (month_filter == "전체" or c["end_date"].startswith(month_filter))
             and (not only_soon or c["ending_soon"])]
     if not rows:
         st.info("조건에 맞는 계약이 없습니다.")
     else:
         frame = pd.DataFrame([{"이름": r["name"], "업체명": r["company"],
-                               "계약번호": r.get("contract_no") or "미발급", "계약 상태": r["status"],
+                               "계약번호": r.get("contract_no") or "미발급",
                                "계약 시작일": r["start_date"], "계약 종료일": r["end_date"],
                                "만료 상태": r["label"], "연장 계약": "등록" if r["has_successor"] else ""}
                               for r in rows])

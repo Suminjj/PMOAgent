@@ -84,7 +84,7 @@ def test_contract_overview_marks_and_filters_ending_soon(demo_app):
     soon = [c for c in contracts if c["ending_soon"]]
     table = app.dataframe[0].value
     assert len(table) == len(contracts)
-    assert list(table.columns) == ["이름", "업체명", "계약번호", "계약 상태", "계약 시작일", "계약 종료일",
+    assert list(table.columns) == ["이름", "업체명", "계약번호", "계약 시작일", "계약 종료일",
                                    "만료 상태", "연장 계약"]
     app.toggle(key="contract_only_soon").set_value(True).run()
     assert not app.exception

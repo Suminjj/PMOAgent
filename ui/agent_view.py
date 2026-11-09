@@ -18,8 +18,8 @@ COLUMNS = {
 
 _TABLE_FIELDS = {
     "find_people": ["name", "company", "category", "account_id"],
-    "list_contracts": ["contract_no", "status", "start_date", "end_date", "label", "has_successor"],
-    "contracts_ending": ["name", "company", "contract_no", "status", "end_date", "label", "has_successor"],
+    "list_contracts": ["contract_no", "start_date", "end_date", "label", "has_successor"],
+    "contracts_ending": ["name", "company", "contract_no", "end_date", "label", "has_successor"],
     "pending_contract_alerts": ["name", "company", "contract_no", "end_date", "label", "notify_from"],
 }
 _ASSIGNMENT_FIELDS = ["project", "revenue_project", "start_date", "end_date", "grade"]
