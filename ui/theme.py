@@ -108,8 +108,15 @@ header[data-testid="stHeader"] { background: transparent; }
 
 /* ---- 홈: 흰 카드 패널 ---- */
 .st-key-home_chat_panel {
-  background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px;
+  background: #FFFFFF; border: 1px solid #D5DCE8; border-radius: 16px; padding: 0 20px 20px;
+  box-shadow: 0 8px 24px rgba(15, 27, 51, 0.10); overflow: hidden;
 }
+/* 11/09 담당자: PMO Agent가 돋보이게 — 제목 줄을 왼쪽 메뉴와 같은 네이비 머리띠로 (패널은 흰색 + 그림자) */
+.st-key-home_agent_head {
+  background: #0F1B33; margin: 0 -20px 4px; padding: 14px 22px; border-bottom: 3px solid #1D4ED8;
+}
+.st-key-home_agent_head h3, .st-key-home_agent_head p { color: #FFFFFF; margin: 0; padding: 0; }
+.st-key-home_agent_head h3 { font-size: 20px; font-weight: 700; }
 /* 채팅창처럼: 사용자 질문은 오른쪽 말풍선, Agent 답변은 왼쪽 (11/08) */
 .st-key-home_chat_log [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
   flex-direction: row-reverse; margin-left: 20%; background: #EEF2F8; border-radius: 14px;
