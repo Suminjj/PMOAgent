@@ -111,7 +111,8 @@ def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     before = contract_end(service)
     assert before != "2027-12-31"                                     # 카드만으로는 저장 안 됨
     rows = app.table[0].value
-    assert list(rows["변경"])[6] == "2027-12-31"                        # 현재 → 변경 카드
+    card = dict(zip(rows["항목"], rows["변경"]))                       # 현재 → 변경 카드 (항목 이름으로 확인)
+    assert card["계약 종료일"] == "2027-12-31" and "계약 상태" not in card   # 11/09 계약 상태 줄 없음
     assert not [s for s in app.selectbox if s.key and s.key.startswith("act")]  # 값을 고르는 양식이 없음
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
