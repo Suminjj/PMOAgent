@@ -108,6 +108,9 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-mini-more, .pmo-mini-empty { font-size: 12px; color: #8A94A6; padding-top: 6px; }
 
 /* ---- 로그인·초기 설정 (11/09 담당자: 가운데 좁게 + AI Agent 그림) ---- */
+.pmo-user { text-align: right; font-size: 13.5px; color: #172033; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-key-logout button { min-height: 34px; padding: 2px 10px; border-radius: 999px; }
+.st-key-logout button p { font-size: 13px; }
 .pmo-auth-hero { text-align: center; margin: 24px 0 14px; }
 .pmo-auth-hero svg { display: inline-block; }
 .pmo-auth-title { font-size: 24px; font-weight: 700; color: #172033; margin-top: 4px; }
@@ -133,7 +136,7 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-agent-spark { width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,.14);
   display: grid; place-items: center; font-size: 18px; }
 .pmo-agent-sub { margin-top: 4px; font-size: 13px; color: #C7CCF5; }
-.pmo-agent-live { position: absolute; right: 0; top: 4px; font-size: 12px; color: #FFFFFF;
+.pmo-agent-live { position: absolute; right: 0; top: 2px; font-size: 12px; color: #FFFFFF;
   background: rgba(255,255,255,.14); padding: 5px 11px; border-radius: 999px; }
 .pmo-agent-live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   background: #34D399; margin-right: 6px; box-shadow: 0 0 8px #34D399; vertical-align: 1px; }
@@ -297,8 +300,7 @@ def auth_hero(subtitle: str) -> None:
 def agent_header() -> None:
     """홈 PMO Agent 머리띠(11/09 담당자 시안 A). 배지는 실제 연결 확인이 아니라 '로컬 LLM' 사용 표시다."""
     st.markdown('<div class="pmo-agent-head"><div class="pmo-agent-title"><span class="pmo-agent-spark">✦</span>'
-                'PMO Agent</div><div class="pmo-agent-sub">인력·구매계약·검수 업무를 자연어로 물어보세요</div>'
-                '<span class="pmo-agent-live">로컬 LLM</span></div>', unsafe_allow_html=True)
+                'PMO Agent</div><span class="pmo-agent-live">로컬 LLM</span></div>', unsafe_allow_html=True)
 
 
 def kpi_row(items: list[tuple[str, int, str, bool]], columns: int = 4) -> None:

@@ -192,5 +192,8 @@ def test_home_left_cards_and_agent_on_right(app):
     assert "Full time" not in texts and "차례로 고른 뒤" not in " ".join(c.value for c in app.caption)   # MM 계산기 문구 정리
     assert 'class="pmo-mini"' in texts or "확인할 계약 종료 알림이 없습니다" in texts   # 건수 아래 간단 목록
     assert "처리를 기다리는 수정 요청이 없습니다" in texts
+    assert "자연어로 물어보세요" not in texts and "저장은 답변 아래 확인 카드" not in texts   # 11/09 문구 정리
+    assert not [b for b in app.sidebar.button if b.key == "logout"]                     # 로그인 정보는 오른쪽 위
+    assert app.button(key="logout") and any("pmo-user" in m.value for m in app.markdown)
     app.button(key="home_go_requests").click().run()
     assert app.session_state["nav_page"] == "수정 요청"

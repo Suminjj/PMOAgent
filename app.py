@@ -85,16 +85,19 @@ except sqlite3.Error:
 theme.sidebar_brand()
 page = theme.sidebar_nav(len(pending_alerts), allowed=theme.pages_for(user.role))
 actor = f"{user.name}({user.login})"                       # 변경 이력의 주체 = 로그인 사용자
-st.sidebar.caption(f"로그인: {user.label()}")
-if st.sidebar.button("로그아웃", key="logout"):
-    st.session_state.clear()
-    st.rerun()
 # 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
 if _people_count == 0:
     st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 theme.sidebar_footer(service.path.name, _people_count, os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"))
-theme.page_header(service.clock(), "" if page == "홈" else
-                  page if theme.GROUP_OF[page] == page else f"{theme.GROUP_OF[page]} · {page}")
+# 11/09 담당자: 로그인 정보·로그아웃은 왼쪽 메뉴가 아니라 화면 오른쪽 위에 둔다.
+_title_col, _user_col, _logout_col = st.columns([6, 2.2, 0.9], vertical_alignment="center")
+with _title_col:
+    theme.page_header(service.clock(), "" if page == "홈" else
+                      page if theme.GROUP_OF[page] == page else f"{theme.GROUP_OF[page]} · {page}")
+_user_col.markdown(f'<div class="pmo-user">👤 {escape(user.label())}</div>', unsafe_allow_html=True)
+if _logout_col.button("로그아웃", key="logout", width="stretch"):
+    st.session_state.clear()
+    st.rerun()
 if pending_alerts and page not in ("계약 종료 알림", "홈"):      # 홈은 왼쪽 '구매 연장 알림' 카드로 보여 준다
     st.warning(f"계약 종료 검토 대상이 {len(pending_alerts)}건 있습니다. "
                "왼쪽 메뉴의 '계약 종료 알림'에서 확인하세요.")
@@ -475,7 +478,7 @@ if page == "홈":
             if not turns:
                 with st.chat_message("assistant"):
                     st.markdown("인력·투입·MM·구매계약·검수 금액을 묻거나, "
-                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.\n\n"
+                                "투입 변경·계약 등록·수정·삭제를 요청하세요.\n\n"
                                 "**예시 질문**\n"
                                 f"- :gray[업체명] {day.month}월 검수 금액 알려줘\n"
                                 "- :gray[인력명] 투입 중인 과제 알려줘")
