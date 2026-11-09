@@ -29,8 +29,16 @@ def go(app, page):
     assert not app.exception
 
 
-def test_startup_shows_pending_alert_banner(demo_app):
-    _, app = demo_app
+def test_startup_shows_pending_alerts(demo_app):
+    """앱 실행 시 미처리 알림을 다시 보여 준다. 11/09부터 홈은 왼쪽 '구매 연장 알림' 카드(건수 + 목록)로,
+    다른 화면은 위쪽 경고 띠로 보여 준다(홈에서는 카드와 겹쳐 띠를 띄우지 않음)."""
+    path, app = demo_app
+    count = len(Service(path).pending_alerts())
+    assert count
+    card = next(m.value for m in app.markdown if "구매 연장 알림" in m.value)
+    assert f">{count}<" in card and 'class="pmo-mini"' in card
+    assert not any("계약 종료 검토 대상" in w.value for w in app.warning)
+    go(app, "전체 계약 조회")
     assert any("계약 종료 검토 대상" in w.value for w in app.warning)
 
 
