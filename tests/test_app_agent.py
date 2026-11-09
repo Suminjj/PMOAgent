@@ -91,9 +91,13 @@ def test_follow_up_keeps_conversation(app):
     assert len(results) == 2                                           # 답변마다 그 아래에 조회 결과
 
 
-def test_example_button_and_llm_unavailable(app, monkeypatch):
+def test_intro_examples_and_llm_unavailable(app, monkeypatch):
+    """11/09 담당자: 예시 질문 버튼은 없애고 첫 안내 말풍선에 예시 두 개(업체명·인력명은 회색)만 적는다."""
+    assert not [b for b in app.button if (b.key or "").startswith("home_example")]
+    intro = next(m.value for m in app.markdown if "예시 질문" in m.value)
+    assert ":gray[업체명]" in intro and "검수 금액 알려줘" in intro and ":gray[인력명] 투입 중인 과제 알려줘" in intro
     monkeypatch.setenv("PMO_OLLAMA_URL", "http://127.0.0.1:9")
-    app.button(key="home_example_0").click().run()
+    app.chat_input[0].set_value("김가상 투입 중인 과제 알려줘").run()
     assert not app.exception
     assert any("연결할 수 없습니다" in e.value for e in app.error)
 
@@ -135,7 +139,6 @@ def test_category_selector_limits_agent_tools(app):
     assert app.session_state["home_category"] == "auto"
     app.button(key="home_agent_contract").click().run()
     assert app.session_state["home_category"] == "contract"
-    assert any("구매계약" in c.value for c in app.caption)               # 예시 질문 · 구매계약
     REPLIES[:] = [tool("pending_contract_alerts"), say("미확인 알림은 2건입니다.")]
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
     assert not app.exception

@@ -461,11 +461,15 @@ if page == "홈":
                               type="primary" if key == agent_key else "secondary", width="stretch",
                               on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
-        with st.container(height=640, border=True, key="home_chat_log"):
+        # 11/09 담당자: 스크롤 없이 입력창이 보이도록 대화 영역 높이를 줄인다(640 → 430).
+        with st.container(height=430, border=True, key="home_chat_log"):
             if not turns:
                 with st.chat_message("assistant"):
                     st.markdown("인력·투입·MM·구매계약·검수 금액을 묻거나, "
-                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.")
+                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.\n\n"
+                                "**예시 질문**\n"
+                                f"- :gray[업체명] {day.month}월 검수 금액 알려줘\n"
+                                "- :gray[인력명] 투입 중인 과제 알려줘")
             for index, turn in enumerate(turns):
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
@@ -488,14 +492,9 @@ if page == "홈":
                     for message in turn.get("done", {}).values():
                         st.success(message)
                     render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
-        asked = None
-        if not turns:
-            st.caption(f"예시 질문 · {ROUTER_LABEL if agent.key == AUTO else agent.label}")
-            for i, example in enumerate(agent.examples):
-                if st.button(example, key=f"home_example_{i}"):
-                    asked = example
+        # 11/09 담당자: 입력창 아래 예시 질문 버튼은 없앤다(예시는 첫 안내 말풍선에 적는다).
         typed = st.chat_input("질문을 입력하세요", key="home_chat")
-        asked = (typed or "").strip() or asked
+        asked = (typed or "").strip()
         if asked:
             history = []
             for turn in turns:
