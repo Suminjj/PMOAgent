@@ -31,6 +31,7 @@ def preview_person(app):
     find(app.text_input, "이름").set_value("가상 화면 인력")
     find(app.text_input, "업체명").set_value("가상 화면 업체")
     find(app.selectbox, "분류").set_value("협력")
+    find(app.text_input, "투입 과제 (선택)").set_value("가상 신규 과제")
     find(app.selectbox, "투입 등급").set_value("L6")
     find(app.date_input, "투입 시작일").set_value(date(2026, 10, 1))
     find(app.date_input, "투입 종료일").set_value(date(2026, 10, 31))
@@ -56,6 +57,7 @@ def test_person_preview_cancel_save_edit_restart(monkeypatch, tmp_path):
     assert Service(path).people()[0]["account_id"] is None
     assert Service(path).assignments()[0]["purchase_rate"] is None
     assert Service(path).assignments()[0]["grade"] == "L6"
+    assert Service(path).assignments()[0]["project"] == "가상 신규 과제"           # 11/09 신규 등록 때 투입 과제
     go(app, "전체 인력 조회")                                        # 수정·계정 ID 보완은 전체 인력 조회에서
     app.selectbox(key="person_target").set_value(person_id).run()
     find(app.text_input, "이름").set_value("가상 화면 수정")
@@ -79,21 +81,27 @@ def test_assignment_preview_validation_save_and_edit(monkeypatch, tmp_path):
                         token="fake-person-request", actor="테스트")
     app = open_app()
     go(app, "과제 투입 관리")
+    assert not app.exception and not app.dataframe                    # 11/09 전체 투입 표(아직 투입 없음)
+    app.selectbox(key="assignment_person").set_value("FAKE-UI-001").run()
+    assert not [t for t in app.text_input if t.label in ("매출단가 (선택)", "단가 기준 단위 (예: 원/MM, 원/일)")]
     app.button(key="preview_assignment").click().run()
     assert app.error and not service.assignments()
     find(app.text_input, "과제명 (선택)").set_value("가상 화면 과제")
     find(app.selectbox, "등급").set_value("L6")
     find(app.date_input, "시작일").set_value(date(2026, 10, 1))
     find(app.date_input, "종료일").set_value(date(2026, 10, 31))
-    find(app.text_input, "매출단가 (선택)").set_value("2000000.10")
-    find(app.text_input, "매입단가 (선택)").set_value("1000000")
-    find(app.text_input, "단가 기준 단위 (예: 원/MM, 원/일)").set_value("원/MM")
+    find(app.text_input, "매입단가(검수금액 계산 시 사용)").set_value("1,000,000")
     app.button(key="preview_assignment").click().run()
     assert not service.assignments()
     app.button(key="confirm").click().run()
     assert not app.exception
     assert len(service.assignments()) == 1
     saved = service.assignments()[0]
+    assert (saved["purchase_rate"], saved["rate_unit"], saved["sales_rate"]) == ("1000000", "원/MM", None)
+    app.multiselect(key="assignment_states").set_value(["현재", "예정", "종료"]).run()
+    table = app.dataframe[0].value                                   # 전체 투입 표: 단가에 쉼표
+    assert list(table["이름"]) == ["가상 인력"] and list(table["매입단가"]) == ["1,000,000"]
+    assert list(table["투입 상태"]) == ["● 종료"]                        # 색 원 + 상태
     app.selectbox(key="assignment_target_FAKE-UI-001").set_value(saved["id"]).run()
     find(app.text_input, "과제명 (선택)").set_value("수정된 가상 과제")
     app.button(key="preview_assignment").click().run()

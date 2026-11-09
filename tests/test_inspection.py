@@ -113,11 +113,19 @@ def test_inspection_page_shows_totals(monkeypatch, tmp_path, filled):
                     filled.path).run()
     app.button(key=f"nav_{PAGES.index('검수하기')}").click().run()
     assert not app.exception
+    # 11/09 담당자: 위 표는 매출귀속 프로젝트별 금액만(인력 줄 없음), 아래 표에 프로젝트별 인력
     table = app.dataframe[0].value
-    assert list(table.columns)[:4] == ["인력명", "매출귀속 프로젝트", "MM", "프로젝트 전체 금액 (계약 기간)"]
+    assert list(table.columns)[:4] == ["매출귀속 프로젝트", "인원", "MM", "프로젝트 전체 금액 (계약 기간)"]
     assert table.columns[4].startswith("검수 금액 (")              # 기본 = 이번 달(실행 날짜에 따라 다름)
     assert table.iloc[-1]["프로젝트 전체 금액 (계약 기간)"] == "56,833,333원"
-    assert table.iloc[-1]["인력명"] == "합계"
+    assert table.iloc[-1]["매출귀속 프로젝트"] == "합계"
+    assert len(table) == len(set(table["매출귀속 프로젝트"]))          # 프로젝트마다 한 줄
+    people = app.dataframe[1].value
+    assert list(people.columns)[:3] == ["매출귀속 프로젝트", "인력명", "MM"]
+    assert "합계" not in set(people["인력명"]) and "소계" not in set(people["인력명"])
+    first = table.iloc[0]["매출귀속 프로젝트"]
+    app.selectbox(key="insp_project_가상 업체_C-100").set_value(first).run()
+    assert set(app.dataframe[1].value["매출귀속 프로젝트"]) == {first}   # 고른 프로젝트의 인력만
 
 
 def test_period_with_only_uncomputable_lines_is_not_zero(service):

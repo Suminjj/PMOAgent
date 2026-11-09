@@ -70,8 +70,9 @@ def test_month_change_inside_long_assignment_splits_it(service):
     assert parts[0]["id"] == original["id"]
     contract = service.contracts("EV-21")[0]
     assert contract["assignment_id"] is None
-    december = service.inspection("감마테크", "C-2026-206", "2026-12", "2026-12")["selected"]["projects"]
-    assert [p["revenue_project"] for p in december] == ["30133686-D050"]
+    december = service.inspection("감마테크", "450012202", "2026-12", "2026-12")["selected"]["lines"]
+    # 11/09 계약번호 하나에 여러 인력: 명협력 12월 몫은 바뀐 매출귀속 프로젝트(D050)로 잡힌다
+    assert [line["revenue_project"] for line in december if line["name"] == "명협력"] == ["30133686-D050"]
 
 
 def test_transfer_ends_old_project_and_starts_new(service):

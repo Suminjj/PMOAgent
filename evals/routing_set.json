@@ -1,0 +1,287 @@
+{
+  "description": "자동 라우터 판정 질문 세트(11/10 담당자 경계: 인력 정보=인력관리, 구매계약 기간·연장·종료=구매계약, 금액=검수). expect는 고를 Agent(여러 업무면 질문 순서), 빈 목록은 '투입·계약 되묻기'. 평가용 가상 데이터(seed_eval) 기준.",
+  "today": "2026-11-15",
+  "questions": [
+    {
+      "id": "R01",
+      "question": "이협력 투입 종료일 알려줘",
+      "expect": [
+        "staff"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R02",
+      "question": "박협력 투입 언제 끝나?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R03",
+      "question": "박협력 계약 언제 끝나?",
+      "expect": [
+        "contract"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R04",
+      "question": "이협력 계약 금액 알려줘",
+      "expect": [
+        "inspection"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R05",
+      "question": "조협력 계약 연장됐어?",
+      "expect": [
+        "contract"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R06",
+      "question": "서협력 과제 언제까지 해?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R07",
+      "question": "알파솔루션에 이번 달 얼마 나가?",
+      "expect": [
+        "inspection"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R08",
+      "question": "신협력 단가 얼마야?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R09",
+      "question": "450012202 계약에 누가 있어?",
+      "expect": [
+        "contract"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R10",
+      "question": "450011101 11월 검수 금액",
+      "expect": [
+        "inspection"
+      ],
+      "kind": "겹치는 단어"
+    },
+    {
+      "id": "R11",
+      "question": "이협력 누구야?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "업무 단어 없음"
+    },
+    {
+      "id": "R12",
+      "question": "알파솔루션 사람 몇 명이야?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "업무 단어 없음"
+    },
+    {
+      "id": "R13",
+      "question": "김컨설 어디 소속이야?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "업무 단어 없음"
+    },
+    {
+      "id": "R14",
+      "question": "노협력 요즘 뭐 해?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "업무 단어 없음"
+    },
+    {
+      "id": "R15",
+      "question": "이번 주에 챙겨야 할 거 있어?",
+      "expect": [
+        "contract"
+      ],
+      "kind": "업무 단어 없음"
+    },
+    {
+      "id": "R16",
+      "question": "12월 구매해야 하는 인력 알려줘",
+      "expect": [
+        "contract"
+      ],
+      "kind": "구매·계약 표현"
+    },
+    {
+      "id": "R17",
+      "question": "다음 달 구매 요청 올려야 하는 사람 있어?",
+      "expect": [
+        "contract"
+      ],
+      "kind": "구매·계약 표현"
+    },
+    {
+      "id": "R18",
+      "question": "곧 끝나는 사람 있어?",
+      "expect": [],
+      "kind": "구매·계약 표현"
+    },
+    {
+      "id": "R19",
+      "question": "연장 안 된 사람 누구야?",
+      "expect": [
+        "contract"
+      ],
+      "kind": "구매·계약 표현"
+    },
+    {
+      "id": "R20",
+      "question": "계약번호 아직 없는 사람 알려줘",
+      "expect": [
+        "contract"
+      ],
+      "kind": "구매·계약 표현"
+    },
+    {
+      "id": "R21",
+      "question": "이협력 종료일 12월 31일로 바꿔줘",
+      "expect": [],
+      "kind": "변경 요청"
+    },
+    {
+      "id": "R22",
+      "question": "명협력 다른 과제로 옮겨줘",
+      "expect": [
+        "staff"
+      ],
+      "kind": "변경 요청"
+    },
+    {
+      "id": "R23",
+      "question": "백협력 알림 확인했어",
+      "expect": [
+        "contract"
+      ],
+      "kind": "변경 요청"
+    },
+    {
+      "id": "R24",
+      "question": "서협력 아이디 in06538 넣어줘",
+      "expect": [
+        "staff"
+      ],
+      "kind": "변경 요청"
+    },
+    {
+      "id": "R25",
+      "question": "계약 말고 투입 과제가 궁금해요. 이협력이요",
+      "expect": [
+        "staff"
+      ],
+      "kind": "섞인 문장"
+    },
+    {
+      "id": "R26",
+      "question": "검수 전에 확인하려는데 정협력 11월 MM 얼마야?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "섞인 문장"
+    },
+    {
+      "id": "R27",
+      "question": "박협력 과제 끝나면 계약도 같이 끝나?",
+      "expect": [
+        "staff",
+        "contract"
+      ],
+      "kind": "섞인 문장"
+    },
+    {
+      "id": "R28",
+      "question": "감마테크 인력들 이번 달 MM이랑 검수 금액 알려줘",
+      "expect": [
+        "inspection"
+      ],
+      "kind": "섞인 문장"
+    },
+    {
+      "id": "R29",
+      "question": "정협력 과제랑 계약 종료일 알려줘",
+      "expect": [
+        "staff",
+        "contract"
+      ],
+      "kind": "여러 업무"
+    },
+    {
+      "id": "R30",
+      "question": "알파솔루션 11월 종료 예정 인력이랑 11월 검수 금액 알려줘",
+      "expect": [
+        "contract",
+        "inspection"
+      ],
+      "kind": "여러 업무"
+    },
+    {
+      "id": "R31",
+      "question": "감마테크",
+      "expect": [
+        "staff"
+      ],
+      "kind": "이어지는 대화",
+      "history": [
+        {
+          "role": "user",
+          "content": "김협력 투입 기간 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "김협력이 2명입니다. 어느 업체 김협력인가요?"
+        }
+      ],
+      "previous": [
+        "staff"
+      ]
+    },
+    {
+      "id": "R32",
+      "question": "그럼 투입은?",
+      "expect": [
+        "staff"
+      ],
+      "kind": "이어지는 대화",
+      "history": [
+        {
+          "role": "user",
+          "content": "박협력 구매계약 언제까지야?"
+        },
+        {
+          "role": "assistant",
+          "content": "박협력 구매계약은 2026-11-27까지입니다."
+        }
+      ],
+      "previous": [
+        "contract"
+      ]
+    }
+  ]
+}

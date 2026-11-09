@@ -16,7 +16,8 @@ from pmo.service import Service
 from pmo.tools import call_tool, tool_specs
 
 QUESTIONS = ROOT / "evals" / "questions.json"
-EVAL_SET = ROOT / "evals" / "eval_set.json"   # 정확도 평가 세트 (기준일 2026-11-15, scripts/build_eval_set.py)
+EVAL_SET = ROOT / "evals" / "eval_set.json"
+ROUTING_SET = ROOT / "evals" / "routing_set.json"   # 자동 라우터 판정 질문 세트(11/10, Agent를 부르지 않고 판정만 채점)   # 정확도 평가 세트 (기준일 2026-11-15, scripts/build_eval_set.py)
 RESULTS_DIR = ROOT / "evals" / "results"
 
 
@@ -265,6 +266,53 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         part = "-only-" + "_".join(sorted(only)).replace(" ", "") if only else ""   # 일부만 실행한 결과는 파일 이름으로 구분
         out = RESULTS_DIR / f"{Path(questions_path).stem}-{planner.name}{part}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
+        out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        report["saved_to"] = str(out)
+    return report
+
+
+def run_routing(client=None, mode: str = "rule", questions_path: Path = ROUTING_SET, save: bool = True,
+                on_result=None) -> dict:
+    """라우터 판정만 채점한다(Agent는 부르지 않음). client가 없으면 규칙만(LLM으로 넘길 질문은 규칙 판정 그대로).
+
+    mode: rule(키워드, 애매하면 LLM) · llm(가드레일·이어지는 대화·되묻기 뒤 항상 LLM 분류).
+    정답 expect가 빈 목록이면 '투입·계약 되묻기'(method clarify)가 정답이다.
+    """
+    from pmo.agent.router import route
+    from pmo.eval_data import seed_eval
+    spec = json.loads(Path(questions_path).read_text(encoding="utf-8"))
+    today = date.fromisoformat(spec["today"])
+    name = (client.name.replace(":", "-").replace("/", "-") if client else "rules") + f"-{mode}"
+    rows = []
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        service = Service(Path(tmp) / "routing.db", clock=lambda: today)
+        seed_eval(service, today)
+        for q in spec["questions"]:
+            tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
+            t0 = time.perf_counter()
+            decision = route(service, q["question"], client, q.get("history"), q.get("previous"), tokens, mode=mode)
+            got = [] if decision["method"] == "clarify" else decision["agents"]
+            row = {"id": q["id"], "kind": q.get("kind"), "question": q["question"], "expect": q["expect"],
+                   "routed": got, "method": decision["method"], "ok": got == q["expect"],
+                   "ms": round((time.perf_counter() - t0) * 1000), "llm_calls": tokens["llm_calls"],
+                   "reason": decision.get("reason"), "rule": decision.get("rule")}
+            rows.append(row)
+            if on_result:
+                on_result(row)
+    methods: dict[str, int] = {}
+    for r in rows:
+        methods[r["method"]] = methods.get(r["method"], 0) + 1
+    llm_rows = [r for r in rows if r["llm_calls"]]
+    report = {"planner": name, "questions": Path(questions_path).name, "run_at": datetime.now(TIMEZONE).isoformat(),
+              "correct": sum(r["ok"] for r in rows), "total": len(rows), "methods": methods,
+              "avg_ms": sum(r["ms"] for r in rows) // max(len(rows), 1),
+              "avg_llm_ms": sum(r["ms"] for r in llm_rows) // max(len(llm_rows), 1) if llm_rows else None,
+              "wrong": [f"{r['id']}: {'+'.join(r['routed']) or '되묻기'} (정답 {'+'.join(r['expect']) or '되묻기'})"
+                        for r in rows if not r["ok"]],
+              "results": rows}
+    if save:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        out = RESULTS_DIR / f"routing-{name}-{datetime.now(TIMEZONE):%Y%m%d-%H%M%S}.json"
         out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         report["saved_to"] = str(out)
     return report

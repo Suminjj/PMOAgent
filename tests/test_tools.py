@@ -65,3 +65,12 @@ def test_eval_detects_wrong_tool_choice():
     report = run(Wrong(), save=False)
     assert report["passed"] == 1  # Q5만 우연히 맞음
     assert any("도구 순서" in p for r in report["results"] for p in r["problems"])
+
+
+def test_purchase_needs_is_planned_but_returns_ending_contracts_as_reference(service):
+    """11/09: 판정 기준 미확정 → 실패 그대로, 그 달 계약 종료 예정 인력을 참고로 붙인다."""
+    result = call_tool(service, "monthly_purchase_needs", {"year": 2026, "month": 10})
+    assert result["ok"] is False and "구현 예정" in result["error"] and "판정하지 않습니다" in result["error"]
+    assert result["data"]["basis"].startswith("계약 종료 예정")
+    assert [r["name"] for r in result["data"]["ending_contracts"]] == \
+        [r["name"] for r in service.contracts_ending(2026, 10)]

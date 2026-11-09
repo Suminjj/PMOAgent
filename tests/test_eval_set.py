@@ -26,12 +26,12 @@ def test_each_person_has_one_case_and_key_cases_hold(tmp_path):
     seed_eval(service, TODAY)
     assert len({p[0] for p in PEOPLE}) == len(PEOPLE) == len(service.people())
     contracts = {(c["name"], c["contract_no"]): c for c in service.contracts()}
-    assert contracts[("이협력", "C-2026-102")]["days_left"] == 15 and not contracts[("이협력", "C-2026-102")]["ending_soon"]
-    assert contracts[("조협력", "C-2026-104")]["has_successor"] and not contracts[("조협력", "C-2026-104")]["ending_soon"]
-    assert contracts[("강협력", "C-2026-203")]["label"] == "오늘 종료"
+    assert contracts[("이협력", "450011101")]["days_left"] == 15 and not contracts[("이협력", "450011101")]["ending_soon"]
+    assert contracts[("조협력", "450011102")]["has_successor"] and not contracts[("조협력", "450011102")]["ending_soon"]
+    assert contracts[("강협력", "450012202")]["label"] == "오늘 종료"
     assert len(service.find_people("김협력")) == 2
     # 11/03 담당자 질문용 경우
-    assert contracts[("문협력", "C-2026-205")]["days_left"] == 14 and contracts[("문협력", "C-2026-205")]["ending_soon"]
+    assert contracts[("문협력", "450012202")]["days_left"] == 14 and contracts[("문협력", "450012202")]["ending_soon"]
     assert [x["revenue_project"] for x in service.assignments("EV-18")] == [None]            # 매출귀속 프로젝트 미정
     shin = sorted(service.assignments("EV-17"), key=lambda x: x["start_date"])
     assert {x["project"] for x in shin} == {"Soft Lab 고도화"} and len({x["revenue_project"] for x in shin}) == 3

@@ -61,7 +61,7 @@ def test_home_is_first_page_with_chat_and_results(app):
     assert app.session_state["nav_page"] == "홈"
     assert not app.sidebar.radio                                         # 메뉴는 라디오가 아니라 버튼
     assert [b.key for b in app.sidebar.button][:7] == [f"nav_{i}" for i in range(7)]
-    assert [s.value for s in app.subheader][:1] == ["🤖 PMO Agent"]
+    assert any("pmo-agent-title" in m.value and "PMO Agent" in m.value for m in app.markdown)   # 11/09 시안 A 머리띠
     assert "수행 결과" not in [s.value for s in app.subheader]          # 11/08: 오른쪽 결과 패널 없음
     assert app.chat_input
 
@@ -91,9 +91,13 @@ def test_follow_up_keeps_conversation(app):
     assert len(results) == 2                                           # 답변마다 그 아래에 조회 결과
 
 
-def test_example_button_and_llm_unavailable(app, monkeypatch):
+def test_intro_examples_and_llm_unavailable(app, monkeypatch):
+    """11/09 담당자: 예시 질문 버튼은 없애고 첫 안내 말풍선에 예시 두 개(업체명·인력명은 회색)만 적는다."""
+    assert not [b for b in app.button if (b.key or "").startswith("home_example")]
+    intro = next(m.value for m in app.markdown if "예시 질문" in m.value)
+    assert ":gray[업체명]" in intro and "검수 금액 알려줘" in intro and ":gray[인력명] 투입 중인 과제 알려줘" in intro
     monkeypatch.setenv("PMO_OLLAMA_URL", "http://127.0.0.1:9")
-    app.button(key="home_example_0").click().run()
+    app.chat_input[0].set_value("김가상 투입 중인 과제 알려줘").run()
     assert not app.exception
     assert any("연결할 수 없습니다" in e.value for e in app.error)
 
@@ -111,7 +115,8 @@ def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     before = contract_end(service)
     assert before != "2027-12-31"                                     # 카드만으로는 저장 안 됨
     rows = app.table[0].value
-    assert list(rows["변경"])[6] == "2027-12-31"                        # 현재 → 변경 카드
+    card = dict(zip(rows["항목"], rows["변경"]))                       # 현재 → 변경 카드 (항목 이름으로 확인)
+    assert card["계약 종료일"] == "2027-12-31" and "계약 상태" not in card   # 11/09 계약 상태 줄 없음
     assert not [s for s in app.selectbox if s.key and s.key.startswith("act")]  # 값을 고르는 양식이 없음
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
@@ -134,7 +139,6 @@ def test_category_selector_limits_agent_tools(app):
     assert app.session_state["home_category"] == "auto"
     app.button(key="home_agent_contract").click().run()
     assert app.session_state["home_category"] == "contract"
-    assert any("구매계약" in c.value for c in app.caption)               # 예시 질문 · 구매계약
     REPLIES[:] = [tool("pending_contract_alerts"), say("미확인 알림은 2건입니다.")]
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
     assert not app.exception
@@ -155,20 +159,17 @@ def test_auto_category_routes_to_specialist(app):
     assert any("자동 배정" in c.value and "구매계약 Agent" in c.value for c in app.caption)
 
 
-def test_home_mm_calculator_replaces_account_card(app):
-    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기 버튼을 둔다. 누르면 모달로 연다(11/07 담당자)."""
+def test_home_mm_calculator_on_screen_with_one_calendar(app):
+    """11/09 담당자: MM 계산기는 모달 없이 홈 왼쪽에서 바로 쓴다. 달력 하나로 기간을 고르고 Enter(계산)."""
     assert not any("계정 ID 미발급" in m.value for m in app.markdown)
-    assert not app.date_input                                        # 처음에는 버튼만
-    app.button(key="home_mm_calc").click().run()
-    # 화면에서는 모달 안의 입력만 다시 실행되지만, AppTest는 전체를 다시 실행하므로 버튼도 함께 누른다.
-    app.button(key="home_mm_calc").click()
-    app.date_input(key="mm_calc_start").set_value(date(2026, 10, 1))
-    app.date_input(key="mm_calc_end").set_value(date(2026, 10, 10)).run()
+    calendar = app.date_input(key="mm_calc_range")                 # 버튼 없이 처음부터 보임
+    calendar.set_value((date(2026, 10, 1), date(2026, 10, 10)))
+    next(b for b in app.button if b.label == "계산 (Enter)").click().run()
     assert not app.exception
     assert any(">0.250<" in m.value and "근무일 5/20일" in m.value for m in app.markdown)   # 10월 1~10일 = 5/20
-    app.button(key="home_mm_calc").click()
-    app.date_input(key="mm_calc_end").set_value(date(2026, 9, 1)).run()
-    assert any("종료일은 시작일보다" in e.value for e in app.error)
+    app.date_input(key="mm_calc_range").set_value((date(2026, 10, 1), date(2026, 12, 31)))
+    next(b for b in app.button if b.label == "계산 (Enter)").click().run()
+    assert any(">3.000<" in m.value and "3개월" in m.value for m in app.markdown)
 
 
 def test_mm_question_shows_readable_result_not_json(app):
@@ -178,3 +179,21 @@ def test_mm_question_shows_readable_result_not_json(app):
     assert not app.exception and not app.json
     assert any("0.476 MM" in m.value for m in app.markdown)
     assert any("기간 MM 계산" in m.value for m in app.markdown)
+
+
+def test_home_left_cards_and_agent_on_right(app):
+    """11/09 담당자: 홈 제목 없음, 왼쪽에 구매 연장 알림·수정 요청 알림·MM 계산기, 오른쪽에 PMO Agent."""
+    texts = " ".join(m.value for m in app.markdown)
+    assert "무엇을 도와드릴까요" not in texts
+    assert "구매 연장 알림" in texts and "수정 요청 알림" in texts
+    assert "미확인 계약 종료 알림" not in texts and "계약 종료 예정" not in texts and "등록 인력" not in texts
+    assert not any("로컬 LLM(" in c.value for c in app.caption)
+    assert texts.index("오늘의 업무") < texts.index("구매 연장 알림") < texts.index("수정 요청 알림")
+    assert "Full time" not in texts and "차례로 고른 뒤" not in " ".join(c.value for c in app.caption)   # MM 계산기 문구 정리
+    assert 'class="pmo-mini"' in texts or "확인할 계약 종료 알림이 없습니다" in texts   # 건수 아래 간단 목록
+    assert "처리를 기다리는 수정 요청이 없습니다" in texts
+    assert "자연어로 물어보세요" not in texts and "저장은 답변 아래 확인 카드" not in texts   # 11/09 문구 정리
+    assert not [b for b in app.sidebar.button if b.key == "logout"]                     # 로그인 정보는 오른쪽 위
+    assert app.button(key="logout") and any('class="pmo-user"' in m.value for m in app.markdown)
+    app.button(key="home_go_requests").click().run()
+    assert app.session_state["nav_page"] == "수정 요청"

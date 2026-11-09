@@ -18,8 +18,8 @@ def service(tmp_path):
 @pytest.mark.parametrize("question, agents, method", [
     ("김정직 지금 무슨 과제에 투입되어 있어?", ["staff"], "keyword"),
     ("박협력 구매계약 언제까지야?", ["contract"], "keyword"),
-    ("감마테크 C-2026-202 11월 검수 금액 알려줘.", ["inspection"], "keyword"),
-    ("알파솔루션 C-2026-103 계약 총액 얼마야?", ["inspection"], "keyword"),         # '계약'보다 '총액'이 무거움
+    ("감마테크 450012201 11월 검수 금액 알려줘.", ["inspection"], "keyword"),
+    ("알파솔루션 450011101 계약 총액 얼마야?", ["inspection"], "keyword"),         # '계약'보다 '총액'이 무거움
     ("11월 1일부터 18일까지 MM 얼마야?", ["staff"], "keyword"),
     ("이협력 지금 투입 과제랑 구매계약 종료일 알려줘.", ["staff", "contract"], "multi"),   # 질문에 나온 순서
     ("박협력 계약 종료일이랑 11월 투입 MM 알려줘.", ["contract", "staff"], "multi"),
@@ -44,11 +44,11 @@ def test_follow_up_goes_to_previous_agents(service):
 
 def test_unclear_question_asks_llm_for_category_only(service):
     client = ScriptedClient([text("구매계약")])
-    decision = route(service, "서협력 다음 달에 뭐 해야 돼?", client)
+    decision = route(service, "알파솔루션 다음 달에 뭐 해야 돼?", client)
     assert decision["agents"] == ["contract"] and decision["method"] == "llm"
     messages, tools = client.seen[0]
     assert tools == [] and "분류기" in messages[0]["content"]             # 도구 없이 카테고리만 묻는다
-    unsure = route(service, "서협력 다음 달에 뭐 해야 돼?", ScriptedClient([text("잘 모르겠습니다")]))
+    unsure = route(service, "알파솔루션 다음 달에 뭐 해야 돼?", ScriptedClient([text("잘 모르겠습니다")]))
     assert unsure["agents"] == ["auto"] and unsure["method"] == "fallback"   # 못 고르면 전체 Agent
 
 
@@ -169,3 +169,78 @@ def test_v31_second_pc_eval_fixes(service):
     from pmo.agent.guardrails import drop_bad_rates
     assert drop_bad_rates({"purchase_rate": "L6", "grade": "L6"}) == {"grade": "L6"}
     assert drop_bad_rates({"purchase_rate": "9,500,000"}) == {"purchase_rate": "9,500,000"}
+
+
+def test_purchase_question_goes_to_contract(service):
+    """11/09: '구매'가 구매계약 키워드에 없어 LLM 분류가 인력관리를 고르던 문제."""
+    decision = route(service, "12월 구매해야 하는 인력 알려줘.")
+    assert (decision["agents"], decision["method"]) == (["contract"], "keyword")
+
+
+def test_short_question_with_person_and_task_word_is_new_question(service):
+    """11/09: '이협력 투입 중인 과제 뭐야?'는 되물음 대답이 아니라 새 질문(키워드 판정)."""
+    history = [{"role": "user", "content": "12월 구매해야 하는 인력 알려줘."},
+               {"role": "assistant", "content": "판정 기준이 아직 정해지지 않았습니다."}]
+    decision = route(service, "이협력 투입 중인 과제 뭐야?", history=history, previous=["contract"])
+    assert (decision["agents"], decision["method"]) == (["staff"], "keyword")
+    # 업무 말 없이 이름만 답하면 여전히 이어지는 대화
+    assert route(service, "감마테크 김협력B", history=history, previous=["staff"])["method"] == "follow_up"
+
+
+def test_redirect_answer_is_rerouted_not_shown(service):
+    """11/09: 자동 배정된 Agent가 '다른 카테고리를 골라 다시 요청하라'고 답하면 그 Agent에게 다시 맡긴다."""
+    client = ScriptedClient([
+        text("인력관리"),                                                           # LLM 분류(잘못)
+        text("이 요청은 인력관리 카테고리에서 처리할 수 없습니다. 홈 화면에서 '구매계약'을 골라 다시 요청해 주세요."),
+        tool_call("search_contracts", company="알파솔루션"),                        # 구매계약 Agent
+        text("알파솔루션 계약 목록입니다."),
+    ])
+    result = ask_routed(service, "알파솔루션 다음 달에 뭐 해야 돼?", client)
+    assert result["agent"] == "contract" and "카테고리에서 처리할 수 없습니다" not in result["answer"]
+    assert result["routing"]["agents"] == ["contract"] and result["routing"]["rerouted_from"] == "staff"
+    assert result["tokens"]["llm_calls"] == 4
+
+
+@pytest.mark.parametrize("question, agents, method", [
+    ("이협력 투입 종료일 알려줘", ["staff"], "keyword"),              # 투입과 함께 나온 종료일은 인력관리
+    ("박협력 계약 언제 끝나?", ["contract"], "keyword"),
+    ("이협력 계약 금액 알려줘", ["inspection"], "keyword"),           # 돈은 검수
+    ("검수 전에 확인하려는데 정협력 11월 MM 얼마야?", ["staff"], "keyword"),   # MM은 인력관리
+    ("감마테크 인력들 이번 달 MM이랑 검수 금액 알려줘", ["inspection"], "keyword"),  # 검수 결과에 인력별 MM 포함
+    ("이협력 누구야?", ["staff"], "people"),                          # 인력에 대한 정보
+    ("알파솔루션 사람 몇 명이야?", ["staff"], "people"),
+    ("이번 주에 챙겨야 할 거 있어?", ["contract"], "keyword"),         # 만료 알림
+    ("서협력 아이디 in06538 넣어줘", ["staff"], "keyword"),
+])
+def test_boundary_1110(service, question, agents, method):
+    """11/10 담당자 경계: 인력 정보는 인력관리, 구매계약 기간·연장·종료는 구매계약, 금액은 검수."""
+    decision = route(service, question)
+    assert (decision["agents"], decision["method"]) == (agents, method)
+
+
+@pytest.mark.parametrize("question", ["이협력 종료일 12월 31일로 바꿔줘", "박협력 언제 끝나?", "곧 끝나는 사람 있어?"])
+def test_unclear_end_date_asks_first(service, question):
+    """11/10 담당자: 투입 종료일인지 구매계약 종료일인지 알 수 없으면 Agent를 부르지 않고 되묻는다."""
+    decision = route(service, question, ScriptedClient([]))
+    assert decision["agents"] == [] and decision["method"] == "clarify"
+
+
+def test_clarify_then_answer_goes_to_chosen_agent(service):
+    from pmo.agent.router import CLARIFY_END
+    first = ask_routed(service, "이협력 종료일 12월 31일로 바꿔줘", ScriptedClient([]))
+    assert first["ok"] and first["answer"] == CLARIFY_END and first["routing"]["method"] == "clarify"
+    assert first["tokens"]["llm_calls"] == 0
+    history = [{"role": "user", "content": "이협력 종료일 12월 31일로 바꿔줘"}, {"role": "assistant", "content": CLARIFY_END}]
+    client = ScriptedClient([tool_call("list_contracts", person_id="이협력"), text("이협력 구매계약 종료일을 확인했습니다.")])
+    second = ask_routed(service, "계약", client, history=history, previous=[])
+    assert second["routing"]["agents"] == ["contract"]
+    assert "이협력 종료일 12월 31일로 바꿔줘 (계약 기준)" in client.seen[0][0][-1]["content"]   # 원래 질문에 대답을 붙여 처리
+
+
+def test_routing_set_rules_and_llm_mode(service):
+    from pmo.harness import run_routing
+    report = run_routing(save=False)
+    assert report["total"] == 32 and report["correct"] == report["total"]
+    client = ScriptedClient([text("인력관리")] * 40)
+    llm = run_routing(client, mode="llm", save=False)
+    assert llm["methods"].get("llm", 0) > 0                                # llm 모드는 규칙 대신 LLM이 고른다

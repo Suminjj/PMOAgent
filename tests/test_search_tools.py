@@ -21,10 +21,10 @@ def names(result):
 
 
 def test_search_contracts_by_number_ignores_case_and_spaces(service):
-    expected = sorted({c["name"] for c in service.contracts() if c["contract_no"] == "C-2026-202"})
+    expected = sorted({c["name"] for c in service.contracts() if c["contract_no"] == "450012201"})
     assert len(expected) > 1
-    assert names(call_tool(service, "search_contracts", {"contract_no": "C-2026-202"})) == expected
-    assert names(call_tool(service, "search_contracts", {"contract_no": "c-2026- 202"})) == expected
+    assert names(call_tool(service, "search_contracts", {"contract_no": "450012201"})) == expected
+    assert names(call_tool(service, "search_contracts", {"contract_no": "4500 12201 "})) == expected
 
 
 def test_search_contracts_without_number(service):
@@ -41,8 +41,8 @@ def test_search_people_without_account(service):
 
 
 @pytest.mark.parametrize("tool, args, hint", [
-    ("find_people", {"name": "C-2026-202"}, "search_contracts"),
-    ("get_assignment_timeline", {"person_id": "C-2026-202"}, "search_contracts"),
+    ("find_people", {"name": "450012201"}, "search_contracts"),
+    ("get_assignment_timeline", {"person_id": "450012201"}, "search_contracts"),
     ("find_people", {"name": "계정 ID 없는 사람"}, "search_people"),
 ])
 def test_condition_in_name_slot_points_to_search_tool(service, tool, args, hint):
@@ -56,7 +56,7 @@ def test_leader_sees_only_own_project_in_search(service):
                      access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
     visible = {p["name"] for p in leader.people()}
     for tool, args in [("search_contracts", {"without_number": True}), ("search_people", {"without_account": True}),
-                       ("search_contracts", {"contract_no": "C-2026-202"})]:
+                       ("search_contracts", {"contract_no": "450012201"})]:
         assert set(names(call_tool(leader, tool, args))) <= visible
 
 

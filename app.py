@@ -4,7 +4,7 @@ import os
 import sqlite3
 import json
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import uuid4
 
 import pandas as pd
@@ -30,15 +30,22 @@ except (OSError, sqlite3.Error, RuntimeError) as exc:
 # ---- v2 로그인: 권한은 로그인한 사용자 정보로만 정한다(질문 속 문장은 권한에 쓰지 않음) ----
 from pmo import access as auth  # noqa: E402
 
+def auth_column():
+    """로그인·초기 설정 화면은 가운데 좁은 칸에 둔다(11/09 담당자: 너비가 너무 넓음)."""
+    return st.columns([1, 1.1, 1])[1].container(key="auth_box")
+
+
 if not auth.has_users(db_path()):
-    theme.page_header(date.today(), "초기 설정 · PMO 계정 만들기")
-    st.info("사용자가 아직 없습니다. 첫 계정은 PMO로 만듭니다. 다른 사용자는 로그인 후 '사용자 관리'에서 추가하세요.")
-    with st.form("setup"):
+    box = auth_column()
+    with box:
+        theme.auth_hero("초기 설정 · PMO 계정 만들기")
+        st.info("사용자가 아직 없습니다. 첫 계정은 PMO로 만듭니다. 다른 사용자는 로그인 후 '사용자 관리'에서 추가하세요.")
+    with box, st.form("setup"):
         login_id = st.text_input("아이디")
         name = st.text_input("이름")
         pw1 = st.text_input("비밀번호 (8자 이상)", type="password")
         pw2 = st.text_input("비밀번호 확인", type="password")
-        if st.form_submit_button("PMO 계정 만들기", type="primary"):
+        if st.columns([2, 1.3])[1].form_submit_button("PMO 계정 만들기", type="primary", width="stretch"):
             try:
                 if pw1 != pw2:
                     raise ValidationError("비밀번호가 서로 다릅니다.")
@@ -51,11 +58,14 @@ if not auth.has_users(db_path()):
 
 user = auth.load_user(db_path(), st.session_state["user_id"]) if st.session_state.get("user_id") else None
 if user is None:
-    theme.page_header(date.today(), "로그인")
-    with st.form("login"):
+    box = auth_column()
+    with box:
+        theme.auth_hero("CoE 인력관리 · 로그인")
+    with box, st.form("login"):
         login_id = st.text_input("아이디")
         password = st.text_input("비밀번호", type="password")
-        if st.form_submit_button("로그인", type="primary"):
+        # 11/09 담당자: 로그인 버튼은 폼 오른쪽 끝에(오른쪽 칸에 꽉 채움 → 오른쪽 끝선이 입력칸과 맞음)
+        if st.columns([2, 1])[1].form_submit_button("로그인", type="primary", width="stretch"):
             found = auth.authenticate(db_path(), login_id, password)
             if found:
                 st.session_state.clear()
@@ -76,17 +86,20 @@ except sqlite3.Error:
 theme.sidebar_brand()
 page = theme.sidebar_nav(len(pending_alerts), allowed=theme.pages_for(user.role))
 actor = f"{user.name}({user.login})"                       # 변경 이력의 주체 = 로그인 사용자
-st.sidebar.caption(f"로그인: {user.label()}")
-if st.sidebar.button("로그아웃", key="logout"):
-    st.session_state.clear()
-    st.rerun()
 # 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
 if _people_count == 0:
     st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 theme.sidebar_footer(service.path.name, _people_count, os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"))
-theme.page_header(service.clock(), "무엇을 도와드릴까요?" if page == "홈" else
-                  page if theme.GROUP_OF[page] == page else f"{theme.GROUP_OF[page]} · {page}")
-if pending_alerts and page != "계약 종료 알림":
+# 11/09 담당자: 로그인 정보·로그아웃은 왼쪽 메뉴가 아니라 화면 오른쪽 위에 둔다.
+_title_col, _user_col, _logout_col = st.columns([6, 2.2, 0.9], vertical_alignment="center")
+with _title_col:
+    theme.page_header(service.clock(), "" if page == "홈" else
+                      page if theme.GROUP_OF[page] == page else f"{theme.GROUP_OF[page]} · {page}")
+_user_col.markdown(f'<div class="pmo-user">👤 {escape(user.label())}</div>', unsafe_allow_html=True)
+if _logout_col.button("로그아웃", key="logout", width="stretch"):
+    st.session_state.clear()
+    st.rerun()
+if pending_alerts and page not in ("계약 종료 알림", "홈"):      # 홈은 왼쪽 '구매 연장 알림' 카드로 보여 준다
     st.warning(f"계약 종료 검토 대상이 {len(pending_alerts)}건 있습니다. "
                "왼쪽 메뉴의 '계약 종료 알림'에서 확인하세요.")
 if st.session_state.get("page") != page:
@@ -106,7 +119,7 @@ LABELS = {
     "revenue_team": "매출귀속팀", "job_role": "직무",
     "assignment_id": "연결 투입", "contract_no": "계약번호", "status": "계약 상태",
     "previous_contract_id": "이전(연장 전) 계약", "note": "메모",
-    "label": "만료 상태", "has_successor": "연장 계약 등록", "notify_from": "알림 시작일",
+    "label": "만료 상태", "state": "투입 상태", "has_successor": "연장 계약 등록", "notify_from": "알림 시작일",
 }
 
 
@@ -228,7 +241,7 @@ def person_form(current: dict | None) -> None:
     if current:
         st.caption("계정 ID를 입력해도 이 사람의 투입·계약 연결은 그대로 유지됩니다.")
     else:
-        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요. "
+        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 투입 과제와 계정 ID는 알게 되면 입력하세요. "
                    "이미 등록된 인력의 추가 투입은 '과제 투입 관리'에서 등록하세요.")
     name = st.text_input("이름", value=current["name"] if current else "", key=f"name_{target}")
     company = st.text_input("업체명", value=current["company"] if current else "", key=f"company_{target}")
@@ -240,6 +253,9 @@ def person_form(current: dict | None) -> None:
     account_id = st.text_input("계정 ID (발급 후 입력 / 선택)",
                                value=(current["account_id"] or "") if current else "", key=f"account_{target}")
     if not current:
+        # 11/09 담당자: 신규 등록 때 투입 과제도 함께 넣는다(모르면 비워 두고 '과제 투입 관리'에서 보완).
+        project = st.text_input("투입 과제 (선택)", key="intake_project",
+                                placeholder="예: " + (service.project_names() or ["Soft Lab 고도화"])[0])
         grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade",
                              placeholder="선택 (컨설팅은 비워 둘 수 있음)")
         a, b = st.columns(2)
@@ -251,7 +267,7 @@ def person_form(current: dict | None) -> None:
     person_data = dict(name=name, company=company, category=category, account_id=account_id, job_role=job_role)
     kind = "person" if current else "intake"
     input_data = dict(person_data, id=current["id"]) if current else dict(
-        person=person_data, assignment=dict(grade=grade, start_date=start, end_date=end,
+        person=person_data, assignment=dict(project=project, grade=grade, start_date=start, end_date=end,
                                             assignment_type=mode, mm=manual_mm))
     invalidate_preview(kind, input_data)
     if st.button("미리보기", key="preview_person"):
@@ -259,10 +275,28 @@ def person_form(current: dict | None) -> None:
     confirm()
 
 
+RATE_COLUMNS = ("sales_rate", "purchase_rate")
+# 미리보기 표에서 빼는 칸: 계약 상태(계약번호로 자동)·매출단가·단가 기준 단위(입력칸 없음, 11/09 담당자)
+PREVIEW_HIDDEN = {"mm_details", "status", "sales_rate", "rate_unit"}
+STATE_COLORS = {"현재": "#16A34A", "예정": "#DC2626", "종료": "#9CA3AF"}   # 과제 투입 관리 투입 상태 색 (11/09 담당자)
+
+
+def _cell(key: str, value):
+    """표 칸 값. 단가는 쉼표를 넣어 보여 준다(11/09 담당자: 9500000 → 9,500,000)."""
+    if value is None:
+        return "미입력"
+    if key in RATE_COLUMNS:
+        try:
+            return f"{Decimal(str(value)):,}"
+        except InvalidOperation:
+            return value
+    return value
+
+
 def show_table(rows: list[dict], fields: list[str]) -> None:
     if rows:
         st.dataframe(
-            [{LABELS.get(k, k): r.get(k) if r.get(k) is not None else "미입력" for k in fields} for r in rows],
+            [{LABELS.get(k, k): _cell(k, r.get(k)) for k in fields} for r in rows],
             use_container_width=True, hide_index=True
         )
     else:
@@ -302,7 +336,7 @@ def confirm() -> None:
     st.table([{
         "항목": LABELS[k], "기존 값": current.get(k, "") if current else "",
         "저장할 값": value if value is not None else "미입력"
-    } for k, value in display_data.items() if k != "mm_details"])
+    } for k, value in display_data.items() if k not in PREVIEW_HIDDEN])
     if display_data.get("mm_details"):
         with st.expander("저장할 MM 산정 근거"):
             st.json(display_data["mm_details"])
@@ -352,36 +386,42 @@ def confirm() -> None:
         st.rerun()
 
 
-@st.dialog("🧮 MM 계산기 · Full time", width="medium")
 def mm_calculator(day: date) -> None:
-    """홈 MM 계산기(11/07 담당자): 버튼을 누르면 모달로 열린다. Full time 기간을 넣으면 구매시스템 방식 MM을
-    바로 보여준다. 저장하지 않는다."""
-    left, right = st.columns(2, gap="small")
-    start = left.date_input("시작일", value=day.replace(day=1), key="mm_calc_start", format="YYYY-MM-DD")
-    end = right.date_input("종료일", value=day, key="mm_calc_end", format="YYYY-MM-DD")
-    if not start or not end:
-        st.caption("시작일과 종료일을 고르세요.")
-        return
-    try:
-        result = calculate_full_time(start, end)
-    except ValueError as exc:
-        st.error(str(exc))
-        return
-    months = result["months"]
-    days = sum(m["assigned_days"] for m in months)
-    detail = (f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일" if len(months) == 1
-              else f"{len(months)}개월 · 투입 근무일 {days}일")
-    st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">투입 MM · {escape(detail)}</div>'
-                f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div></div>',
-                unsafe_allow_html=True)
-    st.markdown("**월별 근거**")
-    st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
-                                "전체 근무일": m["working_days"],
-                                "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
-                                "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
-                               for m in months]), hide_index=True, width="stretch")
-    st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
-               "Part time은 수동 입력이라 계산하지 않습니다.")
+    """홈 MM 계산기. 11/09 담당자: 모달 대신 홈 왼쪽에서 바로 쓴다. 달력 하나에서 시작일·종료일을 고르고
+    Enter(또는 '계산')를 누르면 구매시스템 방식 Full time MM을 보여 준다. 저장하지 않는다."""
+    with st.container(border=True, key="home_mm_calc"):
+        st.markdown("**🧮 MM 계산기**")
+        with st.form("mm_calc_form", border=False, enter_to_submit=True):
+            picked = st.date_input("기간 (시작일 → 종료일)", value=(day.replace(day=1), day), key="mm_calc_range",
+                                   format="YYYY-MM-DD", label_visibility="collapsed")
+            submitted = st.form_submit_button("계산 (Enter)", type="primary", width="stretch")
+        if submitted:
+            st.session_state["mm_calc_done"] = picked
+        picked = st.session_state.get("mm_calc_done")
+        if not picked:
+            return
+        if len(picked) < 2:
+            st.caption("종료일도 고르세요.")
+            return
+        try:
+            result = calculate_full_time(picked[0], picked[1])
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        months = result["months"]
+        days = sum(m["assigned_days"] for m in months)
+        detail = (f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일" if len(months) == 1
+                  else f"{len(months)}개월 · 투입 근무일 {days}일")
+        st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">{picked[0]} ~ {picked[1]} · {escape(detail)}</div>'
+                    f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div></div>',
+                    unsafe_allow_html=True)
+        with st.expander("월별 근거"):
+            st.dataframe(pd.DataFrame([{"월": m["month"], "투입/전체 근무일": f"{m['assigned_days']}/{m['working_days']}",
+                                        "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
+                                        "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
+                                       for m in months]), hide_index=True, width="stretch")
+            st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
+                       "Part time은 수동 입력이라 계산하지 않습니다.")
 
 
 if page == "홈":
@@ -395,28 +435,36 @@ if page == "홈":
     turns = st.session_state.setdefault("chat_turns", [])
     day = service.clock()
     try:
-        ending = service.contracts_ending(day.year, day.month)
+        waiting = [r for r in service.change_requests() if r["status"] == "요청"]
     except sqlite3.Error:
-        ending = []
-    kpi_col, calc_col = st.columns([3, 1], gap="small")
-    with kpi_col:
-        theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
-                       (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
-                       ("등록 인력", _people_count, "명", False)], columns=3)
-    # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
-    if calc_col.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
-        mm_calculator(day)
+        waiting = []
+    # 11/09 담당자: 왼쪽에 위에서부터 구매 연장 알림 · 수정 요청 알림 · MM 계산기, 오른쪽에 PMO Agent.
+    # ('n월 계약 종료 예정'·'등록 인력' 카드는 뺐다.)
+    side, main = st.columns([1, 3.2], gap="medium")
+    with side:
+        st.markdown('<div class="pmo-side-title">오늘의 업무</div>', unsafe_allow_html=True)   # 11/09 담당자
+        # 11/09 담당자: 건수 아래에 간단 목록(종료일이 빠른 순, 5건까지)
+        theme.alert_card("구매 연장 알림", len(pending_alerts), "건", [
+            (f"{a['name']} · {a['company']}", f"계약 {a['contract_no'] or '미발급'} · 종료 {a['end_date']}", a["label"])
+            for a in sorted(pending_alerts, key=lambda a: a["end_date"])], empty="확인할 계약 종료 알림이 없습니다.")
+        st.button("계약 종료 알림 보기", key="home_go_alerts", width="stretch",
+                  on_click=theme.go, args=("계약 종료 알림",))
+        theme.alert_card("수정 요청 알림", len(waiting), "건", [
+            (f"{r['person_name'] or '인력 미지정'} · {r['project']}",
+             (r["content"].splitlines() or [""])[0][:40], f"{r['requester_name']} · {r['created_at'][5:10]}")
+            for r in waiting], empty="처리를 기다리는 수정 요청이 없습니다.")
+        st.button("수정 요청 보기", key="home_go_requests", width="stretch",
+                  on_click=theme.go, args=("수정 요청",))
+        mm_calculator(day)          # 11/09 담당자: 모달 대신 화면에서 바로 계산
     # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
     # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
-    with st.container(key="home_chat_panel"):
-        st.subheader("🤖 PMO Agent")
-        st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
-                   "등록·수정·삭제는 답변 아래 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
-        # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
+    with main, st.container(key="home_chat_panel"):
+        # 11/09 담당자: 시안 A '그라데이션 헤더' — 네이비→인디고→보라 머리띠, 알약 모양 카테고리, 둥근 입력창
+        with st.container(key="home_agent_head"):
+            theme.agent_header()
+        # 업무 카테고리: 이모티콘을 붙인 알약 버튼 (10/20 담당자). 고른 버튼은 그라데이션(primary).
+        # '자동 배정'은 질문을 보고 맞는 전문 Agent를 고르고, 여러 업무면 차례로 불러 답을 합친다. 직접 고르면 그 Agent만 답한다.
         agent_key = st.session_state.setdefault("home_category", AUTO)
-        st.markdown("**업무 카테고리**", help="'자동 배정'이면 질문을 보고 맞는 전문 Agent(인력관리·구매계약·검수)를 "
-                    "자동으로 고릅니다. 여러 업무를 한 번에 물으면 Agent를 차례로 불러 답을 합칩니다. "
-                    "카테고리를 직접 고르면 그 Agent만 답합니다.")
         with st.container(key="home_agent"):
             keys = list(AGENTS)
             for column, key in zip(st.columns(len(keys)), keys):
@@ -426,11 +474,15 @@ if page == "홈":
                               type="primary" if key == agent_key else "secondary", width="stretch",
                               on_click=st.session_state.__setitem__, args=("home_category", key))
         agent = AGENTS[agent_key]
-        with st.container(height=640, border=True, key="home_chat_log"):
+        # 11/09 담당자: 스크롤 없이 입력창이 보이도록 대화 영역 높이를 줄인다(640 → 430).
+        with st.container(height=430, border=True, key="home_chat_log"):
             if not turns:
                 with st.chat_message("assistant"):
-                    st.markdown("무엇을 도와드릴까요? 인력·투입·MM·구매계약·검수 금액을 묻거나, "
-                                "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.")
+                    st.markdown("인력·투입·MM·구매계약·검수 금액을 묻거나, "
+                                "투입 변경·계약 등록·수정·삭제를 요청하세요.\n\n"
+                                "**예시 질문**\n"
+                                f"- :gray[업체명] {day.month}월 검수 금액 알려줘\n"
+                                "- :gray[인력명] 투입 중인 과제 알려줘")
             for index, turn in enumerate(turns):
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
@@ -438,10 +490,12 @@ if page == "홈":
                     routing = turn.get("routing")
                     if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
                         how = {"keyword": "키워드", "multi": "여러 업무", "llm": "LLM 분류", "follow_up": "이어지는 대화",
-                               "precheck": "가드레일", "fallback": "전체 Agent"}.get(routing["method"], routing["method"])
+                               "precheck": "가드레일", "fallback": "전체 Agent", "people": "인력 정보",
+                               "clarify": "되묻기"}.get(routing["method"], routing["method"])
+                        keys = ([routing["rerouted_from"]] if routing.get("rerouted_from") else []) + routing["agents"]
                         chosen = " → ".join(theme.agent_label(k, AGENTS[k].label if k != AUTO else "전체") + " Agent"
-                                            for k in routing["agents"])
-                        st.caption(f"🧭 자동 배정({how}) · {chosen}")
+                                            for k in keys)
+                        st.caption(f"🧭 자동 배정({how})" + (f" · {chosen}" if chosen else ""))
                     else:
                         st.caption(theme.agent_label(turn.get("agent", AUTO),
                                                      f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
@@ -453,14 +507,9 @@ if page == "홈":
                     for message in turn.get("done", {}).values():
                         st.success(message)
                     render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
-        asked = None
-        if not turns:
-            st.caption(f"예시 질문 · {ROUTER_LABEL if agent.key == AUTO else agent.label}")
-            for i, example in enumerate(agent.examples):
-                if st.button(example, key=f"home_example_{i}"):
-                    asked = example
+        # 11/09 담당자: 입력창 아래 예시 질문 버튼은 없앤다(예시는 첫 안내 말풍선에 적는다).
         typed = st.chat_input("질문을 입력하세요", key="home_chat")
-        asked = (typed or "").strip() or asked
+        asked = (typed or "").strip()
         if asked:
             history = []
             for turn in turns:
@@ -507,29 +556,56 @@ elif page == "신규 인력 등록":
     person_form(None)
 
 elif page == "과제 투입 관리":
-    st.subheader("인력별 투입 목록")
+    # 11/09 담당자: 인력을 한 명씩 고르지 않고 전체 투입을 표 하나로 본다. 등록·수정은 표 아래에서 인력·투입을 골라 한다.
+    st.subheader("전체 투입 목록")
     people = service.people()
-    by_person = {r["id"]: r for r in people}
-    person_id = st.selectbox(
-        "인력 선택", [r["id"] for r in people],
-        format_func=lambda i: person_label(by_person[i]), key="assignment_person"
-    ) if people else None
-    if person_id is None:
+    if not people:
         st.info("먼저 인력을 등록하세요.")
         st.stop()
-    rows = service.assignments(person_id)
-    timeline = service.assignment_timeline(person_id)
-    columns = ["project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
-               "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit"]
+    by_person = {r["id"]: r for r in people}
+    today_text = service.clock().isoformat()
+
+    def assignment_state(a: dict) -> str:
+        if a["start_date"] > today_text:
+            return "예정"
+        return "종료" if a["end_date"] < today_text else "현재"
+
+    all_rows = [dict(a, state=assignment_state(a), job_role=by_person.get(a["person_id"], {}).get("job_role"))
+                for a in service.assignments()]
+    f1, f2 = st.columns([2, 1.2])
+    query = f1.text_input("검색", key="assignment_search",
+                          placeholder="이름 · 업체 · 과제명 · 매출귀속 프로젝트 · 매출귀속팀").strip().casefold()
+    states = f2.multiselect("투입 상태", list(STATE_COLORS), default=["현재", "예정"], key="assignment_states")
+    shown = [a for a in all_rows if a["state"] in states and query in " ".join(
+        str(a.get(k) or "") for k in ("name", "company", "project", "revenue_project", "revenue_team")).casefold()]
+    order = {"현재": 0, "예정": 1, "종료": 2}
+    shown.sort(key=lambda a: (order[a["state"]], a["name"], a["start_date"]))
+    columns = ["state", "name", "company", "project", "revenue_project", "revenue_team", "start_date", "end_date",
+               "grade", "assignment_type", "mm", "purchase_rate"]
     if not can_write:                                    # v3: 과제 리더는 단가를 보지 않는다
         columns = [c for c in columns if c not in Service.RATE_FIELDS]
-    for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입 이력", "past")):
-        st.markdown(f"**{title}** ({len(timeline[key])}건)")
-        show_table(timeline[key], columns)
-    st.caption(f"기준일 {timeline['today']} (Asia/Seoul) · 시작·종료일을 포함해 현재 투입을 판단합니다.")
+    if shown:
+        # 11/09 담당자: 투입 상태 앞에 색 원(현재 초록 · 예정 빨강 · 종료 회색). 회색 원 이모티콘이 없어 ●에 글자색을 입힌다.
+        frame = pd.DataFrame([{LABELS.get(k, k): (f"● {r[k]}" if k == "state" else _cell(k, r.get(k)))
+                               for k in columns} for r in shown])
+        styler = frame.style
+        paint = getattr(styler, "map", None) or styler.applymap
+        st.dataframe(paint(lambda v: f"color: {STATE_COLORS[v[2:]]}; font-weight: 600", subset=[LABELS["state"]]),
+                     use_container_width=True, hide_index=True)
+    else:
+        st.info("조건에 맞는 투입이 없습니다.")
+    st.caption(f"{len(shown)}건 / 전체 {len(all_rows)}건 · 기준일 {today_text} (Asia/Seoul) · "
+               "시작·종료일을 포함해 현재 투입을 판단합니다.")
     if not can_write:
-        st.info("과제 리더는 조회만 할 수 있습니다. 수정이 필요하면 왼쪽 메뉴 '수정 요청'에서 PM·PMO에게 요청하세요.")
+        st.info("과제 리더는 조회만 할 수 있습니다. 수정이 필요하면 '인력 관리 › 수정 요청'에서 PM·PMO에게 요청하세요.")
         st.stop()
+    st.divider()
+    st.subheader("투입 등록 · 수정")
+    person_id = st.selectbox("인력", [r["id"] for r in people], index=None, placeholder="인력을 고르세요",
+                             format_func=lambda i: person_label(by_person[i]), key="assignment_person")
+    if person_id is None:
+        st.stop()
+    rows = service.assignments(person_id)
     by_id = {r["id"]: r for r in rows}
     target = st.selectbox(
         "등록 또는 수정할 투입", [None] + list(by_id),
@@ -542,8 +618,7 @@ elif page == "과제 투입 관리":
     if st.session_state.get("edit_context") != context:
         st.session_state.pop("pending", None)
         st.session_state["edit_context"] = context
-    st.subheader("투입 수정" if current else "투입 등록")
-    st.caption("과제·단가는 나중에 보완할 수 있습니다. 단가 입력 시 기준 단위도 입력하세요.")
+    st.caption("과제·매출귀속 프로젝트·매입단가는 나중에 보완할 수 있습니다. 매입단가는 원/MM 금액입니다(쉼표 입력 가능).")
     with st.container():
         project = st.text_input("과제명 (선택)", value=(current["project"] or "") if current else "",
                                 key=f"project_{person_id}_{target}")
@@ -564,18 +639,17 @@ elif page == "과제 투입 관리":
         grade = st.selectbox("등급", allowed, placeholder="선택 (컨설팅은 비워 둘 수 있음)",
                              index=allowed.index(current["grade"]) if current and current["grade"] in allowed else None)
         mode, manual_mm = mm_fields(start, end, current, f"{person_id}_{target}")
-        sales = st.text_input("매출단가 (선택)", value=(current["sales_rate"] or "") if current else "",
-                              key=f"sales_{person_id}_{target}")
-        purchase = st.text_input("매입단가 (선택)", value=(current["purchase_rate"] or "") if current else "",
-                                 key=f"purchase_{person_id}_{target}")
-        unit = st.text_input("단가 기준 단위 (예: 원/MM, 원/일)",
-                             value=(current["rate_unit"] or "") if current else "",
-                             key=f"unit_{person_id}_{target}")
+        # 11/09 담당자: 매출단가·단가 기준 단위 입력칸은 없앤다. 매입단가는 원/MM으로 저장하고, 기존 매출단가 값은 그대로 둔다.
+        shown_rate = _cell("purchase_rate", current["purchase_rate"]) if current and current["purchase_rate"] else ""
+        purchase = st.text_input("매입단가(검수금액 계산 시 사용)", value=shown_rate,
+                                 key=f"purchase_{person_id}_{target}", placeholder="예: 9,500,000")
         input_data = dict(person_id=person_id, project=project, revenue_project=revenue_project,
                           revenue_team=revenue_team,
                           start_date=start,
-                          end_date=end, grade=grade, sales_rate=sales,
-                          purchase_rate=purchase, rate_unit=unit, assignment_type=mode, mm=manual_mm)
+                          end_date=end, grade=grade, sales_rate=current["sales_rate"] if current else None,
+                          purchase_rate=purchase,
+                          rate_unit=(current.get("rate_unit") if current else None) or None,
+                          assignment_type=mode, mm=manual_mm)
         invalidate_preview("assignment", input_data)
         if st.button("미리보기", key="preview_assignment"):
             stage("assignment", input_data, current)
@@ -587,10 +661,9 @@ elif page == "전체 계약 조회":
         st.info("등록된 구매계약이 없습니다. '계약 등록·수정'에서 등록하세요.")
         st.stop()
     soon_count = sum(c["ending_soon"] for c in all_contracts)
-    f1, f2, f3, f4 = st.columns([1, 1, 1, 1.4])
+    f1, f3, f4 = st.columns([1, 1, 1.4])          # 11/09 담당자: 계약 상태 필터·열 없음
     company_filter = f1.selectbox("업체", ["전체"] + sorted({c["company"] for c in all_contracts}),
                                   key="contract_company")
-    status_filter = f2.selectbox("계약 상태", ["전체", "준비", "확정"], key="contract_status")
     month_filter = f3.selectbox("종료 월", ["전체"] + sorted({c["end_date"][:7] for c in all_contracts}),
                                 key="contract_month",
                                 format_func=lambda m: m if m == "전체" else f"{m[:4]}년 {int(m[5:])}월")
@@ -598,14 +671,13 @@ elif page == "전체 계약 조회":
     only_soon = f4.toggle(f"계약 종료 예정만 보기 ({soon_count}명)", key="contract_only_soon")
     rows = [c for c in all_contracts
             if (company_filter == "전체" or c["company"] == company_filter)
-            and (status_filter == "전체" or c["status"] == status_filter)
             and (month_filter == "전체" or c["end_date"].startswith(month_filter))
             and (not only_soon or c["ending_soon"])]
     if not rows:
         st.info("조건에 맞는 계약이 없습니다.")
     else:
         frame = pd.DataFrame([{"이름": r["name"], "업체명": r["company"],
-                               "계약번호": r.get("contract_no") or "미발급", "계약 상태": r["status"],
+                               "계약번호": r.get("contract_no") or "미발급",
                                "계약 시작일": r["start_date"], "계약 종료일": r["end_date"],
                                "만료 상태": r["label"], "연장 계약": "등록" if r["has_successor"] else ""}
                               for r in rows])
@@ -648,13 +720,10 @@ elif page == "계약 등록·수정":
     with st.container():
         company = st.text_input("업체명", value=current["company"] if current
                                 else people_by_id[person_id]["company"], key=f"ccompany_{suffix}")
-        statuses = ["준비", "확정"]
-        status = st.selectbox("계약 상태", statuses,
-                              index=statuses.index(current["status"]) if current else 0,
-                              key=f"cstatus_{suffix}",
-                              help="계약번호 발급 전에는 '준비'로 저장하고, 확정 시 계약번호가 필요합니다.")
-        contract_no = st.text_input("계약번호", value=(current["contract_no"] or "") if current else "",
-                                    key=f"cno_{suffix}")
+        # 11/09 담당자: 계약 상태 입력은 없앤다. 계약번호가 있으면 확정, 비워 두면 준비(발급 전)로 저장된다.
+        contract_no = st.text_input("계약번호 (발급 전이면 비워 두기)",
+                                    value=(current["contract_no"] or "") if current else "",
+                                    key=f"cno_{suffix}", placeholder="예: 450012201")
         a, b = st.columns(2)
         c_start = a.date_input("계약 시작일",
                                value=date.fromisoformat(current["start_date"]) if current else None,
@@ -684,7 +753,7 @@ elif page == "계약 등록·수정":
         note = st.text_area("메모 (선택)", value=(current["note"] or "") if current else "",
                             key=f"cnote_{suffix}")
         input_data = dict(person_id=person_id, company=company, contract_no=contract_no,
-                          status=status, start_date=c_start, end_date=c_end,
+                          start_date=c_start, end_date=c_end,
                           assignment_id=assignment_id, previous_contract_id=previous_id, note=note)
         invalidate_preview("contract", input_data)
         if st.button("미리보기", key="preview_contract"):
@@ -755,21 +824,43 @@ elif page == "검수하기":
                 return ""                                   # 이 기간에 투입이 없는 인력
             return won(row[key])                            # None이면 '계산 불가' (0원 아님)
 
-        frame = pd.DataFrame([{"인력명": r["name"], "매출귀속 프로젝트": r["revenue_project"],
-                               "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
-                               amount_col: amount_cell(r, "amount")} for r in rows])
-        kinds = [r["kind"] for r in rows]
-        shade = {"subtotal": "font-weight: 600; background-color: #F7F9FC",
-                 "total": "font-weight: 700; background-color: #E8EEFB"}
+        # 11/09 담당자: 위 표는 매출귀속 프로젝트별 금액만, 프로젝트별 인력은 아래 표에서 따로 본다.
+        project_rows = [r for r in rows if r["kind"] != "person"]
+        people_rows = [r for r in rows if r["kind"] == "person"]
+        headcount = {}
+        for r in people_rows:
+            headcount[r["revenue_project"]] = headcount.get(r["revenue_project"], 0) + 1
 
-        def style_row(row):
-            base = shade.get(kinds[row.name], "")
+        def project_label(project) -> str:
+            return project or "미정"                         # 매출귀속 프로젝트 미입력 투입
+
+        frame = pd.DataFrame([{"매출귀속 프로젝트": "합계" if r["kind"] == "total" else project_label(r["revenue_project"]),
+                               "인원": f"{len(people_rows) if r['kind'] == 'total' else headcount.get(r['revenue_project'], 0)}명",
+                               "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
+                               amount_col: amount_cell(r, "amount")} for r in project_rows])
+        last = len(project_rows) - 1
+
+        def style_project(row):
+            base = "font-weight: 700; background-color: #E8EEFB" if row.name == last else ""
             # 이번 달(조회 기간) 검수 금액은 굵게, 파란색으로 강조 (10/25 담당자)
             return [f"{base}; font-weight: 700; color: #1D4ED8" if col == amount_col else base for col in row.index]
 
-        st.dataframe(frame.style.apply(style_row, axis=1), hide_index=True, use_container_width=True,
-                     column_config={c: st.column_config.TextColumn(alignment="right")
-                                    for c in ("MM", total_col, amount_col)})
+        right = {c: st.column_config.TextColumn(alignment="right") for c in ("인원", "MM", total_col, amount_col)}
+        st.dataframe(frame.style.apply(style_project, axis=1), hide_index=True, use_container_width=True,
+                     column_config=right, key="insp_projects")
+
+        st.subheader("매출귀속 프로젝트별 인력")
+        projects = sorted({r["revenue_project"] for r in people_rows}, key=lambda p: (p is None, p or ""))
+        pick = st.selectbox("매출귀속 프로젝트", ["전체"] + projects, key=f"insp_project_{key}",
+                            format_func=lambda p: p if p == "전체" else f"{project_label(p)} · {headcount.get(p, 0)}명")
+        chosen_people = [r for r in people_rows if pick == "전체" or r["revenue_project"] == pick]
+        people_frame = pd.DataFrame([{"매출귀속 프로젝트": project_label(r["revenue_project"]), "인력명": r["name"],
+                                      "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
+                                      amount_col: amount_cell(r, "amount")} for r in chosen_people])
+        st.dataframe(people_frame.style.apply(
+            lambda row: ["font-weight: 700; color: #1D4ED8" if col == amount_col else "" for col in row.index], axis=1),
+            hide_index=True, use_container_width=True,
+            column_config={c: right[c] for c in ("MM", total_col, amount_col)}, key="insp_people")
     incomplete = [l for l in lines + result["contract"]["lines"] if l["amount"] is None]
     incomplete = list({(l["name"], l["note"]): l for l in incomplete}.values())
     if incomplete:

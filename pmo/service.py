@@ -34,8 +34,9 @@ def required(value: object, label: str) -> str:
 
 
 def money(value: object, label: str) -> str:
+    """금액·MM 문자열을 Decimal 문자열로. 쉼표(9,500,000)는 자릿수 구분으로 보고 뺀다(11/09 담당자)."""
     try:
-        number = Decimal(required(value, label))
+        number = Decimal(required(value, label).replace(",", ""))
     except InvalidOperation as exc:
         raise ValidationError(f"{label}은(는) 숫자로 입력하세요.") from exc
     if not number.is_finite() or number < 0:
@@ -55,6 +56,9 @@ def validate_person(data: dict) -> dict:
     if result["category"] not in ("정", "협력", "컨설팅"):
         raise ValidationError("분류는 정·협력·컨설팅 중 선택하세요.")
     return result
+
+
+DEFAULT_RATE_UNIT = "원/MM"
 
 
 def validate_assignment(data: dict) -> dict:
@@ -79,7 +83,8 @@ def validate_assignment(data: dict) -> dict:
         value = data.get(key)
         result[key] = None if value is None or str(value).strip() == "" else money(str(value), label)
     if any(result[k] is not None for k in ("sales_rate", "purchase_rate")) and not result["rate_unit"]:
-        raise ValidationError("단가를 입력하면 단가 기준 단위도 입력하세요.")
+        # 11/09 담당자: 화면에서 단가 기준 단위 입력칸을 없앴다. 단위를 주지 않으면 원/MM(검수 금액 계산 기준)으로 저장한다.
+        result["rate_unit"] = DEFAULT_RATE_UNIT
     assignment_type = data.get("assignment_type")
     if assignment_type not in ("Full time", "Part time"):
         raise ValidationError("투입 Type을 선택하세요.")
@@ -724,7 +729,7 @@ class Service:
                          today: date | None = None) -> list[dict]:
         """조건으로 구매계약을 찾는다(계약번호·업체·상태·계약번호 미발급). 권한 범위 안에서만.
 
-        v2.1: '계약번호 C-2026-202에 묶인 인력', '계약번호가 아직 안 나온 사람' 같은 조건 조회(v2 평가 C09·C10).
+        v2.1: '계약번호 450012201에 묶인 인력', '계약번호가 아직 안 나온 사람' 같은 조건 조회(v2 평가 C09·C10).
         """
         number = str(contract_no or "").strip().casefold().replace(" ", "")
         company = str(company or "").strip()

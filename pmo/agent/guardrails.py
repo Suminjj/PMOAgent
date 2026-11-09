@@ -16,12 +16,19 @@ from datetime import date
 
 # --- 업무 카테고리 판정(키워드 점수) ------------------------------------------------------------
 # 질문이 어느 전문 Agent의 업무인지 정한다. 점수가 가장 높은 카테고리 하나(동점이면 판정 안 함).
+# 11/10 담당자 경계: 인력에 대한 정보(기본 정보·투입·MM·단가·변경)는 인력관리, 구매계약(계약번호·계약 기간·연장·종료 예정·
+# 만료 알림·구매 필요)은 구매계약, 돈(검수 금액·계약 총액)은 검수. '종료'·'끝나'·'언제까지'는 투입과 계약 양쪽에 쓰는 말이라
+# 점수를 주지 않는다(투입·과제가 있으면 인력관리, 계약·구매·연장이 있으면 구매계약, 둘 다 없으면 되묻기 → router).
 OWNER_KEYWORDS: dict[str, dict[str, int]] = {
     "staff": {"투입": 1, "과제": 1, "매출귀속": 2, "귀속": 1, "등급": 1, "mm": 1, "계정 id": 2, "계정id": 2,
-              "계정 아이디": 2, "교체": 1, "옮겨": 1, "이동": 1, "직무": 1, "단가": 1},
-    "contract": {"계약": 1, "알림": 1, "만료": 1, "연장": 1, "종료": 1},
-    "inspection": {"검수": 3, "총액": 2, "금액": 2},
+              "계정 아이디": 2, "아이디": 2, "교체": 1, "옮겨": 1, "이동": 1, "직무": 1, "단가": 1, "소속": 1},
+    "contract": {"계약": 1, "구매": 1, "알림": 1, "만료": 1, "연장": 1, "종료 예정": 1, "챙겨": 1},
+    "inspection": {"검수": 3, "총액": 3, "금액": 3, "얼마 나가": 3, "얼마 줘": 3, "지급": 3},
 }
+# 검수 Agent가 맡는 돈 말. 이 말 없이 '검수'만 나오고 MM을 물으면 인력관리(MM)다('검수 전에 확인하려는데 정협력 11월 MM').
+MONEY_WORDS = ("금액", "총액", "얼마 나가", "얼마 줘", "지급")
+# 끝나는 날을 묻는 말. 투입·과제(인력관리)나 계약·구매(구매계약) 없이 나오면 어느 쪽인지 되묻는다(11/10 담당자).
+END_WORDS = re.compile(r"종료|끝나|끝난|끝내|끝날|언제까지|마감")
 # 카테고리는 정할 수 없지만 업무 질문인 말(인력 목록·변경 요청 등)
 BUSINESS_WORDS = ("인력", "사람", "명단", "목록", "리스트", "몇 명", "업체", "협력", "컨설팅", "정직원", "등록", "삭제",
                   "수정", "변경", "바꿔", "기간", "언제", "현황", "누구")
@@ -29,7 +36,18 @@ BUSINESS_WORDS = ("인력", "사람", "명단", "목록", "리스트", "몇 명"
 
 def scores(question: str) -> dict[str, int]:
     q = question.casefold()
-    return {key: sum(w for kw, w in words.items() if kw in q) for key, words in OWNER_KEYWORDS.items()}
+    s = {key: sum(w for kw, w in words.items() if kw in q) for key, words in OWNER_KEYWORDS.items()}
+    if "mm" in q:
+        if any(w in q for w in MONEY_WORDS):
+            s["staff"] = max(s["staff"] - OWNER_KEYWORDS["staff"]["mm"], 0)   # 검수 금액 결과에 인력별 MM이 함께 나온다
+        else:
+            s["inspection"] = 0                                               # MM 조회는 인력관리
+    return s
+
+
+def end_date_unclear(question: str) -> bool:
+    """끝나는 날을 묻는데 투입인지 구매계약인지 알 수 없는 질문('박협력 언제 끝나?', '이협력 종료일 12월 31일로 바꿔줘')."""
+    return bool(END_WORDS.search(question)) and not any(scores(question).values())
 
 
 def owner_of(question: str) -> str | None:
@@ -96,7 +114,8 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
     owner = owner_of(q)
     follow_up = bool(history) and len(q) <= 20          # 되물음에 대한 짧은 대답("감마테크 김협력", "1번")
     known = any(w in q for w in _vocabulary(service))
-    if owner is None and not follow_up and not known and not any(w in q for w in BUSINESS_WORDS):
+    if owner is None and not follow_up and not known and not any(w in q for w in BUSINESS_WORDS) \
+            and not END_WORDS.search(q):
         return {"kind": "out_of_scope", "answer": ANSWERS["out_of_scope"]}
     if agent_key != "auto" and owner and owner != agent_key and scores(q)[agent_key] == 0 and not follow_up:
         return {"kind": "redirect", "answer": ANSWERS["redirect"].format(here=agent_labels[agent_key],
@@ -105,7 +124,7 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
 
 
 REDIRECT = re.compile(r"카테고리에서 처리할 수 없습니다")
-_NAMED = re.compile(r"['\"‘“]([^'\"’”]{1,15})['\"’”]\s*(?:를|을)?\s*골라")
+NAMED_CATEGORY = _NAMED = re.compile(r"['\"‘“]([^'\"’”]{1,15})['\"’”]\s*(?:를|을)?\s*골라")
 
 
 def is_redirect(answer: str) -> bool:
@@ -304,6 +323,22 @@ def mentioned_people(service, text: str) -> list[str]:
     names = sorted({p["name"] for p in service.people() if p.get("name") and len(p["name"]) >= 2}, key=len, reverse=True)
     found = [n for n in names if n in text]
     return [n for n in found if not any(n != m and n in m for m in found)]
+
+
+def name_read_as_category(service, tool: str, args: dict, question: str) -> str | None:
+    """조건으로 인력 찾기의 분류(협력·컨설팅·정)를 질문 속 인력 이름에서 따왔으면 그 이름(질문의 인력이 한 명일 때).
+
+    11/09: '이협력 투입 중인 과제 뭐야?'를 '이 협력 (인력)'으로 읽어 search_people(category='협력')을 부르고
+    '투입 중인 협력 인력은 없습니다'라고 답함. 이름을 빼고 남은 질문에 그 분류 말이 없으면 이름에서 온 것으로 본다.
+    """
+    category = str(args.get("category") or "").strip()
+    if tool != "search_people" or not category:
+        return None
+    names = mentioned_people(service, question)
+    if len(names) != 1:
+        return None
+    rest = question.replace(names[0], " ")
+    return None if category in rest else names[0]
 
 
 # 대상(인력·계약)이 있어야 하는 저장 준비 도구. 모델이 대상 없이 부르면 실행하지 않고 되묻게 한다(v3 평가 G02).

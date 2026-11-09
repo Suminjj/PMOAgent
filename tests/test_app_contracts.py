@@ -29,8 +29,16 @@ def go(app, page):
     assert not app.exception
 
 
-def test_startup_shows_pending_alert_banner(demo_app):
-    _, app = demo_app
+def test_startup_shows_pending_alerts(demo_app):
+    """앱 실행 시 미처리 알림을 다시 보여 준다. 11/09부터 홈은 왼쪽 '구매 연장 알림' 카드(건수 + 목록)로,
+    다른 화면은 위쪽 경고 띠로 보여 준다(홈에서는 카드와 겹쳐 띠를 띄우지 않음)."""
+    path, app = demo_app
+    count = len(Service(path).pending_alerts())
+    assert count
+    card = next(m.value for m in app.markdown if "구매 연장 알림" in m.value)
+    assert f">{count}<" in card and 'class="pmo-mini"' in card
+    assert not any("계약 종료 검토 대상" in w.value for w in app.warning)
+    go(app, "전체 계약 조회")
     assert any("계약 종료 검토 대상" in w.value for w in app.warning)
 
 
@@ -48,7 +56,7 @@ def test_register_contract_with_preview_and_confirm(demo_app):
     path, app = demo_app
     go(app, "계약 등록·수정")
     suffix = "DEMO-001_None"
-    app.selectbox(key=f"cstatus_{suffix}").set_value("확정")
+    assert not [b for b in app.selectbox if b.label == "계약 상태"]       # 11/09 계약 상태 입력 없음
     app.text_input(key=f"cno_{suffix}").set_value("UI-C-1")
     app.date_input(key=f"cstart_{suffix}").set_value(date(2030, 1, 1))
     app.date_input(key=f"cend_{suffix}").set_value(date(2030, 6, 30))
@@ -58,20 +66,22 @@ def test_register_contract_with_preview_and_confirm(demo_app):
     app.button(key="confirm").click().run()
     assert not app.exception
     saved = [c for c in Service(path).contracts() if c["contract_no"] == "UI-C-1"]
-    assert len(saved) == 1 and saved[0]["end_date"] == "2030-06-30"
+    assert len(saved) == 1 and saved[0]["end_date"] == "2030-06-30" and saved[0]["status"] == "확정"
 
 
-def test_contract_without_number_cannot_be_confirmed(demo_app):
+def test_contract_without_number_is_saved_as_draft(demo_app):
+    """11/09 계약 상태 입력 없음: 계약번호를 비우면 준비(발급 전)로 저장된다."""
     path, app = demo_app
     go(app, "계약 등록·수정")
     suffix = "DEMO-001_None"
     count = len(Service(path).contracts())
-    app.selectbox(key=f"cstatus_{suffix}").set_value("확정")
     app.date_input(key=f"cstart_{suffix}").set_value(date(2030, 1, 1))
     app.date_input(key=f"cend_{suffix}").set_value(date(2030, 6, 30))
     app.button(key="preview_contract").click().run()
-    assert any("계약번호" in e.value for e in app.error)
-    assert len(Service(path).contracts()) == count
+    app.button(key="confirm").click().run()
+    assert not app.exception
+    added = [c for c in Service(path).contracts() if c["start_date"] == "2030-01-01"]
+    assert len(Service(path).contracts()) == count + 1 and added[0]["status"] == "준비" and not added[0]["contract_no"]
 
 
 def test_contract_overview_marks_and_filters_ending_soon(demo_app):
@@ -82,7 +92,7 @@ def test_contract_overview_marks_and_filters_ending_soon(demo_app):
     soon = [c for c in contracts if c["ending_soon"]]
     table = app.dataframe[0].value
     assert len(table) == len(contracts)
-    assert list(table.columns) == ["이름", "업체명", "계약번호", "계약 상태", "계약 시작일", "계약 종료일",
+    assert list(table.columns) == ["이름", "업체명", "계약번호", "계약 시작일", "계약 종료일",
                                    "만료 상태", "연장 계약"]
     app.toggle(key="contract_only_soon").set_value(True).run()
     assert not app.exception

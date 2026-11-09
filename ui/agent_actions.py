@@ -77,7 +77,7 @@ def _render_request(service, plan: dict, key: str, turn: dict, call_index: int) 
         try:
             service.create_change_request(project=req["project"], person_id=req["person_id"],
                                           content=request_text(plan), action=req["action"])
-            done[call_index] = "수정 요청을 보냈습니다. PM·PMO가 승인하면 반영됩니다. 왼쪽 메뉴 '수정 요청'에서 상태를 볼 수 있습니다."
+            done[call_index] = "수정 요청을 보냈습니다. PM·PMO가 승인하면 반영됩니다. '인력 관리 › 수정 요청'에서 상태를 볼 수 있습니다."
             st.session_state["saved_message"] = done[call_index]
             st.rerun()
         except (ValidationError, ConflictError) as exc:

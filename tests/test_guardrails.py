@@ -35,7 +35,7 @@ def test_fixed_answers_without_llm(service, question, agent, kind, words):
 
 def test_business_questions_and_follow_ups_reach_the_llm(service):
     for question, history in [("계정 ID가 아직 없는 사람 알려줘.", None), ("계약번호가 아직 안 나온 사람 있어?", None),
-                              ("감마테크 C-2026-202 11월 검수 금액 알려줘.", None),   # 11/07 검수 도구 연결: LLM이 답함
+                              ("감마테크 450012201 11월 검수 금액 알려줘.", None),   # 11/07 검수 도구 연결: LLM이 답함
                               ("감마테크", [{"role": "user", "content": "김협력 투입 기간 알려줘"},
                                           {"role": "assistant", "content": "김협력이 2명입니다. 어느 업체인가요?"}])]:
         assert guardrails.precheck(service, question, "auto", {}, history) is None, question
@@ -44,9 +44,9 @@ def test_business_questions_and_follow_ups_reach_the_llm(service):
 def test_redirect_to_own_category_is_retried(service):
     """v2 평가 A02: 인력관리 Agent가 계정 ID 입력을 '구매계약'으로 보냄 → 맡은 업무라고 한 번 다시 시킨다."""
     client = ScriptedClient([text("이 요청은 인력관리 카테고리에서 처리할 수 없습니다. 홈 화면에서 '구매계약'을 골라 다시 요청해 주세요."),
-                             tool_call("prepare_account_id", person_id="서협력", account_id="evuser14"),
+                             tool_call("prepare_account_id", person_id="서협력", account_id="in06538"),
                              text("확인 카드에서 '확인 후 저장'을 눌러 주세요.")])
-    result = ask(service, "서협력 계정 ID evuser14로 등록해줘.", client, agent="staff")
+    result = ask(service, "서협력 계정 ID in06538로 등록해줘.", client, agent="staff")
     assert [c["tool"] for c in result["calls"]] == ["find_people", "prepare_account_id"] and result["calls"][-1]["ok"]
     assert result["calls"][0]["forced"]                                 # 질문 속 인력을 코드가 먼저 찾아 줌(v3 평가 S08)
     assert "업무다" in client.seen[1][0][-1]["content"]
@@ -201,23 +201,23 @@ def test_done_phrases_become_not_saved_yet(service):
 def test_inspection_tool(service):
     """11/07 검수 Agent 도구: 계약번호·월로 화면과 같은 금액, 계약이 여러 건이면 되묻기, 계산 불가는 0원이 아님, 과제 리더는 막음."""
     r = call_tool(service, "inspection_amount_by_revenue_project",
-                  {"company": "감마테크", "contract_no": "C-2026-202", "year": 2026, "month": 11})
-    screen = service.inspection("감마테크", "C-2026-202", "2026-11", "2026-11")
+                  {"company": "감마테크", "contract_no": "450012201", "year": 2026, "month": 11})
+    screen = service.inspection("감마테크", "450012201", "2026-11", "2026-11")
     assert r["ok"] and r["data"]["inspection_total_won"] == screen["selected"]["total"]
     assert r["data"]["contract_total_won"] == screen["contract"]["total"]
     assert r["data"]["inspection_total"] == f"{screen['selected']['total']:,}원"
     assert any("매입단가 미입력" in n for n in r["data"]["not_calculated"])
     assert "0원" not in [p["amount"] for p in r["data"]["projects"]]
     many = call_tool(service, "inspection_amount_by_revenue_project", {"company": "알파솔루션"})
-    assert not many["ok"] and "C-2026-103" in many["error"] and "어느 계약번호" in many["error"]
-    by_no = call_tool(service, "inspection_amount_by_revenue_project", {"company": "c-2026-202"})   # 업체 칸에 계약번호
-    assert by_no["ok"] and by_no["data"]["contract_no"] == "C-2026-202"
+    assert not many["ok"] and "450011101" in many["error"] and "어느 계약번호" in many["error"]
+    by_no = call_tool(service, "inspection_amount_by_revenue_project", {"company": " 4500 12201"})   # 업체 칸에 계약번호(띄어쓰기 섞임)
+    assert by_no["ok"] and by_no["data"]["contract_no"] == "450012201"
     out = call_tool(service, "inspection_amount_by_revenue_project",
-                    {"company": "감마테크", "contract_no": "C-2026-202", "year": 2025, "month": 1})
+                    {"company": "감마테크", "contract_no": "450012201", "year": 2025, "month": 1})
     assert out["ok"] and out["data"]["inspection_total"].startswith("해당 없음") and out["data"]["inspection_total_won"] is None
     leader = Service(service.path, clock=lambda: TODAY,
                      access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
-    denied = call_tool(leader, "inspection_amount_by_revenue_project", {"company": "감마테크", "contract_no": "C-2026-202"})
+    denied = call_tool(leader, "inspection_amount_by_revenue_project", {"company": "감마테크", "contract_no": "450012201"})
     assert not denied["ok"] and "PM·PMO만" in denied["error"]
 
 
@@ -271,3 +271,21 @@ def test_v31_pc_eval_fixes(service):
     result = ask(service, "한협력 9월 MM 얼마야?", client, agent="staff")
     data = result["calls"][0]["data"]
     assert result["calls"][0]["arguments"]["person_id"] == "한협력" and data["mm"] == "0.500" and "summary" in data
+
+
+def test_name_read_as_category_searches_person_instead(tmp_path):
+    """11/09: '이협력'을 '이 협력 (인력)'으로 읽어 분류 조건 검색 → 질문 속 인력 이름으로 찾는다."""
+    from pmo.agent.runner import ask
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.service import Service
+    from tests.test_agent import ScriptedClient, text, tool_call
+    s = Service(tmp_path / "name.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    client = ScriptedClient([tool_call("search_people", category="협력"), text("이협력은 과제에 투입 중입니다.")])
+    result = ask(s, "이협력 투입 중인 과제 뭐야?", client, agent="staff")
+    assert result["calls"][0]["tool"] == "find_people" and result["calls"][0]["arguments"] == {"name": "이협력"}
+    assert "'이협력'은(는) 등록된 인력의 이름" in client.seen[0][0][0]["content"]
+    # 질문에 분류 말이 따로 있으면 조건 검색 그대로
+    client = ScriptedClient([tool_call("search_people", category="협력"), text("협력 인력 목록입니다.")])
+    result = ask(s, "이협력 말고 다른 협력 인력 누구야?", client, agent="staff")
+    assert result["calls"][0]["tool"] == "search_people"

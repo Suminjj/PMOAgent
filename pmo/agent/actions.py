@@ -85,7 +85,7 @@ def _person(service, values: dict, categories=None) -> dict:
 
 
 def _contract_label(c: dict) -> str:
-    return f"{c['contract_no'] or '번호 미발급'}({c['start_date']}~{c['end_date']}, {c['status']})"
+    return f"{c['contract_no'] or '번호 미발급'}({c['start_date']}~{c['end_date']})"
 
 
 def _pick_contract(service, person: dict, given: str | None, *, allow_single: bool) -> dict | None:
@@ -122,7 +122,7 @@ def _plan_contract_save(service, values: dict) -> dict:
     data = {
         "person_id": person["id"], "company": values.get("company") or cur.get("company") or person["company"],
         "contract_no": number,
-        "status": values.get("status") or cur.get("status") or ("확정" if number else "준비"),
+        "status": None,   # 11/09 담당자: 계약 상태는 쓰지 않는다. 계약번호가 있으면 확정, 없으면 준비로 저장된다.
         "start_date": values.get("start_date") or cur.get("start_date"),
         "end_date": values.get("end_date") or cur.get("end_date"),
         "assignment_id": cur.get("assignment_id"), "previous_contract_id": cur.get("previous_contract_id"),
@@ -132,7 +132,7 @@ def _plan_contract_save(service, values: dict) -> dict:
         raise ValidationError(f"{person['name']}의 새 계약을 등록하려면 계약 시작일과 종료일이 필요합니다. "
                               "사용자에게 확인하세요.")
     clean = validate_contract(data)
-    fields = (("업체명", "company"), ("계약번호", "contract_no"), ("계약 상태", "status"),
+    fields = (("업체명", "company"), ("계약번호", "contract_no"),
               ("계약 시작일", "start_date"), ("계약 종료일", "end_date"))
     if current and all(clean[k] == cur.get(k) for _, k in fields):
         raise ValidationError(f"{person['name']}의 계약 {_contract_label(cur)}에서 바뀌는 값이 없습니다.")
@@ -543,7 +543,7 @@ def request_target(service, plan: dict, values: dict) -> tuple[str, str | None]:
         mine = sorted(getattr(service.access, "projects", ()) or ())
         project = mine[0] if mine else None
     if project is None:
-        raise ValidationError("요청할 담당 과제를 찾지 못했습니다. 왼쪽 메뉴 '수정 요청'에서 직접 남겨 주세요.")
+        raise ValidationError("요청할 담당 과제를 찾지 못했습니다. '인력 관리 › 수정 요청'에서 직접 남겨 주세요.")
     return project, person_id
 
 

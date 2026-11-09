@@ -22,7 +22,6 @@ from pmo.agent.guardrails import similar_names
 from pmo.agent.llm import LLMError
 from pmo.agent.text_to_sql import query_database
 from pmo.config import TIMEZONE
-from pmo.contracts import CONTRACT_STATUSES
 from pmo.errors import ConflictError, ValidationError
 from pmo.service import Service
 
@@ -36,6 +35,8 @@ class Tool:
     parameters: dict
     status: str = IMPLEMENTED
     handler: Callable[[Service, dict], Any] | None = field(default=None, repr=False)
+    # 구현 예정 도구가 실패와 함께 돌려줄 참고 정보(판정은 하지 않음). 결과의 data에 담긴다.
+    fallback: Callable[[Service, dict], Any] | None = field(default=None, repr=False)
 
 
 def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
@@ -107,14 +108,14 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("list_contracts", "인력의 구매계약(계약번호·기간·상태·연장 여부)을 조회한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: s.contracts(_pid(s, a["person_id"]))),
-    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: C-2026-202에 묶인 인력), 업체, 상태(준비·확정), "
+    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: 450012201에 묶인 인력), 업체, "
          "계약번호 미발급(without_number=true). 계약번호를 사람 이름 칸에 넣지 않고 이 도구를 쓴다.",
-         _obj({"contract_no": STR, "company": STR, "status": _enum(CONTRACT_STATUSES),
+         _obj({"contract_no": STR, "company": STR,
                "without_number": {"type": "boolean", "description": "계약번호가 아직 없는 계약만"}}),
          handler=lambda s, a: _company_is_not_a_person(s, a) or [
-             {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "status", "label")}
+             {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "label")}
              | {"contract_no": c["contract_no"] or "미발급"}
-             for c in s.search_contracts(a.get("contract_no"), a.get("company"), a.get("status"), bool(a.get("without_number")))]),
+             for c in s.search_contracts(a.get("contract_no"), a.get("company"), None, bool(a.get("without_number")))]),
     Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true). "
          "이름을 모를 때 쓴다. 이름이 있으면 find_people.",
          _obj({"company": STR, "category": _enum(("정", "협력", "컨설팅")), "job_role": STR,
@@ -138,7 +139,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("prepare_contract_save", "구매계약 신규 등록 또는 수정(기간 변경·연장·계약번호 입력 등)을 준비한다(저장 안 함). "
          "수정이면 contract_id에 계약 id나 계약번호를 넣고, 새 계약이면 mode='신규'로 한다. 바꿀 값만 넣는다.",
          _obj({"person_id": PERSON, "mode": _enum(("신규", "수정")), "contract_id": STR, "company": STR,
-               "contract_no": STR, "start_date": DATE, "end_date": DATE, "status": _enum(CONTRACT_STATUSES)}),
+               "contract_no": STR, "start_date": DATE, "end_date": DATE}),
          handler=_plan("contract_save")),
     Tool("prepare_contract_delete", "구매계약 삭제를 준비한다(삭제 안 함). 사용자가 화면에서 확인해야 삭제된다.",
          _obj({"person_id": PERSON, "contract_id": STR}), handler=_plan("contract_delete")),
@@ -176,14 +177,15 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          handler=_plan("assignment_replace")),
     # --- 구현 예정: 규칙 미확정 ---
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
-         "구매 필요 판정 기준 미확정(TODO).",
-         _obj({"year": INT, "month": INT}, ("year", "month")), status=PLANNED),
+         "구매 필요 판정 기준 미확정(TODO). 실패와 함께 그 달 계약 종료 예정 인력을 참고 정보로 돌려준다.",
+         _obj({"year": INT, "month": INT}, ("year", "month")), status=PLANNED,
+         fallback=lambda s, a: _purchase_reference(s, **a)),
     Tool("inspection_amount_by_revenue_project", "업체·계약번호의 검수 금액(원)을 매출귀속 프로젝트별로 계산한다(화면 '검수하기'와 같은 계산). "
          "검수 금액·계약 총액을 물을 때만 쓴다. 인력의 매출귀속 프로젝트가 무엇인지 묻는 질문은 get_assignment_timeline으로 답한다. "
          "계약번호를 모르면 비운다(업체의 계약이 여러 건이면 결과가 되물을 내용을 알려 준다). "
          "월을 말하지 않으면 비운다(이번 달). 금액은 결과의 문장을 그대로 옮기고 직접 계산하지 않는다.",
          _obj({"company": {"type": "string", "description": "업체명"},
-               "contract_no": {"type": "string", "description": "계약번호(예: C-2026-202). 모르면 비운다"},
+               "contract_no": {"type": "string", "description": "계약번호(예: 450012201). 모르면 비운다"},
                "year": INT, "month": {"type": "integer", "description": "검수 월(1~12). 말하지 않으면 비운다"}},
               ("company",)),
          handler=lambda s, a: _inspection(s, **a)),
@@ -214,7 +216,8 @@ TOOL_LABELS = {
 }
 
 
-_CONTRACT_NO = re.compile(r"^[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}$")
+# 계약번호: 예전 형식(C-2026-202)과 구매시스템 형식(4500 + 숫자 5개, 예: 450012201)
+_CONTRACT_NO = re.compile(r"^(?:[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}|\d{6,12})$")
 
 
 def _company_is_not_a_person(service: Service, args: dict):
@@ -398,7 +401,7 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
     person = found[0]
     t = service.assignment_timeline(person["id"])
     contracts = [{"contract_no": c["contract_no"] or "미발급", "company": c["company"], "start_date": c["start_date"],
-                  "end_date": c["end_date"], "status": c["status"], "state": c["label"],
+                  "end_date": c["end_date"], "state": c["label"],
                   "extension_registered": bool(c["has_successor"])} for c in service.contracts(person["id"])]
     summary = {
         "today": t["today"],
@@ -551,6 +554,20 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+PURCHASE_NOTE = ("월별 구매 필요 인력 판정 기준(투입 계획과 계약 기간 비교)이 아직 정해지지 않아 구매 필요 여부는 판정하지 않습니다. "
+                 "참고로 그 달에 계약이 끝나는 인력을 붙였습니다. 답변에서 기준 미확정임을 먼저 밝히고, 이 목록을 "
+                 "'구매 필요 인력'이 아니라 '계약 종료 예정 인력(참고)'으로 보여 주세요.")
+
+
+def _purchase_reference(service: Service, year: int, month: int) -> dict:
+    """구매 필요 판정 대신 보여 줄 참고 정보: 그 달 계약 종료 예정 인력(11/09 담당자). 구매 필요 여부는 판정하지 않는다."""
+    rows = service.contracts_ending(year, month)
+    return {"month": f"{int(year)}-{int(month):02d}", "basis": "계약 종료 예정(참고, 구매 필요 판정 아님)",
+            "ending_contracts": [{"name": r.get("name"), "company": r.get("company"), "contract_no": r.get("contract_no"),
+                                  "end_date": r.get("end_date"), "extension_registered": r.get("has_successor")}
+                                 for r in rows]}
+
+
 def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
     """도구 실행. 예외를 던지지 않고 결과 객체로 성공·실패를 돌려준다(Agent 루프용)."""
     started, t0 = datetime.now(TIMEZONE).isoformat(), time.perf_counter()
@@ -560,6 +577,15 @@ def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
         if tool is None:
             raise ValidationError(f"없는 도구입니다: {name}")
         if tool.status != IMPLEMENTED:
+            if tool.fallback is not None:
+                # 판정은 구현 예정 그대로(실패), 참고 정보만 함께 준다
+                reference = _jsonable(tool.fallback(service, _check_args(tool, args)))
+                result = {"ok": False, "tool": name, "error": f"{name} 도구는 아직 구현 예정입니다. {PURCHASE_NOTE}",
+                          "data": reference}
+                result["duration_ms"] = round((time.perf_counter() - t0) * 1000)
+                service.record_run(f"tool:{name}", (), dict(args), False, _log_result(reference), result["error"],
+                                   t0, started)
+                return result
             raise ValidationError(f"{name} 도구는 아직 구현 예정입니다.")
         data = _jsonable(tool.handler(service, _check_args(tool, args)))
         result = {"ok": True, "tool": name, "data": data}
