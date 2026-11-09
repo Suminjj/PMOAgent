@@ -28,12 +28,19 @@ ROUTER_LABEL = "자동 배정"
 # 여러 업무를 한 문장에 묻는 연결 말. '과제'의 '과'처럼 낱말 안의 글자는 띄어쓰기로 거른다.
 JOINERS = re.compile(r"그리고|및|하고\s|이랑\s|랑\s|,|와\s|과\s|도\s*(같이|함께)|또한?\s|이고\s|이며\s")
 FOLLOW_UP_CHARS = 20
+# 11/10 담당자: 끝나는 날을 묻는데 투입인지 구매계약인지 알 수 없으면 Agent를 부르기 전에 되묻는다(답변 채점 대상 아님)
+CLARIFY_END = ("투입 종료일(과제에서 빠지는 날)을 말씀하시는 건가요, 구매계약 종료일을 말씀하시는 건가요? "
+               "'투입' 또는 '계약'으로 답해 주세요.")
+# 업무 말 없이 사람을 묻는 말('알파솔루션 사람 몇 명이야?'): 인력에 대한 정보는 인력관리(11/10 담당자 경계)
+PEOPLE_WORDS = ("인력", "사람", "명단", "몇 명", "누구", "소속", "직원")
+ROUTER_MODES = ("rule", "llm")
 
 LONG_CHARS = 40
 CLASSIFY_PROMPT = """너는 질문 분류기다. 사용자가 실제로 원하는 것을 보고, 처리할 업무 카테고리를 고른다. 설명 없이 카테고리 이름만 답한다.
-- 인력관리: 인력 찾기, 투입 과제·기간·매출귀속 프로젝트·등급·MM 조회, 기간 MM 계산, 계정 ID 입력, 투입 변경·과제 이동·인력 교체
-- 구매계약: 구매계약 기간·종료 예정·만료 알림 조회, 계약 등록·수정·삭제, 알림 확인
-- 검수: 업체·계약번호의 월 검수 금액(원)·계약 총액
+- 인력관리: 인력에 대한 정보(이름·업체·분류·직무·계정 ID·소속), 투입 과제·투입 기간(투입 시작일·종료일)·매출귀속 프로젝트·등급·MM·매입단가,
+  기간 MM 계산, 계정 ID 입력, 투입 변경·과제 이동·인력 교체
+- 구매계약: 구매계약 번호·계약 기간(계약 종료일)·연장·종료 예정·만료 알림·구매 필요 인력, 계약 등록·수정·삭제, 알림 확인
+- 검수: 돈 — 업체·계약번호의 월 검수 금액(원)·계약 총액·계약 금액
 - 없음: 위 업무가 아님
 질문 속에 다른 업무의 단어가 나와도 사용자가 원하는 업무만 고른다("과제 말고 계약이 궁금해" → 구매계약).
 정말로 두 업무를 함께 물었을 때만 질문에 나온 순서로 쉼표로 이어 답한다(예: 인력관리, 구매계약).
@@ -87,23 +94,59 @@ def hard_to_judge(question: str, score: dict[str, int], multi: bool) -> str | No
     return None
 
 
+def _about_people(service: Service, q: str) -> bool:
+    """업무 말 없이 등록 인력이나 업체의 사람을 묻는 질문('이협력 누구야?', '알파솔루션 사람 몇 명이야?')."""
+    if guardrails.mentioned_people(service, q):
+        return True
+    companies = {p.get("company") for p in service.people() if p.get("company")}
+    return any(c in q for c in companies) and any(w in q for w in PEOPLE_WORDS)
+
+
+def router_mode() -> str:
+    """판정 방식(환경변수 PMO_ROUTER_MODE): rule(키워드, 애매하면 LLM — 기본) · llm(가드레일 뒤 항상 LLM 분류)."""
+    import os
+    mode = os.environ.get("PMO_ROUTER_MODE", "rule").strip().lower()
+    return mode if mode in ROUTER_MODES else "rule"
+
+
+def router_client(client: ChatClient | None) -> ChatClient | None:
+    """판정(카테고리 분류)용 LLM. PMO_ROUTER_MODEL을 주면 답변 모델과 다른 모델로 판정한다(예: qwen3:14b)."""
+    import os
+    model = os.environ.get("PMO_ROUTER_MODEL", "").strip()
+    if not model or client is None or getattr(client, "model", None) == model:
+        return client
+    from pmo.agent.llm import OllamaClient
+    return OllamaClient(model=model)
+
+
 def route(service: Service, question: str, client: ChatClient | None = None,
           history: list[dict] | None = None, previous: list[str] | None = None,
-          tokens: dict | None = None) -> dict:
-    """{"agents": [Agent 키…], "method": "precheck"|"follow_up"|"keyword"|"multi"|"llm"|"fallback", "scores": {...}}"""
+          tokens: dict | None = None, mode: str | None = None, clarified: bool = False) -> dict:
+    """{"agents": [Agent 키…], "method": "precheck"|"follow_up"|"clarify"|"keyword"|"people"|"multi"|"llm"|"fallback",
+    "scores": {...}}. clarify는 Agent를 부르지 않고 되묻는다(agents는 빈 목록).
+
+    mode: rule(기본) · llm(가드레일·이어지는 대화·되묻기 뒤에는 항상 LLM 분류, 판정 비교용). 없으면 PMO_ROUTER_MODE.
+    clarified: 되물음에 대한 대답을 붙인 질문이면 다시 되묻지 않는다.
+    """
     tokens = tokens if tokens is not None else {"prompt": 0, "completion": 0, "llm_calls": 0}
+    mode = mode or router_mode()
     q = question.strip()
     labels = {k: a.label for k, a in AGENTS.items()}
     if guardrails.precheck(service, q, AUTO, labels, history):
         return {"agents": [AUTO], "method": "precheck", "scores": {}}
     score = guardrails.scores(q)
     positive = [k for k in SPECIALISTS if score.get(k, 0) > 0]
+    unclear_end = not clarified and guardrails.end_date_unclear(q)
     # 11/09: 등록 인력 이름과 업무 말이 함께 있는 짧은 질문('이협력 투입 중인 과제 뭐야?')은 되물음의 대답이 아니라
     # 새 질문이다. 되물음 대답('감마테크 김협력')처럼 업무 말이 없으면 그대로 이어 받는다.
-    new_question = bool(positive) and bool(guardrails.mentioned_people(service, q))
+    # 11/10: 끝나는 날을 묻는 말('이협력 종료일 12월 31일로 바꿔줘')도 업무 말로 본다(투입·계약 되묻기).
+    new_question = (bool(positive) or unclear_end) and bool(guardrails.mentioned_people(service, q))
     if history and previous and len(q) <= FOLLOW_UP_CHARS and len(positive) <= 1 and not new_question \
             and (not positive or positive[0] in previous):
         return {"agents": list(previous), "method": "follow_up", "scores": score}
+    if unclear_end:
+        # 11/10 담당자: 투입 종료일인지 구매계약 종료일인지 알 수 없으면 먼저 되묻는다
+        return {"agents": [], "method": "clarify", "scores": score}
     # 규칙 판정(빠른 길)
     multi = len(positive) >= 2 and bool(JOINERS.search(q))
     if multi:
@@ -111,9 +154,16 @@ def route(service: Service, question: str, client: ChatClient | None = None,
         rule = {"agents": sorted(positive, key=lambda k: order.get(k, 999)), "method": "multi", "scores": score}
     else:
         best = guardrails.owner_of(q)
-        rule = ({"agents": [best], "method": "keyword", "scores": score} if best in SPECIALISTS
-                else {"agents": [AUTO], "method": "fallback", "scores": score})
-    reason = hard_to_judge(q, score, multi) or (None if rule["method"] != "fallback" else "tie")
+        if best in SPECIALISTS:
+            rule = {"agents": [best], "method": "keyword", "scores": score}
+        elif not positive and _about_people(service, q):
+            rule = {"agents": ["staff"], "method": "people", "scores": score}   # 인력에 대한 정보 → 인력관리
+        else:
+            rule = {"agents": [AUTO], "method": "fallback", "scores": score}
+    reason = (hard_to_judge(q, score, multi) or (None if rule["method"] != "fallback" else "tie")
+              if rule["method"] != "people" or len(q) >= LONG_CHARS else None)
+    if mode == "llm":
+        reason = reason or "mode_llm"
     if reason is None or client is None:
         return rule
     # 길거나 판단하기 어려운 질문: LLM이 맥락을 보고 고른다. 알아들을 수 없으면 규칙 판정
@@ -196,12 +246,32 @@ def redirect_target(answer: str, current: str) -> str | None:
     return key if key and key != current else None
 
 
+def clarified_question(question: str, history: list[dict] | None) -> str | None:
+    """직전 답이 투입·계약 되묻기였고 이번 질문이 짧은 대답이면 '원래 질문 (대답)'. 아니면 None."""
+    msgs = [m for m in (history or []) if m.get("role") in ("user", "assistant")]
+    if len(msgs) < 2 or msgs[-1]["role"] != "assistant" or msgs[-1].get("content") != CLARIFY_END:
+        return None
+    reply = question.strip()
+    if len(reply) > FOLLOW_UP_CHARS or msgs[-2]["role"] != "user":
+        return None
+    return f"{msgs[-2]['content']} ({reply} 기준)"
+
+
 def ask_routed(service: Service, question: str, client: ChatClient, history: list[dict] | None = None,
                previous: list[str] | None = None, today: date | None = None) -> dict:
     """라우터로 Agent를 고르고 처리한다. 결과에 routing({"agents", "method", "scores", "labels"})을 붙인다."""
     t0, started = time.perf_counter(), datetime.now(TIMEZONE).isoformat()
     tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
-    decision = route(service, question, client, history, previous, tokens)
+    original = clarified_question(question, history)
+    if original:
+        question = original          # 되물음 대답('계약')을 원래 질문에 붙여 처리한다
+    decision = route(service, question, router_client(client), history, previous, tokens, clarified=bool(original))
+    if decision["method"] == "clarify":
+        from pmo.agent.runner import _finish, get_agent
+        result = _finish(service, client, get_agent(AUTO), question, t0, started, CLARIFY_END, [], None, tokens, "clarify")
+        result.update(agent_label=ROUTER_LABEL, routing=dict(decision, labels=[]))
+        service.record_run("router", (question,), {"agents": [], "method": "clarify"}, True, "clarify", None, t0, started)
+        return result
     result = ask_agents(service, question, client, decision["agents"], history, today)
     if len(decision["agents"]) == 1:
         # 11/09: 자동 배정에서는 사용자가 카테고리를 고르지 않는다. 고른 Agent가 '다른 카테고리를 골라 다시 요청하라'고

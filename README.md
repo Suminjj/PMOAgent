@@ -153,7 +153,11 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
    .venv\Scripts\python.exe -m scripts.run_evals --model qwen3:8b --routing auto,category
    # v3.1: 단일 Agent·전문 Agent(정답 카테고리)·자동 라우터 비교 (라우터는 라우팅 정확도도 표시)
    .venv\Scripts\python.exe -m scripts.run_evals --set eval --model qwen3:8b --routing auto,category,router
+   # 판정만 채점(evals\routing_set.json, Agent 호출 없음): 규칙만 / 판정 모델·방식 비교
+   .venv\Scripts\python.exe -m scripts.run_evals --routing-only
+   .venv\Scripts\python.exe -m scripts.run_evals --routing-only --model qwen3:8b,qwen3:14b --router-mode rule,llm
    ```
+   앱에서 판정 방식·모델만 바꾸려면 `PMO_ROUTER_MODE=llm`(항상 LLM 분류), `PMO_ROUTER_MODEL=qwen3:14b`(판정용 모델)를 줍니다.
 
 4. 앱 첫 화면인 '홈'에서 질문합니다. 채팅창처럼 질문과 답변이 한 화면에 차례로 나오고, 답변 아래 '조회 결과'를 펼치면 Agent가 사용한 도구와 조회 결과 표를 볼 수 있습니다.
    이전 질문의 조회 결과·확인 카드도 대화 위쪽에 그대로 남아 있습니다. 터미널에서 한 번 물어볼 수도 있습니다.

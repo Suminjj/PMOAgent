@@ -490,11 +490,12 @@ if page == "홈":
                     routing = turn.get("routing")
                     if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
                         how = {"keyword": "키워드", "multi": "여러 업무", "llm": "LLM 분류", "follow_up": "이어지는 대화",
-                               "precheck": "가드레일", "fallback": "전체 Agent"}.get(routing["method"], routing["method"])
+                               "precheck": "가드레일", "fallback": "전체 Agent", "people": "인력 정보",
+                               "clarify": "되묻기"}.get(routing["method"], routing["method"])
                         keys = ([routing["rerouted_from"]] if routing.get("rerouted_from") else []) + routing["agents"]
                         chosen = " → ".join(theme.agent_label(k, AGENTS[k].label if k != AUTO else "전체") + " Agent"
                                             for k in keys)
-                        st.caption(f"🧭 자동 배정({how}) · {chosen}")
+                        st.caption(f"🧭 자동 배정({how})" + (f" · {chosen}" if chosen else ""))
                     else:
                         st.caption(theme.agent_label(turn.get("agent", AUTO),
                                                      f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))

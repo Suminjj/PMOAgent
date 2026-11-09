@@ -7,6 +7,9 @@
                                                          # 자동(전체) 단일 Agent vs 카테고리별 전문 Agent
     python -m scripts.run_evals --set eval --model qwen3:8b --routing router
                                                          # v3.1 자동 라우터 (라우팅 정확도 함께 표시)
+    python -m scripts.run_evals --routing-only                       # 판정만 채점(규칙만, LLM 없음)
+    python -m scripts.run_evals --routing-only --model qwen3:8b,qwen3:14b --router-mode rule,llm
+                                                         # 판정 모델·방식 비교(evals/routing_set.json, Agent는 부르지 않음)
 
 가상 데이터를 임시 DB에 넣고 질문별 도구 선택·성공 여부·응답 시간을 기록한다.
 결과는 evals/results/ 에 JSON으로 저장된다(Git 추적 제외).
@@ -15,7 +18,7 @@ import argparse
 import os
 import sys
 
-from pmo.harness import EVAL_SET, QUESTIONS, ROUTINGS, AgentPlanner, OraclePlanner, run
+from pmo.harness import EVAL_SET, QUESTIONS, ROUTINGS, AgentPlanner, OraclePlanner, run, run_routing
 
 
 def print_row(row: dict) -> None:
@@ -61,6 +64,40 @@ def report(result: dict) -> None:
               f"전체 입력 {t['prompt']:,} · 출력 {t['completion']:,}")
 
 
+def print_route_row(row: dict) -> None:
+    got = "+".join(row["routed"]) or "되묻기"
+    want = "" if row["ok"] else f" ≠ 정답 {'+'.join(row['expect']) or '되묻기'}"
+    print(f"[{'PASS' if row['ok'] else 'FAIL'}] {row['id']} {got} ({row['method']}){want} {row['ms']:>5}ms  {row['question']}")
+    sys.stdout.flush()
+
+
+def routing_only(models: list[str], modes: list[str]) -> int:
+    """판정 질문 세트로 라우터만 채점한다. 모델이 없으면 규칙만."""
+    from pmo.agent.llm import LLMError, OllamaClient
+    clients = [OllamaClient(model=m) for m in models] or [None]
+    try:
+        for client in clients:
+            if client is not None:
+                client.check()
+    except LLMError as exc:
+        print(f"시작할 수 없습니다: {exc}")
+        return 2
+    results = []
+    for client in clients:
+        for mode in (modes if client is not None else ["rule"]):
+            print(f"\n=== 판정 {client.name if client else '규칙만'} · {mode} ===", flush=True)
+            r = run_routing(client, mode, on_result=print_route_row)
+            print(f"판정 정확도 {r['correct']}/{r['total']} · 방법별 {r['methods']} · 평균 {r['avg_ms']}ms"
+                  + (f" (LLM 분류 질문 평균 {r['avg_llm_ms']}ms)" if r["avg_llm_ms"] is not None else "")
+                  + f" · 결과 파일: {r.get('saved_to')}")
+            results.append(r)
+    if len(results) > 1:
+        print("\n=== 판정 비교 ===")
+        for r in results:
+            print(f"{r['planner']:<30} {r['correct']}/{r['total']} · 평균 {r['avg_ms']}ms")
+    return 0 if all(r["correct"] == r["total"] for r in results) else 1
+
+
 def main() -> int:
     # Windows 콘솔(cp949)이 못 쓰는 글자(✓·이모지 등)가 답변에 있어도 평가가 멈추지 않게 바꿔서 출력한다(11/04 --only 실행 중단).
     for stream in (sys.stdout, sys.stderr):
@@ -74,7 +111,16 @@ def main() -> int:
     parser.add_argument("--routing", default="auto",
                         help="auto(자동(전체) 단일 Agent), category(질문별 전문 Agent), router(v3.1 자동 라우터). "
                              "쉼표로 여럿 비교")
+    parser.add_argument("--routing-only", action="store_true",
+                        help="판정 질문 세트(evals/routing_set.json)로 라우터 판정만 채점한다(Agent 호출 없음)")
+    parser.add_argument("--router-mode", default="rule",
+                        help="--routing-only의 판정 방식: rule(키워드, 애매하면 LLM) · llm(항상 LLM 분류). 쉼표로 비교")
     args = parser.parse_args()
+    if args.routing_only:
+        modes = [m.strip() for m in args.router_mode.split(",") if m.strip()]
+        if any(m not in ("rule", "llm") for m in modes):
+            parser.error("--router-mode는 rule, llm 중에서 고릅니다.")
+        return routing_only([m.strip() for m in (args.model or "").split(",") if m.strip()], modes)
     routings = [r.strip() for r in args.routing.split(",") if r.strip()]
     if any(r not in ROUTINGS for r in routings):
         parser.error(f"--routing은 {', '.join(ROUTINGS)} 중에서 고릅니다.")
