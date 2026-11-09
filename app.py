@@ -796,21 +796,43 @@ elif page == "검수하기":
                 return ""                                   # 이 기간에 투입이 없는 인력
             return won(row[key])                            # None이면 '계산 불가' (0원 아님)
 
-        frame = pd.DataFrame([{"인력명": r["name"], "매출귀속 프로젝트": r["revenue_project"],
-                               "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
-                               amount_col: amount_cell(r, "amount")} for r in rows])
-        kinds = [r["kind"] for r in rows]
-        shade = {"subtotal": "font-weight: 600; background-color: #F7F9FC",
-                 "total": "font-weight: 700; background-color: #E8EEFB"}
+        # 11/09 담당자: 위 표는 매출귀속 프로젝트별 금액만, 프로젝트별 인력은 아래 표에서 따로 본다.
+        project_rows = [r for r in rows if r["kind"] != "person"]
+        people_rows = [r for r in rows if r["kind"] == "person"]
+        headcount = {}
+        for r in people_rows:
+            headcount[r["revenue_project"]] = headcount.get(r["revenue_project"], 0) + 1
 
-        def style_row(row):
-            base = shade.get(kinds[row.name], "")
+        def project_label(project) -> str:
+            return project or "미정"                         # 매출귀속 프로젝트 미입력 투입
+
+        frame = pd.DataFrame([{"매출귀속 프로젝트": "합계" if r["kind"] == "total" else project_label(r["revenue_project"]),
+                               "인원": f"{len(people_rows) if r['kind'] == 'total' else headcount.get(r['revenue_project'], 0)}명",
+                               "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
+                               amount_col: amount_cell(r, "amount")} for r in project_rows])
+        last = len(project_rows) - 1
+
+        def style_project(row):
+            base = "font-weight: 700; background-color: #E8EEFB" if row.name == last else ""
             # 이번 달(조회 기간) 검수 금액은 굵게, 파란색으로 강조 (10/25 담당자)
             return [f"{base}; font-weight: 700; color: #1D4ED8" if col == amount_col else base for col in row.index]
 
-        st.dataframe(frame.style.apply(style_row, axis=1), hide_index=True, use_container_width=True,
-                     column_config={c: st.column_config.TextColumn(alignment="right")
-                                    for c in ("MM", total_col, amount_col)})
+        right = {c: st.column_config.TextColumn(alignment="right") for c in ("인원", "MM", total_col, amount_col)}
+        st.dataframe(frame.style.apply(style_project, axis=1), hide_index=True, use_container_width=True,
+                     column_config=right, key="insp_projects")
+
+        st.subheader("매출귀속 프로젝트별 인력")
+        projects = sorted({r["revenue_project"] for r in people_rows}, key=lambda p: (p is None, p or ""))
+        pick = st.selectbox("매출귀속 프로젝트", ["전체"] + projects, key=f"insp_project_{key}",
+                            format_func=lambda p: p if p == "전체" else f"{project_label(p)} · {headcount.get(p, 0)}명")
+        chosen_people = [r for r in people_rows if pick == "전체" or r["revenue_project"] == pick]
+        people_frame = pd.DataFrame([{"매출귀속 프로젝트": project_label(r["revenue_project"]), "인력명": r["name"],
+                                      "MM": r["mm"] or "", total_col: amount_cell(r, "project_amount"),
+                                      amount_col: amount_cell(r, "amount")} for r in chosen_people])
+        st.dataframe(people_frame.style.apply(
+            lambda row: ["font-weight: 700; color: #1D4ED8" if col == amount_col else "" for col in row.index], axis=1),
+            hide_index=True, use_container_width=True,
+            column_config={c: right[c] for c in ("MM", total_col, amount_col)}, key="insp_people")
     incomplete = [l for l in lines + result["contract"]["lines"] if l["amount"] is None]
     incomplete = list({(l["name"], l["note"]): l for l in incomplete}.values())
     if incomplete:
