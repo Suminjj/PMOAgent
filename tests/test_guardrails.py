@@ -271,3 +271,21 @@ def test_v31_pc_eval_fixes(service):
     result = ask(service, "한협력 9월 MM 얼마야?", client, agent="staff")
     data = result["calls"][0]["data"]
     assert result["calls"][0]["arguments"]["person_id"] == "한협력" and data["mm"] == "0.500" and "summary" in data
+
+
+def test_name_read_as_category_searches_person_instead(tmp_path):
+    """11/09: '이협력'을 '이 협력 (인력)'으로 읽어 분류 조건 검색 → 질문 속 인력 이름으로 찾는다."""
+    from pmo.agent.runner import ask
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.service import Service
+    from tests.test_agent import ScriptedClient, text, tool_call
+    s = Service(tmp_path / "name.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    client = ScriptedClient([tool_call("search_people", category="협력"), text("이협력은 과제에 투입 중입니다.")])
+    result = ask(s, "이협력 투입 중인 과제 뭐야?", client, agent="staff")
+    assert result["calls"][0]["tool"] == "find_people" and result["calls"][0]["arguments"] == {"name": "이협력"}
+    assert "'이협력'은(는) 등록된 인력의 이름" in client.seen[0][0][0]["content"]
+    # 질문에 분류 말이 따로 있으면 조건 검색 그대로
+    client = ScriptedClient([tool_call("search_people", category="협력"), text("협력 인력 목록입니다.")])
+    result = ask(s, "이협력 말고 다른 협력 인력 누구야?", client, agent="staff")
+    assert result["calls"][0]["tool"] == "search_people"

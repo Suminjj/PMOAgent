@@ -35,6 +35,8 @@ class Tool:
     parameters: dict
     status: str = IMPLEMENTED
     handler: Callable[[Service, dict], Any] | None = field(default=None, repr=False)
+    # 구현 예정 도구가 실패와 함께 돌려줄 참고 정보(판정은 하지 않음). 결과의 data에 담긴다.
+    fallback: Callable[[Service, dict], Any] | None = field(default=None, repr=False)
 
 
 def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
@@ -175,8 +177,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          handler=_plan("assignment_replace")),
     # --- 구현 예정: 규칙 미확정 ---
     Tool("monthly_purchase_needs", "투입 계획과 계약 기간을 비교해 특정 월 구매계약이 필요한 인력을 조회한다. "
-         "구매 필요 판정 기준 미확정(TODO).",
-         _obj({"year": INT, "month": INT}, ("year", "month")), status=PLANNED),
+         "구매 필요 판정 기준 미확정(TODO). 실패와 함께 그 달 계약 종료 예정 인력을 참고 정보로 돌려준다.",
+         _obj({"year": INT, "month": INT}, ("year", "month")), status=PLANNED,
+         fallback=lambda s, a: _purchase_reference(s, **a)),
     Tool("inspection_amount_by_revenue_project", "업체·계약번호의 검수 금액(원)을 매출귀속 프로젝트별로 계산한다(화면 '검수하기'와 같은 계산). "
          "검수 금액·계약 총액을 물을 때만 쓴다. 인력의 매출귀속 프로젝트가 무엇인지 묻는 질문은 get_assignment_timeline으로 답한다. "
          "계약번호를 모르면 비운다(업체의 계약이 여러 건이면 결과가 되물을 내용을 알려 준다). "
@@ -551,6 +554,20 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
+PURCHASE_NOTE = ("월별 구매 필요 인력 판정 기준(투입 계획과 계약 기간 비교)이 아직 정해지지 않아 구매 필요 여부는 판정하지 않습니다. "
+                 "참고로 그 달에 계약이 끝나는 인력을 붙였습니다. 답변에서 기준 미확정임을 먼저 밝히고, 이 목록을 "
+                 "'구매 필요 인력'이 아니라 '계약 종료 예정 인력(참고)'으로 보여 주세요.")
+
+
+def _purchase_reference(service: Service, year: int, month: int) -> dict:
+    """구매 필요 판정 대신 보여 줄 참고 정보: 그 달 계약 종료 예정 인력(11/09 담당자). 구매 필요 여부는 판정하지 않는다."""
+    rows = service.contracts_ending(year, month)
+    return {"month": f"{int(year)}-{int(month):02d}", "basis": "계약 종료 예정(참고, 구매 필요 판정 아님)",
+            "ending_contracts": [{"name": r.get("name"), "company": r.get("company"), "contract_no": r.get("contract_no"),
+                                  "end_date": r.get("end_date"), "extension_registered": r.get("has_successor")}
+                                 for r in rows]}
+
+
 def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
     """도구 실행. 예외를 던지지 않고 결과 객체로 성공·실패를 돌려준다(Agent 루프용)."""
     started, t0 = datetime.now(TIMEZONE).isoformat(), time.perf_counter()
@@ -560,6 +577,15 @@ def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
         if tool is None:
             raise ValidationError(f"없는 도구입니다: {name}")
         if tool.status != IMPLEMENTED:
+            if tool.fallback is not None:
+                # 판정은 구현 예정 그대로(실패), 참고 정보만 함께 준다
+                reference = _jsonable(tool.fallback(service, _check_args(tool, args)))
+                result = {"ok": False, "tool": name, "error": f"{name} 도구는 아직 구현 예정입니다. {PURCHASE_NOTE}",
+                          "data": reference}
+                result["duration_ms"] = round((time.perf_counter() - t0) * 1000)
+                service.record_run(f"tool:{name}", (), dict(args), False, _log_result(reference), result["error"],
+                                   t0, started)
+                return result
             raise ValidationError(f"{name} 도구는 아직 구현 예정입니다.")
         data = _jsonable(tool.handler(service, _check_args(tool, args)))
         result = {"ok": True, "tool": name, "data": data}

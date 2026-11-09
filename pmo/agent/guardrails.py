@@ -19,7 +19,7 @@ from datetime import date
 OWNER_KEYWORDS: dict[str, dict[str, int]] = {
     "staff": {"투입": 1, "과제": 1, "매출귀속": 2, "귀속": 1, "등급": 1, "mm": 1, "계정 id": 2, "계정id": 2,
               "계정 아이디": 2, "교체": 1, "옮겨": 1, "이동": 1, "직무": 1, "단가": 1},
-    "contract": {"계약": 1, "알림": 1, "만료": 1, "연장": 1, "종료": 1},
+    "contract": {"계약": 1, "알림": 1, "만료": 1, "연장": 1, "종료": 1, "구매": 1},
     "inspection": {"검수": 3, "총액": 2, "금액": 2},
 }
 # 카테고리는 정할 수 없지만 업무 질문인 말(인력 목록·변경 요청 등)
@@ -105,7 +105,7 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
 
 
 REDIRECT = re.compile(r"카테고리에서 처리할 수 없습니다")
-_NAMED = re.compile(r"['\"‘“]([^'\"’”]{1,15})['\"’”]\s*(?:를|을)?\s*골라")
+NAMED_CATEGORY = _NAMED = re.compile(r"['\"‘“]([^'\"’”]{1,15})['\"’”]\s*(?:를|을)?\s*골라")
 
 
 def is_redirect(answer: str) -> bool:
@@ -304,6 +304,22 @@ def mentioned_people(service, text: str) -> list[str]:
     names = sorted({p["name"] for p in service.people() if p.get("name") and len(p["name"]) >= 2}, key=len, reverse=True)
     found = [n for n in names if n in text]
     return [n for n in found if not any(n != m and n in m for m in found)]
+
+
+def name_read_as_category(service, tool: str, args: dict, question: str) -> str | None:
+    """조건으로 인력 찾기의 분류(협력·컨설팅·정)를 질문 속 인력 이름에서 따왔으면 그 이름(질문의 인력이 한 명일 때).
+
+    11/09: '이협력 투입 중인 과제 뭐야?'를 '이 협력 (인력)'으로 읽어 search_people(category='협력')을 부르고
+    '투입 중인 협력 인력은 없습니다'라고 답함. 이름을 빼고 남은 질문에 그 분류 말이 없으면 이름에서 온 것으로 본다.
+    """
+    category = str(args.get("category") or "").strip()
+    if tool != "search_people" or not category:
+        return None
+    names = mentioned_people(service, question)
+    if len(names) != 1:
+        return None
+    rest = question.replace(names[0], " ")
+    return None if category in rest else names[0]
 
 
 # 대상(인력·계약)이 있어야 하는 저장 준비 도구. 모델이 대상 없이 부르면 실행하지 않고 되묻게 한다(v3 평가 G02).

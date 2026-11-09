@@ -169,3 +169,33 @@ def test_v31_second_pc_eval_fixes(service):
     from pmo.agent.guardrails import drop_bad_rates
     assert drop_bad_rates({"purchase_rate": "L6", "grade": "L6"}) == {"grade": "L6"}
     assert drop_bad_rates({"purchase_rate": "9,500,000"}) == {"purchase_rate": "9,500,000"}
+
+
+def test_purchase_question_goes_to_contract(service):
+    """11/09: '구매'가 구매계약 키워드에 없어 LLM 분류가 인력관리를 고르던 문제."""
+    decision = route(service, "12월 구매해야 하는 인력 알려줘.")
+    assert (decision["agents"], decision["method"]) == (["contract"], "keyword")
+
+
+def test_short_question_with_person_and_task_word_is_new_question(service):
+    """11/09: '이협력 투입 중인 과제 뭐야?'는 되물음 대답이 아니라 새 질문(키워드 판정)."""
+    history = [{"role": "user", "content": "12월 구매해야 하는 인력 알려줘."},
+               {"role": "assistant", "content": "판정 기준이 아직 정해지지 않았습니다."}]
+    decision = route(service, "이협력 투입 중인 과제 뭐야?", history=history, previous=["contract"])
+    assert (decision["agents"], decision["method"]) == (["staff"], "keyword")
+    # 업무 말 없이 이름만 답하면 여전히 이어지는 대화
+    assert route(service, "감마테크 김협력B", history=history, previous=["staff"])["method"] == "follow_up"
+
+
+def test_redirect_answer_is_rerouted_not_shown(service):
+    """11/09: 자동 배정된 Agent가 '다른 카테고리를 골라 다시 요청하라'고 답하면 그 Agent에게 다시 맡긴다."""
+    client = ScriptedClient([
+        text("인력관리"),                                                           # LLM 분류(잘못)
+        text("이 요청은 인력관리 카테고리에서 처리할 수 없습니다. 홈 화면에서 '구매계약'을 골라 다시 요청해 주세요."),
+        tool_call("list_contracts", person_id="서협력"),                            # 구매계약 Agent
+        text("서협력 계약은 12월 31일까지입니다."),
+    ])
+    result = ask_routed(service, "서협력 다음 달에 뭐 해야 돼?", client)
+    assert result["agent"] == "contract" and "카테고리에서 처리할 수 없습니다" not in result["answer"]
+    assert result["routing"]["agents"] == ["contract"] and result["routing"]["rerouted_from"] == "staff"
+    assert result["tokens"]["llm_calls"] == 4

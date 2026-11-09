@@ -98,7 +98,10 @@ def route(service: Service, question: str, client: ChatClient | None = None,
         return {"agents": [AUTO], "method": "precheck", "scores": {}}
     score = guardrails.scores(q)
     positive = [k for k in SPECIALISTS if score.get(k, 0) > 0]
-    if history and previous and len(q) <= FOLLOW_UP_CHARS and len(positive) <= 1 \
+    # 11/09: 등록 인력 이름과 업무 말이 함께 있는 짧은 질문('이협력 투입 중인 과제 뭐야?')은 되물음의 대답이 아니라
+    # 새 질문이다. 되물음 대답('감마테크 김협력')처럼 업무 말이 없으면 그대로 이어 받는다.
+    new_question = bool(positive) and bool(guardrails.mentioned_people(service, q))
+    if history and previous and len(q) <= FOLLOW_UP_CHARS and len(positive) <= 1 and not new_question \
             and (not positive or positive[0] in previous):
         return {"agents": list(previous), "method": "follow_up", "scores": score}
     # 규칙 판정(빠른 길)
@@ -184,6 +187,15 @@ def ask_agents(service: Service, question: str, client: ChatClient, keys: list[s
             "guardrail": next((p["guardrail"] for p in parts if p["guardrail"]), None)}
 
 
+def redirect_target(answer: str, current: str) -> str | None:
+    """답이 '다른 카테고리를 골라 다시 요청하라'는 안내면 그 카테고리(전문 Agent 키). 아니면 None."""
+    if not guardrails.is_redirect(answer):
+        return None
+    named = guardrails.NAMED_CATEGORY.search(answer or "")
+    key = _LABEL_TO_KEY.get(named.group(1)) if named else None
+    return key if key and key != current else None
+
+
 def ask_routed(service: Service, question: str, client: ChatClient, history: list[dict] | None = None,
                previous: list[str] | None = None, today: date | None = None) -> dict:
     """라우터로 Agent를 고르고 처리한다. 결과에 routing({"agents", "method", "scores", "labels"})을 붙인다."""
@@ -191,6 +203,17 @@ def ask_routed(service: Service, question: str, client: ChatClient, history: lis
     tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
     decision = route(service, question, client, history, previous, tokens)
     result = ask_agents(service, question, client, decision["agents"], history, today)
+    if len(decision["agents"]) == 1:
+        # 11/09: 자동 배정에서는 사용자가 카테고리를 고르지 않는다. 고른 Agent가 '다른 카테고리를 골라 다시 요청하라'고
+        # 답하면 사용자에게 넘기지 않고 그 Agent에게 한 번 다시 맡긴다('12월 구매해야 하는 인력'을 인력관리가 받음).
+        target = redirect_target(result.get("answer") or "", decision["agents"][0])
+        if target:
+            first = result
+            result = ask_agents(service, question, client, [target], history, today)
+            result["tokens"] = {f: result["tokens"][f] + first["tokens"][f] for f in tokens}
+            result["duration_ms"] += first["duration_ms"]
+            result["calls"] = first["calls"] + result["calls"]
+            decision = dict(decision, agents=[target], rerouted_from=decision["agents"][0])
     result["tokens"] = {f: result["tokens"][f] + tokens[f] for f in tokens}
     route_ms = round((time.perf_counter() - t0) * 1000) - result["duration_ms"]
     result["duration_ms"] += max(route_ms, 0)

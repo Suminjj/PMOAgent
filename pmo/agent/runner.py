@@ -181,6 +181,10 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
             problem = ("질문에 기간이 없습니다. 기간을 지어내지 말고 투입 이력 조회(get_assignment_timeline)로 확인하세요.")
     else:
         problem = None
+        named = guardrails.name_read_as_category(service, call["name"], call["arguments"], question)
+        if named and (allowed is None or "find_people" in allowed):
+            # 11/09: '이협력 투입 중인 과제'를 '협력' 분류 조건으로 찾음 → 질문의 인력 이름으로 찾는다
+            call["name"], call["arguments"] = "find_people", {"name": named}
     problem = problem or (guardrails.missing_target(call["name"], call["arguments"])
                or guardrails.invented_name(call["name"], call["arguments"], texts, guardrails.seen_text(calls))
                or _ungrounded(service, call["name"], call["arguments"], user_texts)
@@ -240,7 +244,14 @@ def ask(service: Service, question: str, client: ChatClient,
     # 자동(전체)에는 '구현 예정' 도구를 주지 않는다: 이름이 비슷한 검수 금액 도구를 매출귀속 프로젝트 조회에 고르던 문제
     # (v1·v1.2 평가 R01). 구현 예정 기능은 해당 전문 Agent(검수·구매계약)가 정해진 안내로 답한다.
     tools = tool_specs(include_planned=allowed is not None, names=allowed)
-    messages = [{"role": "system", "content": system_prompt(spec, day.isoformat())
+    # 11/09: 질문 속 등록 인력 이름을 알려 준다. '이협력'을 '이 협력 (인력)'으로 읽고 분류 조건으로 찾아
+    # '투입 중인 협력 인력은 없습니다'라고 답하던 문제. 이름은 볼 수 있는 인력만(권한 필터) 쓴다.
+    people_note = ""
+    named = guardrails.mentioned_people(service, question)
+    if named:
+        people_note = (f"\n\n이번 질문의 {', '.join(repr(n) for n in named)}은(는) 등록된 인력의 이름이다. "
+                       "이름의 첫 글자를 '이·그' 같은 지시어로 읽거나 분류 조건으로 바꾸지 말고, 이름으로 인력을 찾아 답한다.")
+    messages = [{"role": "system", "content": system_prompt(spec, day.isoformat()) + people_note
                  + (f"\n\n{focus}" if focus else "")},
                 *[{"role": m["role"], "content": str(m["content"])}
                   for m in (history or [])[-MAX_HISTORY:] if m.get("role") in ("user", "assistant")],

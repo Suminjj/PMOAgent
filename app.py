@@ -491,8 +491,9 @@ if page == "홈":
                     if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
                         how = {"keyword": "키워드", "multi": "여러 업무", "llm": "LLM 분류", "follow_up": "이어지는 대화",
                                "precheck": "가드레일", "fallback": "전체 Agent"}.get(routing["method"], routing["method"])
+                        keys = ([routing["rerouted_from"]] if routing.get("rerouted_from") else []) + routing["agents"]
                         chosen = " → ".join(theme.agent_label(k, AGENTS[k].label if k != AUTO else "전체") + " Agent"
-                                            for k in routing["agents"])
+                                            for k in keys)
                         st.caption(f"🧭 자동 배정({how}) · {chosen}")
                     else:
                         st.caption(theme.agent_label(turn.get("agent", AUTO),
