@@ -88,6 +88,8 @@ header[data-testid="stHeader"] { background: transparent; }
 /* ---- 홈: 숫자 카드 ---- */
 .pmo-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 8px; }
 .pmo-kpis.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.st-key-home_mm_calc { background: #FFFFFF; }
+.st-key-home_mm_calc .pmo-kpi { margin-top: 4px; }
 .pmo-kpis.cols-1 { grid-template-columns: minmax(0, 1fr); margin-bottom: 0; }   /* 홈 왼쪽 알림 카드 (11/09) */
 @media (max-width: 900px) { .pmo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pmo-kpi { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 12px; padding: 14px 18px; }
@@ -97,10 +99,6 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-kpi-unit { font-size: 14px; color: #5B6780; font-weight: 500; margin-left: 2px; }
 
 /* ---- 홈: 흰 카드 패널 ---- */
-.st-key-home_mm_calc button { min-height: 86px; height: 100%; background: #0F1B33; border: 1px solid #0F1B33; border-radius: 12px; }
-.st-key-home_mm_calc button p { color: #FFFFFF; font-size: 18px; font-weight: 600; }
-.st-key-home_mm_calc button:hover { background: #1E2E52; border-color: #1E2E52; }
-.st-key-home_mm_calc button:focus:not(:active) { background: #0F1B33; border-color: #3B82F6; }
 .st-key-home_chat_panel {
   background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px;
 }

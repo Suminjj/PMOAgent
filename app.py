@@ -373,36 +373,43 @@ def confirm() -> None:
         st.rerun()
 
 
-@st.dialog("🧮 MM 계산기 · Full time", width="medium")
 def mm_calculator(day: date) -> None:
-    """홈 MM 계산기(11/07 담당자): 버튼을 누르면 모달로 열린다. Full time 기간을 넣으면 구매시스템 방식 MM을
-    바로 보여준다. 저장하지 않는다."""
-    left, right = st.columns(2, gap="small")
-    start = left.date_input("시작일", value=day.replace(day=1), key="mm_calc_start", format="YYYY-MM-DD")
-    end = right.date_input("종료일", value=day, key="mm_calc_end", format="YYYY-MM-DD")
-    if not start or not end:
-        st.caption("시작일과 종료일을 고르세요.")
-        return
-    try:
-        result = calculate_full_time(start, end)
-    except ValueError as exc:
-        st.error(str(exc))
-        return
-    months = result["months"]
-    days = sum(m["assigned_days"] for m in months)
-    detail = (f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일" if len(months) == 1
-              else f"{len(months)}개월 · 투입 근무일 {days}일")
-    st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">투입 MM · {escape(detail)}</div>'
-                f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div></div>',
-                unsafe_allow_html=True)
-    st.markdown("**월별 근거**")
-    st.dataframe(pd.DataFrame([{"월": m["month"], "투입 근무일": m["assigned_days"],
-                                "전체 근무일": m["working_days"],
-                                "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
-                                "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
-                               for m in months]), hide_index=True, width="stretch")
-    st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
-               "Part time은 수동 입력이라 계산하지 않습니다.")
+    """홈 MM 계산기. 11/09 담당자: 모달 대신 홈 왼쪽에서 바로 쓴다. 달력 하나에서 시작일·종료일을 고르고
+    Enter(또는 '계산')를 누르면 구매시스템 방식 Full time MM을 보여 준다. 저장하지 않는다."""
+    with st.container(border=True, key="home_mm_calc"):
+        st.markdown("**🧮 MM 계산기** · Full time")
+        with st.form("mm_calc_form", border=False, enter_to_submit=True):
+            picked = st.date_input("기간 (시작일 → 종료일)", value=(day.replace(day=1), day), key="mm_calc_range",
+                                   format="YYYY-MM-DD", label_visibility="collapsed")
+            submitted = st.form_submit_button("계산 (Enter)", type="primary", width="stretch")
+        if submitted:
+            st.session_state["mm_calc_done"] = picked
+        picked = st.session_state.get("mm_calc_done")
+        if not picked:
+            st.caption("달력에서 시작일과 종료일을 차례로 고른 뒤 Enter를 누르세요.")
+            return
+        if len(picked) < 2:
+            st.caption("종료일도 고르세요.")
+            return
+        try:
+            result = calculate_full_time(picked[0], picked[1])
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        months = result["months"]
+        days = sum(m["assigned_days"] for m in months)
+        detail = (f"근무일 {months[0]['assigned_days']}/{months[0]['working_days']}일" if len(months) == 1
+                  else f"{len(months)}개월 · 투입 근무일 {days}일")
+        st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">{picked[0]} ~ {picked[1]} · {escape(detail)}</div>'
+                    f'<div class="pmo-kpi-value">{result["mm"]}<span class="pmo-kpi-unit">MM</span></div></div>',
+                    unsafe_allow_html=True)
+        with st.expander("월별 근거"):
+            st.dataframe(pd.DataFrame([{"월": m["month"], "투입/전체 근무일": f"{m['assigned_days']}/{m['working_days']}",
+                                        "MM": str(Decimal(m["mm"]).quantize(Decimal("0.001"), ROUND_HALF_UP)),
+                                        "제외 공휴일": ", ".join(h["reason"] for h in m["excluded_holidays"])}
+                                       for m in months]), hide_index=True, width="stretch")
+            st.caption("시작·종료일 포함, 주말·공휴일 제외. 합계는 소수 셋째 자리 반올림(구매시스템과 같음). "
+                       "Part time은 수동 입력이라 계산하지 않습니다.")
 
 
 if page == "홈":
@@ -429,9 +436,7 @@ if page == "홈":
         theme.kpi_row([("수정 요청 알림", len(waiting), "건", bool(waiting))], columns=1)
         st.button("수정 요청 보기", key="home_go_requests", width="stretch",
                   on_click=theme.go, args=("수정 요청",))
-        # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
-        if st.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
-            mm_calculator(day)
+        mm_calculator(day)          # 11/09 담당자: 모달 대신 화면에서 바로 계산
     # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
     # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
     with main, st.container(key="home_chat_panel"):

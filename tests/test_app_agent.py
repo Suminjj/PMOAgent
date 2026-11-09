@@ -156,20 +156,17 @@ def test_auto_category_routes_to_specialist(app):
     assert any("자동 배정" in c.value and "구매계약 Agent" in c.value for c in app.caption)
 
 
-def test_home_mm_calculator_replaces_account_card(app):
-    """홈 숫자 카드에서 '계정 ID 미발급 인력'을 빼고 MM 계산기 버튼을 둔다. 누르면 모달로 연다(11/07 담당자)."""
+def test_home_mm_calculator_on_screen_with_one_calendar(app):
+    """11/09 담당자: MM 계산기는 모달 없이 홈 왼쪽에서 바로 쓴다. 달력 하나로 기간을 고르고 Enter(계산)."""
     assert not any("계정 ID 미발급" in m.value for m in app.markdown)
-    assert not app.date_input                                        # 처음에는 버튼만
-    app.button(key="home_mm_calc").click().run()
-    # 화면에서는 모달 안의 입력만 다시 실행되지만, AppTest는 전체를 다시 실행하므로 버튼도 함께 누른다.
-    app.button(key="home_mm_calc").click()
-    app.date_input(key="mm_calc_start").set_value(date(2026, 10, 1))
-    app.date_input(key="mm_calc_end").set_value(date(2026, 10, 10)).run()
+    calendar = app.date_input(key="mm_calc_range")                 # 버튼 없이 처음부터 보임
+    calendar.set_value((date(2026, 10, 1), date(2026, 10, 10)))
+    next(b for b in app.button if b.label == "계산 (Enter)").click().run()
     assert not app.exception
     assert any(">0.250<" in m.value and "근무일 5/20일" in m.value for m in app.markdown)   # 10월 1~10일 = 5/20
-    app.button(key="home_mm_calc").click()
-    app.date_input(key="mm_calc_end").set_value(date(2026, 9, 1)).run()
-    assert any("종료일은 시작일보다" in e.value for e in app.error)
+    app.date_input(key="mm_calc_range").set_value((date(2026, 10, 1), date(2026, 12, 31)))
+    next(b for b in app.button if b.label == "계산 (Enter)").click().run()
+    assert any(">3.000<" in m.value and "3개월" in m.value for m in app.markdown)
 
 
 def test_mm_question_shows_readable_result_not_json(app):
