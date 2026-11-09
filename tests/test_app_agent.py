@@ -61,7 +61,7 @@ def test_home_is_first_page_with_chat_and_results(app):
     assert app.session_state["nav_page"] == "홈"
     assert not app.sidebar.radio                                         # 메뉴는 라디오가 아니라 버튼
     assert [b.key for b in app.sidebar.button][:7] == [f"nav_{i}" for i in range(7)]
-    assert [s.value for s in app.subheader][:1] == ["🤖 PMO Agent"]
+    assert any("pmo-agent-title" in m.value and "PMO Agent" in m.value for m in app.markdown)   # 11/09 시안 A 머리띠
     assert "수행 결과" not in [s.value for s in app.subheader]          # 11/08: 오른쪽 결과 패널 없음
     assert app.chat_input
 

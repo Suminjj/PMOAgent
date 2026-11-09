@@ -446,13 +446,12 @@ if page == "홈":
     # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
     # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
     with main, st.container(key="home_chat_panel"):
-        with st.container(key="home_agent_head"):      # 11/09 담당자: 네이비 머리띠로 Agent를 돋보이게
-            st.subheader("🤖 PMO Agent")
-        # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
+        # 11/09 담당자: 시안 A '그라데이션 헤더' — 네이비→인디고→보라 머리띠, 알약 모양 카테고리, 둥근 입력창
+        with st.container(key="home_agent_head"):
+            theme.agent_header()
+        # 업무 카테고리: 이모티콘을 붙인 알약 버튼 (10/20 담당자). 고른 버튼은 그라데이션(primary).
+        # '자동 배정'은 질문을 보고 맞는 전문 Agent를 고르고, 여러 업무면 차례로 불러 답을 합친다. 직접 고르면 그 Agent만 답한다.
         agent_key = st.session_state.setdefault("home_category", AUTO)
-        st.markdown("**업무 카테고리**", help="'자동 배정'이면 질문을 보고 맞는 전문 Agent(인력관리·구매계약·검수)를 "
-                    "자동으로 고릅니다. 여러 업무를 한 번에 물으면 Agent를 차례로 불러 답을 합칩니다. "
-                    "카테고리를 직접 고르면 그 Agent만 답합니다.")
         with st.container(key="home_agent"):
             keys = list(AGENTS)
             for column, key in zip(st.columns(len(keys)), keys):

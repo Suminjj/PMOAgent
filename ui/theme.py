@@ -109,19 +109,44 @@ header[data-testid="stHeader"] { background: transparent; }
 
 /* ---- 홈: 흰 카드 패널 ---- */
 .st-key-home_chat_panel {
-  background: #FFFFFF; border: 1px solid #D5DCE8; border-radius: 16px; padding: 0 20px 20px;
-  box-shadow: 0 8px 24px rgba(15, 27, 51, 0.10); overflow: hidden;
+  background: #FFFFFF; border: 1px solid #E3E7F2; border-radius: 18px; padding: 0 20px 20px;
+  box-shadow: 0 10px 30px rgba(30, 41, 90, 0.14); overflow: hidden;
 }
-/* 11/09 담당자: PMO Agent가 돋보이게 — 제목 줄을 왼쪽 메뉴와 같은 네이비 머리띠로 (패널은 흰색 + 그림자) */
+/* 11/09 담당자 시안 A: 그라데이션 머리띠(네이비 → 인디고 → 보라). 왼쪽 네이비 메뉴와 이어지고 AI 느낌을 준다. */
 .st-key-home_agent_head {
-  background: #0F1B33; margin: 0 -20px 4px; padding: 14px 22px; border-bottom: 3px solid #1D4ED8;
+  background: linear-gradient(110deg, #0F1B33 0%, #1E2A78 45%, #5B3FD1 100%);
+  margin: 0 -20px 6px; padding: 18px 24px;
 }
-.st-key-home_agent_head h3, .st-key-home_agent_head p { color: #FFFFFF; margin: 0; padding: 0; }
-.st-key-home_agent_head h3 { font-size: 20px; font-weight: 700; }
+.pmo-agent-head { position: relative; color: #FFFFFF; }
+.pmo-agent-title { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 700; }
+.pmo-agent-spark { width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,.14);
+  display: grid; place-items: center; font-size: 18px; }
+.pmo-agent-sub { margin-top: 4px; font-size: 13px; color: #C7CCF5; }
+.pmo-agent-live { position: absolute; right: 0; top: 4px; font-size: 12px; color: #FFFFFF;
+  background: rgba(255,255,255,.14); padding: 5px 11px; border-radius: 999px; }
+.pmo-agent-live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: #34D399; margin-right: 6px; box-shadow: 0 0 8px #34D399; vertical-align: 1px; }
+/* 대화 영역: 테두리 없이, 답변 아이콘은 그라데이션 원 */
+.st-key-home_chat_log { border: none !important; }
+.st-key-home_chat_log [data-testid="stChatMessageAvatarAssistant"] {
+  background: linear-gradient(135deg, #3B5BDB, #7C3AED); color: #FFFFFF; border-radius: 50%;
+}
+.st-key-home_chat_log [data-testid="stChatMessageAvatarAssistant"] svg { fill: #FFFFFF; color: #FFFFFF; }
+.st-key-home_chat_log [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) { background: #F4F5FB; }
+.st-key-home_chat_log [data-testid="stCaptionContainer"] p { color: #6B5BD6; }
+/* 입력창: 둥근 알약 모양 + 그라데이션 보내기 버튼 */
+.st-key-home_chat_panel [data-testid="stChatInput"] { border-radius: 999px; border: 1.5px solid #D9DDF0; background: #FFFFFF; }
+.st-key-home_chat_panel [data-testid="stChatInput"] > div { border-radius: 999px; background: #FFFFFF; }
+.st-key-home_chat_panel [data-testid="stChatInputSubmitButton"] {
+  border-radius: 50%; background: linear-gradient(135deg, #3B5BDB, #7C3AED); color: #FFFFFF;
+}
+.st-key-home_chat_panel [data-testid="stChatInputSubmitButton"] svg { fill: #FFFFFF; color: #FFFFFF; }
 /* 채팅창처럼: 사용자 질문은 오른쪽 말풍선, Agent 답변은 왼쪽 (11/08) */
 .st-key-home_chat_log [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-  flex-direction: row-reverse; margin-left: 20%; background: #EEF2F8; border-radius: 14px;
+  flex-direction: row-reverse; margin-left: 20%; border-radius: 14px;
+  background: linear-gradient(110deg, #2442B8, #5B3FD1);
 }
+.st-key-home_chat_log [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) p { color: #FFFFFF; }
 .st-key-home_chat_log [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
   text-align: right;
 }
@@ -129,13 +154,13 @@ header[data-testid="stHeader"] { background: transparent; }
 /* ---- 업무 카테고리: 큰 버튼 (key home_agent_<카테고리>) ---- */
 .st-key-home_agent [data-testid="stHorizontalBlock"] { gap: 8px; }
 .st-key-home_agent button {
-  min-height: 64px; padding: 8px 10px; border: 1px solid #D5DCE8; border-radius: 12px;
+  min-height: 42px; padding: 6px 14px; border: 1px solid #DCE1EE; border-radius: 999px;
   background: #FFFFFF; color: #172033; box-shadow: none;
 }
-.st-key-home_agent button p { font-size: 15px; line-height: 1.3; }
-.st-key-home_agent button:hover { border-color: #1D4ED8; color: #1D4ED8; }
+.st-key-home_agent button p { font-size: 14px; line-height: 1.3; }
+.st-key-home_agent button:hover { border-color: #5B3FD1; color: #5B3FD1; }
 .st-key-home_agent button[data-testid="stBaseButton-primary"] {
-  background: #1D4ED8; border-color: #1D4ED8; color: #FFFFFF;
+  background: linear-gradient(110deg, #1E2A78, #5B3FD1); border-color: transparent; color: #FFFFFF;
 }
 .st-key-home_agent button[data-testid="stBaseButton-primary"] p { font-weight: 600; color: #FFFFFF; }
 
@@ -246,6 +271,13 @@ def alert_card(label: str, count: int, unit: str, items: list[tuple[str, str, st
     st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">{escape(label)}</div>'
                 f'<div class="pmo-kpi-value{" warn" if count else ""}">{count}'
                 f'<span class="pmo-kpi-unit">{escape(unit)}</span></div>{body}</div>', unsafe_allow_html=True)
+
+
+def agent_header() -> None:
+    """홈 PMO Agent 머리띠(11/09 담당자 시안 A). 배지는 실제 연결 확인이 아니라 '로컬 LLM' 사용 표시다."""
+    st.markdown('<div class="pmo-agent-head"><div class="pmo-agent-title"><span class="pmo-agent-spark">✦</span>'
+                'PMO Agent</div><div class="pmo-agent-sub">인력·구매계약·검수 업무를 자연어로 물어보세요</div>'
+                '<span class="pmo-agent-live">로컬 LLM</span></div>', unsafe_allow_html=True)
 
 
 def kpi_row(items: list[tuple[str, int, str, bool]], columns: int = 4) -> None:
