@@ -185,7 +185,8 @@ def test_home_left_cards_and_agent_on_right(app):
     assert "구매 연장 알림" in texts and "수정 요청 알림" in texts
     assert "미확인 계약 종료 알림" not in texts and "계약 종료 예정" not in texts and "등록 인력" not in texts
     assert not any("로컬 LLM(" in c.value for c in app.caption)
-    assert texts.index("구매 연장 알림") < texts.index("수정 요청 알림")
+    assert texts.index("오늘의 업무") < texts.index("구매 연장 알림") < texts.index("수정 요청 알림")
+    assert "Full time" not in texts and "차례로 고른 뒤" not in " ".join(c.value for c in app.caption)   # MM 계산기 문구 정리
     assert 'class="pmo-mini"' in texts or "확인할 계약 종료 알림이 없습니다" in texts   # 건수 아래 간단 목록
     assert "처리를 기다리는 수정 요청이 없습니다" in texts
     app.button(key="home_go_requests").click().run()

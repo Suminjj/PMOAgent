@@ -377,7 +377,7 @@ def mm_calculator(day: date) -> None:
     """홈 MM 계산기. 11/09 담당자: 모달 대신 홈 왼쪽에서 바로 쓴다. 달력 하나에서 시작일·종료일을 고르고
     Enter(또는 '계산')를 누르면 구매시스템 방식 Full time MM을 보여 준다. 저장하지 않는다."""
     with st.container(border=True, key="home_mm_calc"):
-        st.markdown("**🧮 MM 계산기** · Full time")
+        st.markdown("**🧮 MM 계산기**")
         with st.form("mm_calc_form", border=False, enter_to_submit=True):
             picked = st.date_input("기간 (시작일 → 종료일)", value=(day.replace(day=1), day), key="mm_calc_range",
                                    format="YYYY-MM-DD", label_visibility="collapsed")
@@ -386,7 +386,6 @@ def mm_calculator(day: date) -> None:
             st.session_state["mm_calc_done"] = picked
         picked = st.session_state.get("mm_calc_done")
         if not picked:
-            st.caption("달력에서 시작일과 종료일을 차례로 고른 뒤 Enter를 누르세요.")
             return
         if len(picked) < 2:
             st.caption("종료일도 고르세요.")
@@ -430,6 +429,7 @@ if page == "홈":
     # ('n월 계약 종료 예정'·'등록 인력' 카드는 뺐다.)
     side, main = st.columns([1, 3.2], gap="medium")
     with side:
+        st.markdown('<div class="pmo-side-title">오늘의 업무</div>', unsafe_allow_html=True)   # 11/09 담당자
         # 11/09 담당자: 건수 아래에 간단 목록(종료일이 빠른 순, 5건까지)
         theme.alert_card("구매 연장 알림", len(pending_alerts), "건", [
             (f"{a['name']} · {a['company']}", f"계약 {a['contract_no'] or '미발급'} · 종료 {a['end_date']}", a["label"])

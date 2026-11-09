@@ -97,7 +97,8 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-kpi-value { font-size: 28px; font-weight: 700; color: #172033; margin-top: 2px; }
 .pmo-kpi-value.warn { color: #B45309; }
 .pmo-kpi-unit { font-size: 14px; color: #5B6780; font-weight: 500; margin-left: 2px; }
-/* 홈 왼쪽 알림 카드 아래 간단 목록 (11/09) */
+/* 홈 왼쪽 '오늘의 업무' 제목 + 알림 카드 아래 간단 목록 (11/09) */
+.pmo-side-title { font-size: 17px; font-weight: 700; color: #172033; margin: 2px 0 2px; }
 .pmo-mini { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid #EEF1F6; }
 .pmo-mini li { padding: 7px 0; border-bottom: 1px solid #EEF1F6; line-height: 1.35; }
 .pmo-mini li:last-child { border-bottom: none; }
