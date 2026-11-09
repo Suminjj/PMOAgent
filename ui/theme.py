@@ -97,6 +97,14 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-kpi-value { font-size: 28px; font-weight: 700; color: #172033; margin-top: 2px; }
 .pmo-kpi-value.warn { color: #B45309; }
 .pmo-kpi-unit { font-size: 14px; color: #5B6780; font-weight: 500; margin-left: 2px; }
+/* 홈 왼쪽 알림 카드 아래 간단 목록 (11/09) */
+.pmo-mini { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid #EEF1F6; }
+.pmo-mini li { padding: 7px 0; border-bottom: 1px solid #EEF1F6; line-height: 1.35; }
+.pmo-mini li:last-child { border-bottom: none; }
+.pmo-mini-title { font-size: 13.5px; font-weight: 600; color: #172033; }
+.pmo-mini-sub { font-size: 12px; color: #5B6780; }
+.pmo-mini-tag { float: right; font-size: 12px; font-weight: 600; color: #B45309; }
+.pmo-mini-more, .pmo-mini-empty { font-size: 12px; color: #8A94A6; padding-top: 6px; }
 
 /* ---- 홈: 흰 카드 패널 ---- */
 .st-key-home_chat_panel {
@@ -217,6 +225,19 @@ def page_header(day, title: str) -> None:
     st.markdown(
         f'<div class="pmo-date">{day.year}년 {day.month}월 {day.day}일 ({_WEEKDAYS[day.weekday()]}) · Asia/Seoul</div>'
         + (f'<div class="pmo-h1">{escape(title)}</div>' if title else ""), unsafe_allow_html=True)
+
+
+def alert_card(label: str, count: int, unit: str, items: list[tuple[str, str, str]], *, empty: str,
+               limit: int = 5) -> None:
+    """홈 왼쪽 알림 카드(11/09 담당자): 건수 + 아래 간단 목록. items = [(제목, 보조 설명, 오른쪽 표시)]."""
+    rows = "".join(
+        f'<li><span class="pmo-mini-tag">{escape(tag)}</span><div class="pmo-mini-title">{escape(title)}</div>'
+        f'<div class="pmo-mini-sub">{escape(sub)}</div></li>' for title, sub, tag in items[:limit])
+    more = f'<div class="pmo-mini-more">외 {len(items) - limit}건</div>' if len(items) > limit else ""
+    body = f'<ul class="pmo-mini">{rows}</ul>{more}' if items else f'<div class="pmo-mini-empty">{escape(empty)}</div>'
+    st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">{escape(label)}</div>'
+                f'<div class="pmo-kpi-value{" warn" if count else ""}">{count}'
+                f'<span class="pmo-kpi-unit">{escape(unit)}</span></div>{body}</div>', unsafe_allow_html=True)
 
 
 def kpi_row(items: list[tuple[str, int, str, bool]], columns: int = 4) -> None:

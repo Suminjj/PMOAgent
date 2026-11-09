@@ -430,10 +430,16 @@ if page == "홈":
     # ('n월 계약 종료 예정'·'등록 인력' 카드는 뺐다.)
     side, main = st.columns([1, 3.2], gap="medium")
     with side:
-        theme.kpi_row([("구매 연장 알림", len(pending_alerts), "건", bool(pending_alerts))], columns=1)
+        # 11/09 담당자: 건수 아래에 간단 목록(종료일이 빠른 순, 5건까지)
+        theme.alert_card("구매 연장 알림", len(pending_alerts), "건", [
+            (f"{a['name']} · {a['company']}", f"계약 {a['contract_no'] or '미발급'} · 종료 {a['end_date']}", a["label"])
+            for a in sorted(pending_alerts, key=lambda a: a["end_date"])], empty="확인할 계약 종료 알림이 없습니다.")
         st.button("계약 종료 알림 보기", key="home_go_alerts", width="stretch",
                   on_click=theme.go, args=("계약 종료 알림",))
-        theme.kpi_row([("수정 요청 알림", len(waiting), "건", bool(waiting))], columns=1)
+        theme.alert_card("수정 요청 알림", len(waiting), "건", [
+            (f"{r['person_name'] or '인력 미지정'} · {r['project']}",
+             (r["content"].splitlines() or [""])[0][:40], f"{r['requester_name']} · {r['created_at'][5:10]}")
+            for r in waiting], empty="처리를 기다리는 수정 요청이 없습니다.")
         st.button("수정 요청 보기", key="home_go_requests", width="stretch",
                   on_click=theme.go, args=("수정 요청",))
         mm_calculator(day)          # 11/09 담당자: 모달 대신 화면에서 바로 계산
