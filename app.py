@@ -45,7 +45,7 @@ if not auth.has_users(db_path()):
         name = st.text_input("이름")
         pw1 = st.text_input("비밀번호 (8자 이상)", type="password")
         pw2 = st.text_input("비밀번호 확인", type="password")
-        if st.form_submit_button("PMO 계정 만들기", type="primary"):
+        if st.columns([2, 1.3])[1].form_submit_button("PMO 계정 만들기", type="primary", width="stretch"):
             try:
                 if pw1 != pw2:
                     raise ValidationError("비밀번호가 서로 다릅니다.")
@@ -64,7 +64,8 @@ if user is None:
     with box, st.form("login"):
         login_id = st.text_input("아이디")
         password = st.text_input("비밀번호", type="password")
-        if st.form_submit_button("로그인", type="primary"):
+        # 11/09 담당자: 로그인 버튼은 폼 오른쪽 끝에(오른쪽 칸에 꽉 채움 → 오른쪽 끝선이 입력칸과 맞음)
+        if st.columns([2, 1])[1].form_submit_button("로그인", type="primary", width="stretch"):
             found = auth.authenticate(db_path(), login_id, password)
             if found:
                 st.session_state.clear()

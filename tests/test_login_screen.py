@@ -22,7 +22,7 @@ def test_login_screen_is_centered_with_agent_picture(monkeypatch, tmp_path):
     assert not app.exception
     hero = next(m.value for m in app.markdown if 'class="pmo-auth-hero"' in m.value)   # CSS 블록이 아닌 실제 그림
     assert "<svg" in hero and "PMO Agent" in hero and "로그인" in hero      # AI Agent 그림 + 제목
-    assert len(app.columns) == 3                                          # 가운데 칸에만 로그인 폼
+    assert len(app.columns) == 5                    # 바깥 3칸(가운데에 로그인 폼) + 버튼 줄 2칸(로그인 버튼은 오른쪽 끝)
     app.text_input[0].set_value("test-pmo")
     app.text_input[1].set_value(TEST_PASSWORD)
     app.button[0].click().run()
