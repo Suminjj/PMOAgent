@@ -543,7 +543,7 @@ def request_target(service, plan: dict, values: dict) -> tuple[str, str | None]:
         mine = sorted(getattr(service.access, "projects", ()) or ())
         project = mine[0] if mine else None
     if project is None:
-        raise ValidationError("요청할 담당 과제를 찾지 못했습니다. 왼쪽 메뉴 '수정 요청'에서 직접 남겨 주세요.")
+        raise ValidationError("요청할 담당 과제를 찾지 못했습니다. '인력 관리 › 수정 요청'에서 직접 남겨 주세요.")
     return project, person_id
 
 

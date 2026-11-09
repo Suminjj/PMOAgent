@@ -4,7 +4,7 @@ import os
 import sqlite3
 import json
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import uuid4
 
 import pandas as pd
@@ -106,7 +106,7 @@ LABELS = {
     "revenue_team": "매출귀속팀", "job_role": "직무",
     "assignment_id": "연결 투입", "contract_no": "계약번호", "status": "계약 상태",
     "previous_contract_id": "이전(연장 전) 계약", "note": "메모",
-    "label": "만료 상태", "has_successor": "연장 계약 등록", "notify_from": "알림 시작일",
+    "label": "만료 상태", "state": "투입 상태", "has_successor": "연장 계약 등록", "notify_from": "알림 시작일",
 }
 
 
@@ -259,10 +259,25 @@ def person_form(current: dict | None) -> None:
     confirm()
 
 
+RATE_COLUMNS = ("sales_rate", "purchase_rate")
+
+
+def _cell(key: str, value):
+    """표 칸 값. 단가는 쉼표를 넣어 보여 준다(11/09 담당자: 9500000 → 9,500,000)."""
+    if value is None:
+        return "미입력"
+    if key in RATE_COLUMNS:
+        try:
+            return f"{Decimal(str(value)):,}"
+        except InvalidOperation:
+            return value
+    return value
+
+
 def show_table(rows: list[dict], fields: list[str]) -> None:
     if rows:
         st.dataframe(
-            [{LABELS.get(k, k): r.get(k) if r.get(k) is not None else "미입력" for k in fields} for r in rows],
+            [{LABELS.get(k, k): _cell(k, r.get(k)) for k in fields} for r in rows],
             use_container_width=True, hide_index=True
         )
     else:
@@ -507,29 +522,46 @@ elif page == "신규 인력 등록":
     person_form(None)
 
 elif page == "과제 투입 관리":
-    st.subheader("인력별 투입 목록")
+    # 11/09 담당자: 인력을 한 명씩 고르지 않고 전체 투입을 표 하나로 본다. 등록·수정은 표 아래에서 인력·투입을 골라 한다.
+    st.subheader("전체 투입 목록")
     people = service.people()
-    by_person = {r["id"]: r for r in people}
-    person_id = st.selectbox(
-        "인력 선택", [r["id"] for r in people],
-        format_func=lambda i: person_label(by_person[i]), key="assignment_person"
-    ) if people else None
-    if person_id is None:
+    if not people:
         st.info("먼저 인력을 등록하세요.")
         st.stop()
-    rows = service.assignments(person_id)
-    timeline = service.assignment_timeline(person_id)
-    columns = ["project", "revenue_project", "revenue_team", "start_date", "end_date", "grade",
-               "assignment_type", "mm", "sales_rate", "purchase_rate", "rate_unit"]
+    by_person = {r["id"]: r for r in people}
+    today_text = service.clock().isoformat()
+
+    def assignment_state(a: dict) -> str:
+        if a["start_date"] > today_text:
+            return "예정"
+        return "과거" if a["end_date"] < today_text else "현재"
+
+    all_rows = [dict(a, state=assignment_state(a), job_role=by_person.get(a["person_id"], {}).get("job_role"))
+                for a in service.assignments()]
+    f1, f2 = st.columns([2, 1.2])
+    query = f1.text_input("이름·업체·과제·매출귀속 프로젝트 검색", key="assignment_search").strip().casefold()
+    states = f2.multiselect("투입 상태", ["현재", "예정", "과거"], default=["현재", "예정"], key="assignment_states")
+    shown = [a for a in all_rows if a["state"] in states and query in " ".join(
+        str(a.get(k) or "") for k in ("name", "company", "project", "revenue_project", "revenue_team")).casefold()]
+    order = {"현재": 0, "예정": 1, "과거": 2}
+    shown.sort(key=lambda a: (order[a["state"]], a["name"], a["start_date"]))
+    columns = ["state", "name", "company", "project", "revenue_project", "revenue_team", "start_date", "end_date",
+               "grade", "assignment_type", "mm", "purchase_rate"]
     if not can_write:                                    # v3: 과제 리더는 단가를 보지 않는다
         columns = [c for c in columns if c not in Service.RATE_FIELDS]
-    for title, key in (("현재 투입", "current"), ("예정 투입", "upcoming"), ("과거 투입 이력", "past")):
-        st.markdown(f"**{title}** ({len(timeline[key])}건)")
-        show_table(timeline[key], columns)
-    st.caption(f"기준일 {timeline['today']} (Asia/Seoul) · 시작·종료일을 포함해 현재 투입을 판단합니다.")
+    show_table(shown, columns)
+    st.caption(f"{len(shown)}건 / 전체 {len(all_rows)}건 · 기준일 {today_text} (Asia/Seoul) · "
+               "시작·종료일을 포함해 현재 투입을 판단합니다.")
     if not can_write:
-        st.info("과제 리더는 조회만 할 수 있습니다. 수정이 필요하면 왼쪽 메뉴 '수정 요청'에서 PM·PMO에게 요청하세요.")
+        st.info("과제 리더는 조회만 할 수 있습니다. 수정이 필요하면 '인력 관리 › 수정 요청'에서 PM·PMO에게 요청하세요.")
         st.stop()
+    st.divider()
+    st.subheader("투입 등록 · 수정")
+    person_id = st.selectbox("인력", [r["id"] for r in people], index=None, placeholder="인력을 고르세요",
+                             format_func=lambda i: person_label(by_person[i]), key="assignment_person")
+    if person_id is None:
+        st.stop()
+    rows = service.assignments(person_id)
     by_id = {r["id"]: r for r in rows}
     target = st.selectbox(
         "등록 또는 수정할 투입", [None] + list(by_id),
@@ -542,8 +574,7 @@ elif page == "과제 투입 관리":
     if st.session_state.get("edit_context") != context:
         st.session_state.pop("pending", None)
         st.session_state["edit_context"] = context
-    st.subheader("투입 수정" if current else "투입 등록")
-    st.caption("과제·단가는 나중에 보완할 수 있습니다. 단가 입력 시 기준 단위도 입력하세요.")
+    st.caption("과제·매출귀속 프로젝트·매입단가는 나중에 보완할 수 있습니다. 매입단가는 원/MM 금액입니다(쉼표 입력 가능).")
     with st.container():
         project = st.text_input("과제명 (선택)", value=(current["project"] or "") if current else "",
                                 key=f"project_{person_id}_{target}")
@@ -564,18 +595,17 @@ elif page == "과제 투입 관리":
         grade = st.selectbox("등급", allowed, placeholder="선택 (컨설팅은 비워 둘 수 있음)",
                              index=allowed.index(current["grade"]) if current and current["grade"] in allowed else None)
         mode, manual_mm = mm_fields(start, end, current, f"{person_id}_{target}")
-        sales = st.text_input("매출단가 (선택)", value=(current["sales_rate"] or "") if current else "",
-                              key=f"sales_{person_id}_{target}")
-        purchase = st.text_input("매입단가 (선택)", value=(current["purchase_rate"] or "") if current else "",
-                                 key=f"purchase_{person_id}_{target}")
-        unit = st.text_input("단가 기준 단위 (예: 원/MM, 원/일)",
-                             value=(current["rate_unit"] or "") if current else "",
-                             key=f"unit_{person_id}_{target}")
+        # 11/09 담당자: 매출단가·단가 기준 단위 입력칸은 없앤다. 매입단가는 원/MM으로 저장하고, 기존 매출단가 값은 그대로 둔다.
+        shown_rate = _cell("purchase_rate", current["purchase_rate"]) if current and current["purchase_rate"] else ""
+        purchase = st.text_input("매입단가(검수금액 계산 시 사용)", value=shown_rate,
+                                 key=f"purchase_{person_id}_{target}", placeholder="예: 9,500,000")
         input_data = dict(person_id=person_id, project=project, revenue_project=revenue_project,
                           revenue_team=revenue_team,
                           start_date=start,
-                          end_date=end, grade=grade, sales_rate=sales,
-                          purchase_rate=purchase, rate_unit=unit, assignment_type=mode, mm=manual_mm)
+                          end_date=end, grade=grade, sales_rate=current["sales_rate"] if current else None,
+                          purchase_rate=purchase,
+                          rate_unit=(current.get("rate_unit") if current else None) or None,
+                          assignment_type=mode, mm=manual_mm)
         invalidate_preview("assignment", input_data)
         if st.button("미리보기", key="preview_assignment"):
             stage("assignment", input_data, current)

@@ -33,10 +33,13 @@ def validate_contract(data: dict) -> dict:
     end = _date(data.get("end_date"), "계약 종료일")
     if end < start:
         raise ValidationError("계약 종료일은 시작일보다 빠를 수 없습니다.")
-    status = data.get("status")
+    contract_no = _text(data.get("contract_no"))
+    status = data.get("status") or None
+    if status is None:
+        # 11/09 담당자: 계약 상태는 따로 입력하지 않아도 된다. 계약번호가 있으면 확정, 없으면 준비(엑셀 가져오기와 같은 규칙).
+        status = "확정" if contract_no else "준비"
     if status not in CONTRACT_STATUSES:
         raise ValidationError("계약 상태는 준비·확정 중 선택하세요.")
-    contract_no = _text(data.get("contract_no"))
     if status == "확정" and not contract_no:
         raise ValidationError("확정 계약은 계약번호가 필요합니다. 발급 전이면 '준비'로 저장하세요.")
     result = {

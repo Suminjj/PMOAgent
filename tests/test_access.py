@@ -209,7 +209,7 @@ def test_rates_are_hidden_from_leaders_everywhere(db, monkeypatch):
     timeline = call_tool(leader, "get_assignment_timeline", {"person_id": "이협력"})["data"]
     assert timeline["current"] and all(a["purchase_rate"] is None and a["sales_rate"] is None
                                        for a in timeline["current"])
-    for call in (leader.inspection_contracts, lambda: leader.inspection("감마테크", "C-2026-206", "2026-11", "2026-11")):
+    for call in (leader.inspection_contracts, lambda: leader.inspection("감마테크", "450012202", "2026-11", "2026-11")):
         with pytest.raises(AccessDenied, match="단가"):
             call()
     assert pmo.inspection_contracts()

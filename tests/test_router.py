@@ -18,8 +18,8 @@ def service(tmp_path):
 @pytest.mark.parametrize("question, agents, method", [
     ("김정직 지금 무슨 과제에 투입되어 있어?", ["staff"], "keyword"),
     ("박협력 구매계약 언제까지야?", ["contract"], "keyword"),
-    ("감마테크 C-2026-202 11월 검수 금액 알려줘.", ["inspection"], "keyword"),
-    ("알파솔루션 C-2026-103 계약 총액 얼마야?", ["inspection"], "keyword"),         # '계약'보다 '총액'이 무거움
+    ("감마테크 450012201 11월 검수 금액 알려줘.", ["inspection"], "keyword"),
+    ("알파솔루션 450011101 계약 총액 얼마야?", ["inspection"], "keyword"),         # '계약'보다 '총액'이 무거움
     ("11월 1일부터 18일까지 MM 얼마야?", ["staff"], "keyword"),
     ("이협력 지금 투입 과제랑 구매계약 종료일 알려줘.", ["staff", "contract"], "multi"),   # 질문에 나온 순서
     ("박협력 계약 종료일이랑 11월 투입 MM 알려줘.", ["contract", "staff"], "multi"),

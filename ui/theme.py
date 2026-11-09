@@ -14,12 +14,11 @@ NAVY, BLUE, MUTED = "#0F1B33", "#1D4ED8", "#5B6780"
 # (그룹 이름, 아이콘, 하위 화면 목록) — 하위 화면이 없으면 그룹 이름이 곧 화면 이름이다.
 NAV_GROUPS = [
     ("홈", ":material/forum:", []),
-    ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리"]),
+    ("인력 관리", ":material/person:", ["전체 인력 조회", "신규 인력 등록", "과제 투입 관리", "수정 요청"]),  # 11/09 수정 요청을 인력 관리 아래로
     ("구매계약 관리", ":material/description:", ["전체 계약 조회", "계약 등록·수정"]),
     ("검수 관리", ":material/payments:", ["검수하기"]),
     ("계약 종료 알림", ":material/notifications:", []),
     ("변경 이력", ":material/history:", []),
-    ("수정 요청", ":material/rate_review:", []),          # v2: 과제 리더 → PM·PMO
     ("사용자 관리", ":material/manage_accounts:", []),     # v2: PMO·PM
 ]
 # v2 역할별 메뉴 (11/03 담당자): 과제 리더는 조회 메뉴와 수정 요청만. 등록·수정 화면과 변경 이력·사용자 관리는 숨긴다.
@@ -28,6 +27,7 @@ SUB_ICONS = {
     "전체 인력 조회": ":material/table_view:", "신규 인력 등록": ":material/person_add:",
     "과제 투입 관리": ":material/work:", "전체 계약 조회": ":material/table_view:",
     "계약 등록·수정": ":material/edit_note:", "검수하기": ":material/fact_check:",
+    "수정 요청": ":material/rate_review:",
 }
 NAV_ICONS = {}
 GROUP_OF = {}

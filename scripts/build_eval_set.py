@@ -47,8 +47,8 @@ def questions(s: Service) -> list[dict]:
                       | {c["name"] for c in s.contracts() if c["days_left"] == 15})
     alerts = sorted({a["name"] for a in s.pending_alerts()})
     t5, t7 = timeline("EV-05"), timeline("EV-07")
-    gamma = s.inspection("감마테크", "C-2026-202", "2026-11", "2026-11")
-    alpha = s.inspection("알파솔루션", "C-2026-103", "2026-11", "2026-11")
+    gamma = s.inspection("감마테크", "450012201", "2026-11", "2026-11")
+    alpha = s.inspection("알파솔루션", "450011101", "2026-11", "2026-11")
     month_mm = {r["start_date"]: r["months"] for r in s.monthly_mm(2026) if r["name"] in ("정협력", "한협력")}
 
     def step(tool, args, optional=False, or_find=False, alt=()):
@@ -119,9 +119,9 @@ def questions(s: Service) -> list[dict]:
         target="v3", hold_ok=True, must_include=soon, must_not_include=not_soon,
         note="종료 14일 전~당일, 연장 미등록. 조협력(연장 등록)·15일 전(경계) 인력은 빠져야 한다. "
              "전용 도구가 없으면(추가 기능) v3: 답변 보류 + '전체 계약 조회' 화면 안내.")
-    add("C09", "contract", "같은 계약번호 여러 명", "계약번호 C-2026-202에 묶인 인력 알려줘.",
-        [step("search_contracts", {"contract_no": "C-2026-202"})],
-        must_include=sorted({c["name"] for c in s.contracts() if c["contract_no"] == "C-2026-202"}))
+    add("C09", "contract", "같은 계약번호 여러 명", "계약번호 450012201에 묶인 인력 알려줘.",
+        [step("search_contracts", {"contract_no": "450012201"})],
+        must_include=sorted({c["name"] for c in s.contracts() if c["contract_no"] == "450012201"}))
     add("C10", "contract", "계약번호 미발급", "계약번호가 아직 안 나온 사람 있어?",
         [step("search_contracts", {"without_number": True})],
         must_include=sorted({c["name"] for c in s.contracts() if not c["contract_no"]}))
@@ -164,14 +164,14 @@ def questions(s: Service) -> list[dict]:
         target="추가 기능", must_not_include=["교체했습니다", "변경되었습니다", "저장했습니다"],
         note=f"확인 카드 한 장: 류협력 투입 종료일 {ryu['end_date']} → 2026-11-30, 노협력 신규 투입 {ryu['project']} "
              f"2026-12-01~{ryu['end_date']}(매출귀속 프로젝트 {ryu['revenue_project']} 이어받음, 등급 L6), "
-             "류협력 계약 C-2026-108 종료일 2026-11-30, 노협력 계약 준비(계약번호 미발급).")
+             "류협력 계약 450011101 종료일 2026-11-30, 노협력 계약 준비(계약번호 미발급).")
     myung = s.assignments("EV-21")[0]
     add("X02", "staff", "다른 과제로 이동", "명협력 12월 1일부터 APC Analysis로 옮겨줘.",
         person("명협력", "EV-21", "prepare_assignment_transfer", {"to_project": "APC Analysis", "start_date": "2026-12-01"}),
         target="추가 기능", must_not_include=["옮겼습니다", "변경되었습니다", "저장했습니다"],
         note=f"확인 카드: {myung['project']} 투입 종료일 {myung['end_date']} → 2026-11-30, APC Analysis 신규 투입 "
              f"2026-12-01~{myung['end_date']}(매출귀속 프로젝트 미정, 등급·단가는 이어받음), "
-             "계약 C-2026-206은 연결 투입을 풀어 두 투입을 모두 덮음.")
+             "계약 450012202는 연결 투입을 풀어 두 투입을 모두 덮음.")
     baek, choi = s.assignments("EV-22")[0], s.assignments("EV-08")[0]
     add("H01", "staff", "0.5MM = 반 달 근무 (Full time)", "백협력 0.5MM는 반 달만 일한 거야, 한 달 내내 반씩 일한 거야?",
         person("백협력", "EV-22", "get_assignment_timeline", alt=MM_ALT), must_include=[baek["start_date"], baek["end_date"]],
@@ -187,21 +187,21 @@ def questions(s: Service) -> list[dict]:
     add("A01", "staff", "계정 ID 미발급", "계정 ID가 아직 없는 사람 알려줘.",
         [step("search_people", {"without_account": True})],
         must_include=sorted(p["name"] for p in s.people() if not p["account_id"]))
-    add("A02", "staff", "계정 ID 입력 제안(저장 안 함)", "서협력 계정 ID evuser14로 등록해줘.",
-        person("서협력", "EV-14", "prepare_account_id", {"account_id": "evuser14"}),
-        must_include=["evuser14"], must_not_include=["저장했습니다", "등록했습니다"])
+    add("A02", "staff", "계정 ID 입력 제안(저장 안 함)", "서협력 계정 ID in06538로 등록해줘.",
+        person("서협력", "EV-14", "prepare_account_id", {"account_id": "in06538"}),
+        must_include=["in06538"], must_not_include=["저장했습니다", "등록했습니다"])
     add("K01", "contract", "만료 후 미확인 알림 확인 제안", "백협력 계약 만료 알림 확인 처리해줘.",
         person("백협력", "EV-22", "prepare_alert_ack"), must_not_include=["확인 처리했습니다", "저장했습니다"])
 
 
     # --- 검수 (11/07 도구 연결) -----------------------------------------------------
-    add("I01", "inspection", "검수 금액 + 계산 불가", "감마테크 C-2026-202 11월 검수 금액 알려줘.",
-        [step(INSPECT, {"company": "감마테크", "contract_no": "C-2026-202", "year": 2026, "month": 11})],
+    add("I01", "inspection", "검수 금액 + 계산 불가", "감마테크 450012201 11월 검수 금액 알려줘.",
+        [step(INSPECT, {"company": "감마테크", "contract_no": "450012201", "year": 2026, "month": 11})],
         target="추가 기능", must_include=[won(gamma["selected"]["total"]), "계산 불가"],
         note=f"한협력은 매입단가가 없어 계산 불가. 계약 총액 {won(gamma['contract']['total'])}원. 매출귀속 프로젝트별: "
              + ", ".join(f"{p['revenue_project']} {won(p['amount']) if p['amount'] is not None else '계산 불가'}" for p in gamma["selected"]["projects"]))
-    add("I02", "inspection", "계약 총액", "알파솔루션 C-2026-103 계약 총액 얼마야?",
-        [step(INSPECT, {"company": "알파솔루션", "contract_no": "C-2026-103"})],
+    add("I02", "inspection", "계약 총액", "알파솔루션 450011101 계약 총액 얼마야?",
+        [step(INSPECT, {"company": "알파솔루션", "contract_no": "450011101"})],
         target="추가 기능", must_include=[won(alpha["contract"]["total"])],
         note="11/07 검수 Agent 도구 연결. 월을 말하지 않아 조회 월은 이번 달(기준일 11월), 계약 총액은 계약 기간 전체.")
 
@@ -255,8 +255,8 @@ def questions(s: Service) -> list[dict]:
         "과제 얘기가 아니라 구매계약이 언제 끝나는지가 궁금해요.",
         person("서협력", "EV-14", "list_contracts"), target="v3.1", must_include=[seo_end],
         note="'과제'(인력관리)와 '계약'(구매계약)이 함께 나와 규칙은 두 업무로 판정한다. LLM이 맥락으로 구매계약만 고른다.")
-    add("L03", "inspection", "업무 단어 적은 질문 → 검수", "감마테크에 이번 달에 얼마 줘야 하는지 C-2026-202 기준으로 알려줄 수 있어요?",
-        [step(INSPECT, {"company": "감마테크", "contract_no": "C-2026-202"})], target="v3.1",
+    add("L03", "inspection", "업무 단어 적은 질문 → 검수", "감마테크에 이번 달에 얼마 줘야 하는지 450012201 기준으로 알려줄 수 있어요?",
+        [step(INSPECT, {"company": "감마테크", "contract_no": "450012201"})], target="v3.1",
         note="검수·금액이라는 말이 없어 규칙은 고르지 못한다(점수 없음 → LLM). 이번 달 = 기준일 11월.")
     jung_end = max(c["end_date"] for c in s.contracts("EV-07"))
     add("L04", ["staff", "contract"], "긴 여러 업무 질문", "정협력 관련해서 두 가지만 확인 부탁드려요. 하나는 8월 MM이 얼마나 "

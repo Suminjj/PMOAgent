@@ -78,7 +78,7 @@ def test_duplicate_id_and_idempotent_requests(service):
 @pytest.mark.parametrize("changes", [
     {"end_date": "2026-09-30"}, {"start_date": "2026-02-30"},
     {"purchase_rate": "-1"}, {"sales_rate": "NaN"}, {"sales_rate": "Infinity"},
-    {"purchase_rate": "abc"}, {"rate_unit": ""}, {"grade": "L9"},
+    {"purchase_rate": "abc"}, {"purchase_rate": "9,5,0,0.0.1"}, {"grade": "L9"},
     {"person_id": "없는 ID"}
 ])
 def test_invalid_assignment_not_saved(service, changes):
@@ -130,3 +130,12 @@ def test_unknown_database_preserved(tmp_path):
         Service(path)
     with sqlite3.connect(path) as con:
         assert con.execute("SELECT * FROM existing").fetchone()[0] == "preserve"
+
+
+def test_rate_accepts_commas_and_defaults_unit(service):
+    """11/09 담당자: 단가는 쉼표를 넣어 입력해도 되고, 단가 기준 단위 입력칸이 없어 원/MM으로 저장한다."""
+    save_person(service)
+    service.save_assignment(assignment(purchase_rate="9,500,000", sales_rate=None, rate_unit=""),
+                            token=str(uuid4()), actor="테스트")
+    saved = service.assignments()[0]
+    assert (saved["purchase_rate"], saved["rate_unit"]) == ("9500000", "원/MM")

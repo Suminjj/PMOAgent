@@ -107,7 +107,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("list_contracts", "인력의 구매계약(계약번호·기간·상태·연장 여부)을 조회한다.",
          _obj({"person_id": PERSON}, ("person_id",)),
          handler=lambda s, a: s.contracts(_pid(s, a["person_id"]))),
-    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: C-2026-202에 묶인 인력), 업체, 상태(준비·확정), "
+    Tool("search_contracts", "조건으로 구매계약과 그 인력을 찾는다: 계약번호(예: 450012201에 묶인 인력), 업체, 상태(준비·확정), "
          "계약번호 미발급(without_number=true). 계약번호를 사람 이름 칸에 넣지 않고 이 도구를 쓴다.",
          _obj({"contract_no": STR, "company": STR, "status": _enum(CONTRACT_STATUSES),
                "without_number": {"type": "boolean", "description": "계약번호가 아직 없는 계약만"}}),
@@ -183,7 +183,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "계약번호를 모르면 비운다(업체의 계약이 여러 건이면 결과가 되물을 내용을 알려 준다). "
          "월을 말하지 않으면 비운다(이번 달). 금액은 결과의 문장을 그대로 옮기고 직접 계산하지 않는다.",
          _obj({"company": {"type": "string", "description": "업체명"},
-               "contract_no": {"type": "string", "description": "계약번호(예: C-2026-202). 모르면 비운다"},
+               "contract_no": {"type": "string", "description": "계약번호(예: 450012201). 모르면 비운다"},
                "year": INT, "month": {"type": "integer", "description": "검수 월(1~12). 말하지 않으면 비운다"}},
               ("company",)),
          handler=lambda s, a: _inspection(s, **a)),
@@ -214,7 +214,8 @@ TOOL_LABELS = {
 }
 
 
-_CONTRACT_NO = re.compile(r"^[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}$")
+# 계약번호: 예전 형식(C-2026-202)과 구매시스템 형식(4500 + 숫자 5개, 예: 450012201)
+_CONTRACT_NO = re.compile(r"^(?:[A-Za-z]{1,3}-?\d{2,4}-?\d{1,4}|\d{6,12})$")
 
 
 def _company_is_not_a_person(service: Service, args: dict):
