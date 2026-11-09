@@ -88,6 +88,7 @@ header[data-testid="stHeader"] { background: transparent; }
 /* ---- 홈: 숫자 카드 ---- */
 .pmo-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 8px; }
 .pmo-kpis.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pmo-kpis.cols-1 { grid-template-columns: minmax(0, 1fr); margin-bottom: 0; }   /* 홈 왼쪽 알림 카드 (11/09) */
 @media (max-width: 900px) { .pmo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pmo-kpi { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 12px; padding: 14px 18px; }
 .pmo-kpi-label { font-size: 13px; color: #5B6780; }
@@ -154,6 +155,9 @@ def _go(page: str) -> None:
     st.session_state["nav_page"] = page
 
 
+go = _go   # 화면의 '보기' 버튼에서 다른 메뉴로 이동할 때 쓴다
+
+
 def pages_for(role: str) -> list[str]:
     return [p for p in PAGES if not (role == "과제 리더" and p in LEADER_HIDDEN)]
 
@@ -211,9 +215,10 @@ _WEEKDAYS = "월화수목금토일"
 
 
 def page_header(day, title: str) -> None:
+    """날짜 + 화면 제목. 제목이 비면 날짜만(11/09 담당자: 홈의 '무엇을 도와드릴까요?' 삭제)."""
     st.markdown(
         f'<div class="pmo-date">{day.year}년 {day.month}월 {day.day}일 ({_WEEKDAYS[day.weekday()]}) · Asia/Seoul</div>'
-        f'<div class="pmo-h1">{escape(title)}</div>', unsafe_allow_html=True)
+        + (f'<div class="pmo-h1">{escape(title)}</div>' if title else ""), unsafe_allow_html=True)
 
 
 def kpi_row(items: list[tuple[str, int, str, bool]], columns: int = 4) -> None:

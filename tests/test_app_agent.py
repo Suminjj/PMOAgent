@@ -179,3 +179,15 @@ def test_mm_question_shows_readable_result_not_json(app):
     assert not app.exception and not app.json
     assert any("0.476 MM" in m.value for m in app.markdown)
     assert any("기간 MM 계산" in m.value for m in app.markdown)
+
+
+def test_home_left_cards_and_agent_on_right(app):
+    """11/09 담당자: 홈 제목 없음, 왼쪽에 구매 연장 알림·수정 요청 알림·MM 계산기, 오른쪽에 PMO Agent."""
+    texts = " ".join(m.value for m in app.markdown)
+    assert "무엇을 도와드릴까요" not in texts
+    assert "구매 연장 알림" in texts and "수정 요청 알림" in texts
+    assert "미확인 계약 종료 알림" not in texts and "계약 종료 예정" not in texts and "등록 인력" not in texts
+    assert not any("로컬 LLM(" in c.value for c in app.caption)
+    assert texts.index("구매 연장 알림") < texts.index("수정 요청 알림")
+    app.button(key="home_go_requests").click().run()
+    assert app.session_state["nav_page"] == "수정 요청"

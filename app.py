@@ -84,9 +84,9 @@ if st.sidebar.button("로그아웃", key="logout"):
 if _people_count == 0:
     st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
 theme.sidebar_footer(service.path.name, _people_count, os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"))
-theme.page_header(service.clock(), "무엇을 도와드릴까요?" if page == "홈" else
+theme.page_header(service.clock(), "" if page == "홈" else
                   page if theme.GROUP_OF[page] == page else f"{theme.GROUP_OF[page]} · {page}")
-if pending_alerts and page != "계약 종료 알림":
+if pending_alerts and page not in ("계약 종료 알림", "홈"):      # 홈은 왼쪽 '구매 연장 알림' 카드로 보여 준다
     st.warning(f"계약 종료 검토 대상이 {len(pending_alerts)}건 있습니다. "
                "왼쪽 메뉴의 '계약 종료 알림'에서 확인하세요.")
 if st.session_state.get("page") != page:
@@ -416,23 +416,26 @@ if page == "홈":
     turns = st.session_state.setdefault("chat_turns", [])
     day = service.clock()
     try:
-        ending = service.contracts_ending(day.year, day.month)
+        waiting = [r for r in service.change_requests() if r["status"] == "요청"]
     except sqlite3.Error:
-        ending = []
-    kpi_col, calc_col = st.columns([3, 1], gap="small")
-    with kpi_col:
-        theme.kpi_row([("미확인 계약 종료 알림", len(pending_alerts), "건", bool(pending_alerts)),
-                       (f"{day.month}월 계약 종료 예정", len(ending), "명", False),
-                       ("등록 인력", _people_count, "명", False)], columns=3)
-    # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
-    if calc_col.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
-        mm_calculator(day)
+        waiting = []
+    # 11/09 담당자: 왼쪽에 위에서부터 구매 연장 알림 · 수정 요청 알림 · MM 계산기, 오른쪽에 PMO Agent.
+    # ('n월 계약 종료 예정'·'등록 인력' 카드는 뺐다.)
+    side, main = st.columns([1, 3.2], gap="medium")
+    with side:
+        theme.kpi_row([("구매 연장 알림", len(pending_alerts), "건", bool(pending_alerts))], columns=1)
+        st.button("계약 종료 알림 보기", key="home_go_alerts", width="stretch",
+                  on_click=theme.go, args=("계약 종료 알림",))
+        theme.kpi_row([("수정 요청 알림", len(waiting), "건", bool(waiting))], columns=1)
+        st.button("수정 요청 보기", key="home_go_requests", width="stretch",
+                  on_click=theme.go, args=("수정 요청",))
+        # 계산기는 버튼만 두고 누르면 모달로 연다(11/07 담당자). 숫자 카드와 다른 색(네이비).
+        if st.button("🧮 MM 계산기", key="home_mm_calc", width="stretch"):
+            mm_calculator(day)
     # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
     # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
-    with st.container(key="home_chat_panel"):
+    with main, st.container(key="home_chat_panel"):
         st.subheader("🤖 PMO Agent")
-        st.caption(f"로컬 LLM({client.model})이 도구로 확인해 답합니다. "
-                   "등록·수정·삭제는 답변 아래 확인 카드에서 '확인 후 저장'을 눌러야 반영됩니다.")
         # 업무 카테고리: 라디오 대신 이모티콘을 붙인 큰 버튼 (10/20 담당자). 고른 버튼은 파란색(primary).
         agent_key = st.session_state.setdefault("home_category", AUTO)
         st.markdown("**업무 카테고리**", help="'자동 배정'이면 질문을 보고 맞는 전문 Agent(인력관리·구매계약·검수)를 "
@@ -450,7 +453,7 @@ if page == "홈":
         with st.container(height=640, border=True, key="home_chat_log"):
             if not turns:
                 with st.chat_message("assistant"):
-                    st.markdown("무엇을 도와드릴까요? 인력·투입·MM·구매계약·검수 금액을 묻거나, "
+                    st.markdown("인력·투입·MM·구매계약·검수 금액을 묻거나, "
                                 "투입 변경·계약 등록·수정·삭제를 요청하세요. 저장은 답변 아래 확인 카드에서 확인 후 진행됩니다.")
             for index, turn in enumerate(turns):
                 with st.chat_message("user"):
