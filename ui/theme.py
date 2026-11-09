@@ -107,6 +107,17 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-mini-tag { float: right; font-size: 12px; font-weight: 600; color: #B45309; }
 .pmo-mini-more, .pmo-mini-empty { font-size: 12px; color: #8A94A6; padding-top: 6px; }
 
+/* ---- 로그인·초기 설정 (11/09 담당자: 가운데 좁게 + AI Agent 그림) ---- */
+.pmo-auth-hero { text-align: center; margin: 24px 0 14px; }
+.pmo-auth-hero svg { display: inline-block; }
+.pmo-auth-title { font-size: 24px; font-weight: 700; color: #172033; margin-top: 4px; }
+.pmo-auth-sub { font-size: 14px; color: #5B6780; }
+.st-key-auth_box [data-testid="stForm"] { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px; }
+.st-key-auth_box [data-testid="stFormSubmitButton"] button {
+  width: 100%; border-radius: 999px; border: none; background: linear-gradient(110deg, #1E2A78, #5B3FD1); color: #FFFFFF;
+}
+.st-key-auth_box [data-testid="stFormSubmitButton"] button p { color: #FFFFFF; font-weight: 600; }
+
 /* ---- 홈: 흰 카드 패널 ---- */
 .st-key-home_chat_panel {
   background: #FFFFFF; border: 1px solid #E3E7F2; border-radius: 18px; padding: 0 20px 20px;
@@ -271,6 +282,16 @@ def alert_card(label: str, count: int, unit: str, items: list[tuple[str, str, st
     st.markdown(f'<div class="pmo-kpi"><div class="pmo-kpi-label">{escape(label)}</div>'
                 f'<div class="pmo-kpi-value{" warn" if count else ""}">{count}'
                 f'<span class="pmo-kpi-unit">{escape(unit)}</span></div>{body}</div>', unsafe_allow_html=True)
+
+
+# 11/09 담당자: 로그인 화면의 AI Agent 그림(직접 그린 SVG, 시안 A와 같은 네이비→보라 색)
+AGENT_SVG = ('<svg width="168" height="150" viewBox="0 0 168 150" role="img" aria-label="PMO Agent" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="pmoBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1E2A78"/><stop offset="1" stop-color="#7C3AED"/></linearGradient><radialGradient id="pmoHalo"><stop offset="0" stop-color="#8B5CF6" stop-opacity=".35"/><stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/></radialGradient></defs><circle cx="80" cy="78" r="72" fill="url(#pmoHalo)"/><line x1="80" y1="22" x2="80" y2="36" stroke="#5B3FD1" stroke-width="4" stroke-linecap="round"/><circle cx="80" cy="18" r="7" fill="#A78BFA"/><circle cx="80" cy="18" r="3" fill="#FFFFFF"/><rect x="28" y="62" width="10" height="26" rx="5" fill="#3B5BDB"/><rect x="122" y="62" width="10" height="26" rx="5" fill="#3B5BDB"/><rect x="36" y="36" width="88" height="78" rx="28" fill="url(#pmoBody)"/><rect x="48" y="52" width="64" height="38" rx="19" fill="#0F1B33"/><ellipse cx="66" cy="70" rx="6" ry="7.5" fill="#67E8F9"/><ellipse cx="94" cy="70" rx="6" ry="7.5" fill="#67E8F9"/><path d="M72 98 Q80 104 88 98" stroke="#E0E7FF" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M140 24 l3.5 9 9 3.5 -9 3.5 -3.5 9 -3.5 -9 -9 -3.5 9 -3.5z" fill="#F0ABFC"/><path d="M22 112 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5z" fill="#93C5FD"/><rect x="112" y="104" width="50" height="30" rx="12" fill="#FFFFFF" stroke="#DCE1EE"/><circle cx="126" cy="119" r="3.5" fill="#5B3FD1"/><circle cx="137" cy="119" r="3.5" fill="#7C3AED"/><circle cx="148" cy="119" r="3.5" fill="#A78BFA"/></svg>')
+
+
+def auth_hero(subtitle: str) -> None:
+    """로그인·초기 설정 화면 머리: AI Agent 그림 + 'PMO Agent' + 안내 한 줄."""
+    st.markdown(f'<div class="pmo-auth-hero">{AGENT_SVG}<div class="pmo-auth-title">PMO Agent</div>'
+                f'<div class="pmo-auth-sub">{escape(subtitle)}</div></div>', unsafe_allow_html=True)
 
 
 def agent_header() -> None:

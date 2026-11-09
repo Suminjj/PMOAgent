@@ -30,10 +30,17 @@ except (OSError, sqlite3.Error, RuntimeError) as exc:
 # ---- v2 로그인: 권한은 로그인한 사용자 정보로만 정한다(질문 속 문장은 권한에 쓰지 않음) ----
 from pmo import access as auth  # noqa: E402
 
+def auth_column():
+    """로그인·초기 설정 화면은 가운데 좁은 칸에 둔다(11/09 담당자: 너비가 너무 넓음)."""
+    return st.columns([1, 1.1, 1])[1].container(key="auth_box")
+
+
 if not auth.has_users(db_path()):
-    theme.page_header(date.today(), "초기 설정 · PMO 계정 만들기")
-    st.info("사용자가 아직 없습니다. 첫 계정은 PMO로 만듭니다. 다른 사용자는 로그인 후 '사용자 관리'에서 추가하세요.")
-    with st.form("setup"):
+    box = auth_column()
+    with box:
+        theme.auth_hero("초기 설정 · PMO 계정 만들기")
+        st.info("사용자가 아직 없습니다. 첫 계정은 PMO로 만듭니다. 다른 사용자는 로그인 후 '사용자 관리'에서 추가하세요.")
+    with box, st.form("setup"):
         login_id = st.text_input("아이디")
         name = st.text_input("이름")
         pw1 = st.text_input("비밀번호 (8자 이상)", type="password")
@@ -51,8 +58,10 @@ if not auth.has_users(db_path()):
 
 user = auth.load_user(db_path(), st.session_state["user_id"]) if st.session_state.get("user_id") else None
 if user is None:
-    theme.page_header(date.today(), "로그인")
-    with st.form("login"):
+    box = auth_column()
+    with box:
+        theme.auth_hero("CoE 인력관리 · 로그인")
+    with box, st.form("login"):
         login_id = st.text_input("아이디")
         password = st.text_input("비밀번호", type="password")
         if st.form_submit_button("로그인", type="primary"):
