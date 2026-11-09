@@ -228,7 +228,7 @@ def person_form(current: dict | None) -> None:
     if current:
         st.caption("계정 ID를 입력해도 이 사람의 투입·계약 연결은 그대로 유지됩니다.")
     else:
-        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 계정 ID는 발급 후 입력하세요. "
+        st.caption("이름·업체·분류·등급·투입 기간만으로 등록할 수 있습니다. 투입 과제와 계정 ID는 알게 되면 입력하세요. "
                    "이미 등록된 인력의 추가 투입은 '과제 투입 관리'에서 등록하세요.")
     name = st.text_input("이름", value=current["name"] if current else "", key=f"name_{target}")
     company = st.text_input("업체명", value=current["company"] if current else "", key=f"company_{target}")
@@ -240,6 +240,9 @@ def person_form(current: dict | None) -> None:
     account_id = st.text_input("계정 ID (발급 후 입력 / 선택)",
                                value=(current["account_id"] or "") if current else "", key=f"account_{target}")
     if not current:
+        # 11/09 담당자: 신규 등록 때 투입 과제도 함께 넣는다(모르면 비워 두고 '과제 투입 관리'에서 보완).
+        project = st.text_input("투입 과제 (선택)", key="intake_project",
+                                placeholder="예: " + (service.project_names() or ["Soft Lab 고도화"])[0])
         grade = st.selectbox("투입 등급", list(grades()), index=None, key="intake_grade",
                              placeholder="선택 (컨설팅은 비워 둘 수 있음)")
         a, b = st.columns(2)
@@ -251,7 +254,7 @@ def person_form(current: dict | None) -> None:
     person_data = dict(name=name, company=company, category=category, account_id=account_id, job_role=job_role)
     kind = "person" if current else "intake"
     input_data = dict(person_data, id=current["id"]) if current else dict(
-        person=person_data, assignment=dict(grade=grade, start_date=start, end_date=end,
+        person=person_data, assignment=dict(project=project, grade=grade, start_date=start, end_date=end,
                                             assignment_type=mode, mm=manual_mm))
     invalidate_preview(kind, input_data)
     if st.button("미리보기", key="preview_person"):
@@ -260,6 +263,7 @@ def person_form(current: dict | None) -> None:
 
 
 RATE_COLUMNS = ("sales_rate", "purchase_rate")
+STATE_COLORS = {"현재": "#16A34A", "예정": "#DC2626", "종료": "#9CA3AF"}   # 과제 투입 관리 투입 상태 색 (11/09 담당자)
 
 
 def _cell(key: str, value):
@@ -534,22 +538,32 @@ elif page == "과제 투입 관리":
     def assignment_state(a: dict) -> str:
         if a["start_date"] > today_text:
             return "예정"
-        return "과거" if a["end_date"] < today_text else "현재"
+        return "종료" if a["end_date"] < today_text else "현재"
 
     all_rows = [dict(a, state=assignment_state(a), job_role=by_person.get(a["person_id"], {}).get("job_role"))
                 for a in service.assignments()]
     f1, f2 = st.columns([2, 1.2])
-    query = f1.text_input("이름·업체·과제·매출귀속 프로젝트 검색", key="assignment_search").strip().casefold()
-    states = f2.multiselect("투입 상태", ["현재", "예정", "과거"], default=["현재", "예정"], key="assignment_states")
+    query = f1.text_input("검색", key="assignment_search",
+                          placeholder="이름 · 업체 · 과제명 · 매출귀속 프로젝트 · 매출귀속팀").strip().casefold()
+    states = f2.multiselect("투입 상태", list(STATE_COLORS), default=["현재", "예정"], key="assignment_states")
     shown = [a for a in all_rows if a["state"] in states and query in " ".join(
         str(a.get(k) or "") for k in ("name", "company", "project", "revenue_project", "revenue_team")).casefold()]
-    order = {"현재": 0, "예정": 1, "과거": 2}
+    order = {"현재": 0, "예정": 1, "종료": 2}
     shown.sort(key=lambda a: (order[a["state"]], a["name"], a["start_date"]))
     columns = ["state", "name", "company", "project", "revenue_project", "revenue_team", "start_date", "end_date",
                "grade", "assignment_type", "mm", "purchase_rate"]
     if not can_write:                                    # v3: 과제 리더는 단가를 보지 않는다
         columns = [c for c in columns if c not in Service.RATE_FIELDS]
-    show_table(shown, columns)
+    if shown:
+        # 11/09 담당자: 투입 상태 앞에 색 원(현재 초록 · 예정 빨강 · 종료 회색). 회색 원 이모티콘이 없어 ●에 글자색을 입힌다.
+        frame = pd.DataFrame([{LABELS.get(k, k): (f"● {r[k]}" if k == "state" else _cell(k, r.get(k)))
+                               for k in columns} for r in shown])
+        styler = frame.style
+        paint = getattr(styler, "map", None) or styler.applymap
+        st.dataframe(paint(lambda v: f"color: {STATE_COLORS[v[2:]]}; font-weight: 600", subset=[LABELS["state"]]),
+                     use_container_width=True, hide_index=True)
+    else:
+        st.info("조건에 맞는 투입이 없습니다.")
     st.caption(f"{len(shown)}건 / 전체 {len(all_rows)}건 · 기준일 {today_text} (Asia/Seoul) · "
                "시작·종료일을 포함해 현재 투입을 판단합니다.")
     if not can_write:
@@ -678,13 +692,10 @@ elif page == "계약 등록·수정":
     with st.container():
         company = st.text_input("업체명", value=current["company"] if current
                                 else people_by_id[person_id]["company"], key=f"ccompany_{suffix}")
-        statuses = ["준비", "확정"]
-        status = st.selectbox("계약 상태", statuses,
-                              index=statuses.index(current["status"]) if current else 0,
-                              key=f"cstatus_{suffix}",
-                              help="계약번호 발급 전에는 '준비'로 저장하고, 확정 시 계약번호가 필요합니다.")
-        contract_no = st.text_input("계약번호", value=(current["contract_no"] or "") if current else "",
-                                    key=f"cno_{suffix}")
+        # 11/09 담당자: 계약 상태 입력은 없앤다. 계약번호가 있으면 확정, 비워 두면 준비(발급 전)로 저장된다.
+        contract_no = st.text_input("계약번호 (발급 전이면 비워 두기)",
+                                    value=(current["contract_no"] or "") if current else "",
+                                    key=f"cno_{suffix}", placeholder="예: 450012201")
         a, b = st.columns(2)
         c_start = a.date_input("계약 시작일",
                                value=date.fromisoformat(current["start_date"]) if current else None,
@@ -714,7 +725,7 @@ elif page == "계약 등록·수정":
         note = st.text_area("메모 (선택)", value=(current["note"] or "") if current else "",
                             key=f"cnote_{suffix}")
         input_data = dict(person_id=person_id, company=company, contract_no=contract_no,
-                          status=status, start_date=c_start, end_date=c_end,
+                          start_date=c_start, end_date=c_end,
                           assignment_id=assignment_id, previous_contract_id=previous_id, note=note)
         invalidate_preview("contract", input_data)
         if st.button("미리보기", key="preview_contract"):
