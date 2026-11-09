@@ -116,8 +116,10 @@ header[data-testid="stHeader"] { background: transparent; }
 .pmo-auth-title { font-size: 24px; font-weight: 700; color: #172033; margin-top: 4px; }
 .pmo-auth-sub { font-size: 14px; color: #5B6780; }
 .st-key-auth_box [data-testid="stForm"] { background: #FFFFFF; border: 1px solid #E1E6EF; border-radius: 14px; padding: 20px; }
+/* 11/09 담당자: 로그인 버튼은 오른쪽에 */
+.st-key-auth_box [data-testid="stFormSubmitButton"] { display: flex; justify-content: flex-end; }
 .st-key-auth_box [data-testid="stFormSubmitButton"] button {
-  width: 100%; border-radius: 999px; border: none; background: linear-gradient(110deg, #1E2A78, #5B3FD1); color: #FFFFFF;
+  width: auto; min-width: 120px; padding: 6px 26px; border-radius: 999px; border: none; background: linear-gradient(110deg, #1E2A78, #5B3FD1); color: #FFFFFF;
 }
 .st-key-auth_box [data-testid="stFormSubmitButton"] button p { color: #FFFFFF; font-weight: 600; }
 
