@@ -289,3 +289,55 @@ def test_name_read_as_category_searches_person_instead(tmp_path):
     client = ScriptedClient([tool_call("search_people", category="협력"), text("협력 인력 목록입니다.")])
     result = ask(s, "이협력 말고 다른 협력 인력 누구야?", client, agent="staff")
     assert result["calls"][0]["tool"] == "search_people"
+
+
+def _eval_service(tmp_path):
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.service import Service
+    s = Service(tmp_path / "fix1110.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    return s
+
+
+def test_pin_person_uses_question_person_and_company(tmp_path):
+    """11/10 PC 평가 S06·R01·P02: 인력 찾기 입력을 질문 속 인력(업체로 동명이인 구분)으로 바로잡는다."""
+    from pmo.agent import guardrails as g
+    s = _eval_service(tmp_path)
+    assert g.pin_person(s, "find_people", {"name": "김협력"}, "감마테크 김협력 투입 기간 알려줘.") == \
+        {"name": "김협력", "company": "감마테크"}
+    assert g.pin_person(s, "find_people", {"name": "협력"}, "신협력 월별 매출귀속 프로젝트 알려줘.") == {"name": "신협력"}
+    assert g.pin_person(s, "find_people", {"name": "김컨설", "company": "컨설턴트"}, "김컨설 투입 기간이랑 매입단가") == \
+        {"name": "김컨설"}
+    assert g.pin_person(s, "find_people", {"name": "김컨설"}, "김컨설 투입 기간이랑 매입단가 알려줘.") is None
+    assert g.pin_person(s, "find_people", {"name": "김협력"}, "김협력 지금 무슨 과제야?") is None   # 동명이인은 되묻기 그대로
+    assert g.pin_person(s, "find_people", {"name": "이협력"}, "이협력이랑 박협력 과제") is None      # 두 명이면 손대지 않음
+
+
+def test_needs_extension_and_no_revenue_project_filters(tmp_path):
+    """11/10 PC 평가 C08(이미 연장된 사람·만료 지난 사람까지 답함)·R04(매출귀속 미정 인력을 '없다'고 답함)."""
+    from pmo.agent import guardrails as g
+    from pmo.tools import call_tool
+    s = _eval_service(tmp_path)
+    assert g.condition_from_question("pending_contract_alerts", {}, "지금 계약 연장이 필요한 인력이 누구야?") == \
+        {"needs_extension": True}
+    names = [r["name"] for r in call_tool(s, "pending_contract_alerts", {"needs_extension": True})["data"]]
+    assert "조협력" not in names and "백협력" not in names and "강협력" in names
+    every = call_tool(s, "pending_contract_alerts", {})["data"]
+    assert any(r["name"] == "조협력" and r["extension_registered"] for r in every)
+    assert g.condition_from_question("search_people", {}, "매출귀속 프로젝트가 아직 정해지지 않은 인력 알려줘.") == \
+        {"without_revenue_project": True}
+    rows = call_tool(s, "search_people", {"without_revenue_project": True})["data"]
+    assert [r["name"] for r in rows] == ["문협력"] and rows[0]["projects_without_revenue_project"] == ["APC Analysis"]
+
+
+def test_month_breakdown_added_from_find_people_summary(tmp_path):
+    """11/10 PC 평가 S08: '정협력 8월 MM'에 합계(1MM)만 답하면 8월 과제별 값을 붙인다."""
+    from pmo.agent.runner import ask
+    from tests.test_agent import ScriptedClient, text, tool_call
+    s = _eval_service(tmp_path)
+    client = ScriptedClient([tool_call("find_people", name="정협력"), text("정협력의 8월 MM은 1MM입니다.")])
+    answer = ask(s, "정협력 8월 MM 얼마야?", client, agent="staff")["answer"]
+    assert "8월 과제별" in answer and "0.25" in answer and "0.75" in answer
+    client = ScriptedClient([tool_call("find_people", name="정협력"),
+                             text("8월은 APC Analysis 0.75, Soft Lab 고도화 0.25로 합계 1MM입니다.")])
+    assert "8월 과제별" not in ask(s, "정협력 8월 MM 얼마야?", client, agent="staff")["answer"]

@@ -116,20 +116,28 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
              {k: c[k] for k in ("name", "company", "category", "contract_no", "start_date", "end_date", "label")}
              | {"contract_no": c["contract_no"] or "미발급"}
              for c in s.search_contracts(a.get("contract_no"), a.get("company"), None, bool(a.get("without_number")))]),
-    Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true). "
-         "이름을 모를 때 쓴다. 이름이 있으면 find_people.",
+    Tool("search_people", "조건으로 인력을 찾는다: 업체, 분류(정·협력·컨설팅), 직무, 계정 ID 미발급(without_account=true), "
+         "현재·예정 투입의 매출귀속 프로젝트 미정(without_revenue_project=true). 이름을 모를 때 쓴다. 이름이 있으면 find_people.",
          _obj({"company": STR, "category": _enum(("정", "협력", "컨설팅")), "job_role": STR,
-               "without_account": {"type": "boolean", "description": "계정 ID가 아직 없는 사람만"}}),
-         handler=lambda s, a: _company_is_not_a_person(s, a) or [{k: p[k] for k in ("name", "company", "category", "job_role")}
-                               | {"account_id": p["account_id"] or "미발급"}
-                               for p in s.search_people(a.get("company"), a.get("category"), a.get("job_role"),
-                                                        bool(a.get("without_account")))]),
+               "without_account": {"type": "boolean", "description": "계정 ID가 아직 없는 사람만"},
+               "without_revenue_project": {"type": "boolean",
+                                           "description": "현재·예정 투입 중 매출귀속 프로젝트가 정해지지 않은 사람만"}}),
+         handler=lambda s, a: _company_is_not_a_person(s, a) or [
+             {k: p[k] for k in ("name", "company", "category", "job_role")} | {"account_id": p["account_id"] or "미발급"}
+             | ({"projects_without_revenue_project": p["projects_without_revenue_project"]}
+                if p.get("projects_without_revenue_project") else {})
+             for p in s.search_people(a.get("company"), a.get("category"), a.get("job_role"),
+                                      bool(a.get("without_account")), bool(a.get("without_revenue_project")))]),
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
          handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
-    Tool("pending_contract_alerts", "계약 종료 14일 전부터 표시되는 미확인 만료 알림 목록을 조회한다.",
-         _obj({}),
-         handler=lambda s, a: s.pending_alerts()),
+    Tool("pending_contract_alerts", "계약 종료 14일 전부터 표시되는 미확인 만료 알림 목록을 조회한다. "
+         "'연장이 필요한 인력'을 물으면 needs_extension=true(종료 14일 전~당일이면서 연장 계약 미등록만). "
+         "결과의 extension_registered가 true면 이미 연장 계약이 등록된 사람이다.",
+         _obj({"needs_extension": {"type": "boolean",
+                                   "description": "연장이 필요한 계약만(종료 14일 전~당일, 연장 계약 미등록). 만료 지난 계약은 빠진다"}}),
+         handler=lambda s, a: [dict(r, extension_registered=bool(r.get("has_successor"))) for r in s.pending_alerts()
+                               if not a.get("needs_extension") or r.get("ending_soon")]),
     Tool("query_database", "정해진 조회 도구로 답할 수 없는 조회 질문(조건 검색, 건수 집계, 여러 표를 묶은 조회 등)을 "
          "LlamaIndex Text-to-SQL로 조회한다. question에 조회할 내용을 한국어 문장으로 넣는다. "
          "읽기 전용 SELECT만 실행되며 등록·수정·삭제에는 쓸 수 없다.",

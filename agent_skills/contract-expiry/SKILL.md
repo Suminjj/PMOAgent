@@ -28,6 +28,7 @@ status: 연결 (도구 연결, 이 지침 본문은 구매계약 Agent 프롬프
 2. 종료 예정: `contracts_ending(year, month, company)`. 업체명은 등록된 이름과 같아야 한다.
    결과가 없고 업체명이 애매하면 업체명을 확인한다.
 3. 미처리 알림: `pending_contract_alerts()`. 종료 14일 전부터의 미확인 알림이다.
+   "연장이 필요한 인력"은 `needs_extension=true`(종료 14일 전~당일, 연장 계약 미등록만). `extension_registered`가 true인 사람은 이미 연장됐다.
 4. 월별 구매 필요 인력: `monthly_purchase_needs`를 호출한다. 이 도구는 **구현 예정**이라 실패를 돌려주지만,
    결과 data에 그 달 계약 종료 예정 인력(참고)을 함께 준다. 판정 기준이 미확정이라고 먼저 밝히고,
    그 목록을 '구매 필요 인력'이 아니라 '계약 종료 예정 인력(참고)'으로 보여 준다.

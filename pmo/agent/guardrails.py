@@ -325,6 +325,46 @@ def mentioned_people(service, text: str) -> list[str]:
     return [n for n in found if not any(n != m and n in m for m in found)]
 
 
+def pin_person(service, tool: str, args: dict, question: str) -> dict | None:
+    """인력 찾기 입력을 질문 속 인력(한 명)으로 바로잡는다. 바꿀 것이 없으면 None.
+
+    11/10 PC 평가: 이름 자리에 다른 값을 넣어 18명이 나오거나(R01), 등록된 김컨설을 '없다'고 답하거나(P02),
+    '감마테크 김협력'에서 업체를 빼 동명이인 둘이 나와 기간 대신 되물음(S06).
+    """
+    if tool != "find_people":
+        return None
+    names = mentioned_people(service, question)
+    if len(names) != 1:
+        return None
+    fixed = dict(args)
+    if str(args.get("name") or "").strip() != names[0]:
+        fixed["name"] = names[0]
+    companies = {p["company"] for p in service.people() if p.get("name") == names[0] and p.get("company")}
+    company = str(args.get("company") or "").strip()
+    if company and not any(company in c for c in companies):
+        fixed.pop("company")                # 그 사람의 업체가 아닌 값(분류·이름 등)을 업체 칸에 넣음
+    if not company or "company" not in fixed:
+        said = [c for c in companies if c in question]
+        if len(companies) > 1 and len(said) == 1:
+            fixed["company"] = said[0]      # 동명이인을 질문 속 업체로 가린다
+    return fixed if fixed != args else None
+
+
+# 연장이 필요한 인력(종료 14일 전~당일, 연장 계약 미등록)을 묻는 말(11/10 PC 평가 C08)
+NEEDS_EXTENSION = re.compile(r"연장.{0,6}(필요|해야|안\s?된|안\s?한|미등록)")
+# 매출귀속 프로젝트가 정해지지 않은 인력을 묻는 말(11/10 PC 평가 R04)
+NO_REVENUE_PROJECT = re.compile(r"매출\s?귀속.{0,12}(미정|정해지지|안\s?정해|없는|미입력|비어)")
+
+
+def condition_from_question(tool: str, args: dict, question: str) -> dict | None:
+    """질문에 있는 조건을 모델이 빠뜨린 조회 입력에 채운다. 바꿀 것이 없으면 None."""
+    if tool == "pending_contract_alerts" and NEEDS_EXTENSION.search(question) and not args.get("needs_extension"):
+        return dict(args, needs_extension=True)
+    if tool == "search_people" and NO_REVENUE_PROJECT.search(question) and not args.get("without_revenue_project"):
+        return dict(args, without_revenue_project=True)
+    return None
+
+
 def name_read_as_category(service, tool: str, args: dict, question: str) -> str | None:
     """조건으로 인력 찾기의 분류(협력·컨설팅·정)를 질문 속 인력 이름에서 따왔으면 그 이름(질문의 인력이 한 명일 때).
 

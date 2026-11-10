@@ -124,6 +124,12 @@ def _attach_answer(row: dict, last: dict | None) -> bool:
         return False
     row.update(answer=last["answer"], agent_error=last["error"],
                agent_ms=last["duration_ms"], agent_used=last.get("agent"), tokens=last.get("tokens"))
+    # 11/10: 오답 원인을 보려고 도구 입력·성공 여부·결과 건수를 남긴다(결과 원본은 남기지 않음)
+    row["call_details"] = [{"tool": c["tool"], "arguments": c.get("arguments"), "ok": c.get("ok"),
+                            "rows": len(c["data"]) if isinstance(c.get("data"), list) else None,
+                            "error": (c.get("error") or "")[:200] or None,
+                            **({"blocked": True} if c.get("blocked") else {})}
+                           for c in last.get("calls") or []]
     if last.get("routing"):    # v3.1 라우터: 고른 Agent와 정답 카테고리 태그 비교(태그가 없는 질문은 채점하지 않음)
         routed = last["routing"]["agents"]
         row.update(routed=routed, route_method=last["routing"]["method"])
