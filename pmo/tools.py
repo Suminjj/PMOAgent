@@ -576,6 +576,25 @@ def _purchase_reference(service: Service, year: int, month: int) -> dict:
                                  for r in rows]}
 
 
+_D_DAY = re.compile(r"^종료 D-(\d+)$")
+
+
+def _plain_days(data):
+    """Agent에게 주는 결과의 '종료 D-46'을 '종료까지 46일 남음'으로 바꾼다.
+
+    11/11: 모델이 'D-46'을 '46일 전에 종료'로 거꾸로 옮김('12월에 계약 끝나는 사람' 답의 '모두 46일 전에 계약이 종료됩니다').
+    화면 표의 'D-n' 표기는 그대로 둔다(도구 결과에만 적용).
+    """
+    if isinstance(data, str):
+        m = _D_DAY.match(data)
+        return f"종료까지 {m.group(1)}일 남음" if m else data
+    if isinstance(data, list):
+        return [_plain_days(v) for v in data]
+    if isinstance(data, dict):
+        return {k: _plain_days(v) for k, v in data.items()}
+    return data
+
+
 def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
     """도구 실행. 예외를 던지지 않고 결과 객체로 성공·실패를 돌려준다(Agent 루프용)."""
     started, t0 = datetime.now(TIMEZONE).isoformat(), time.perf_counter()
@@ -595,7 +614,7 @@ def call_tool(service: Service, name: str, args: dict | None = None) -> dict:
                                    t0, started)
                 return result
             raise ValidationError(f"{name} 도구는 아직 구현 예정입니다.")
-        data = _jsonable(tool.handler(service, _check_args(tool, args)))
+        data = _plain_days(_jsonable(tool.handler(service, _check_args(tool, args))))
         result = {"ok": True, "tool": name, "data": data}
     except (ValidationError, ConflictError, LLMError) as exc:
         result = {"ok": False, "tool": name, "error": str(exc)}

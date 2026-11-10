@@ -74,3 +74,12 @@ def test_purchase_needs_is_planned_but_returns_ending_contracts_as_reference(ser
     assert result["data"]["basis"].startswith("계약 종료 예정")
     assert [r["name"] for r in result["data"]["ending_contracts"]] == \
         [r["name"] for r in service.contracts_ending(2026, 10)]
+
+
+def test_days_left_wording_for_agent(service):
+    """11/11: 'D-46'을 모델이 '46일 전에 종료'로 거꾸로 옮김 → 도구 결과는 '종료까지 46일 남음'."""
+    from pmo.tools import _plain_days
+    assert _plain_days({"label": "종료 D-46", "rows": [{"state": "종료 D-5"}, "만료 3일 경과", "오늘 종료"]}) == \
+        {"label": "종료까지 46일 남음", "rows": [{"state": "종료까지 5일 남음"}, "만료 3일 경과", "오늘 종료"]}
+    rows = call_tool(service, "contracts_ending", {"year": 2026, "month": 10})["data"]
+    assert not any(str(r.get("label", "")).startswith("종료 D-") for r in rows)
