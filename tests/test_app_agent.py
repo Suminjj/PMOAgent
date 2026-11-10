@@ -73,7 +73,7 @@ def test_question_shows_answer_and_tool_results(app):
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
     # 11/10 담당자: 답변 아래 '조회 결과' 접기 상자는 보이지 않는다(응답 시간만)
     assert not [e for e in app.expander if "조회 결과" in e.label]
-    assert any(c.value.startswith("응답 ") for c in app.caption)
+    assert not any(c.value.startswith("응답 ") for c in app.caption)   # 11/10: 응답 시간도 숨김
     # 11/08 담당자: 채팅 화면에는 도구 입력(함수 모양)·JSON 원본을 보이지 않는다(실행 기록에만 남김)
     assert not app.json
     assert not any("pending_contract_alerts(" in c.value for c in app.caption)

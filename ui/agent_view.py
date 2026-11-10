@@ -143,7 +143,7 @@ def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: in
     seconds = f"{turn['duration_ms'] / 1000:.1f}초"
     # 11/10 담당자: 답변 아래 '조회 결과' 접기 상자는 보이지 않는다(필요한 정보만, 답변에 표로 담는다).
     # 도구 입력·결과 원본은 실행 기록(변경 이력 › 실행 기록 › Agent 도구 호출 상세)에서 본다.
-    st.caption(f"응답 {seconds}")
+    # 11/10 담당자: 응답 시간도 화면에 보이지 않는다(실행 기록·평가 결과에는 남는다)
     if not SHOW_LOOKUP_RESULTS or not reads:
         return
     with st.expander(f"🔎 조회 결과 · 도구 {len(calls)}개 · {seconds}", expanded=latest):
