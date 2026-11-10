@@ -112,7 +112,8 @@ def test_agent_planner_in_eval_harness():
     report = run(AgentPlanner(PerQuestion()), save=False, on_result=lambda r: seen.append(r["id"]))
     assert seen == [r["id"] for r in report["results"]]  # 질문마다 바로 알림
     rows = {r["id"]: r for r in report["results"]}
-    assert rows["Q1"]["success"] and rows["Q1"]["answer"] == "가상 과제 Y"
+    # 11/10: 투입 과제 질문은 모델 줄글 대신 도구 결과로 만든 표로 답한다
+    assert rows["Q1"]["success"] and "| 구분 | 과제명 |" in rows["Q1"]["answer"]
     assert rows["Q1"]["agent_ms"] >= 0
     assert not rows["Q3"]["success"]   # 도구를 안 부르면 실패로 기록
     assert report["planner"] == "fake-per-question"
