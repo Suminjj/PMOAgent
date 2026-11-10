@@ -180,7 +180,9 @@ def test_mm_question_shows_readable_result_not_json(app):
     app.chat_input[0].set_value("11월 2일부터 15일까지 MM 얼마야?").run()
     assert not app.exception and not app.json
     assert any("0.476 MM" in m.value for m in app.markdown)
-    assert any("기간 MM 계산" in m.value for m in app.markdown)
+    # 11/10 담당자: 도구 이름·결과 표가 있던 '조회 결과' 접기 상자는 보이지 않는다
+    assert not any("기간 MM 계산" in m.value for m in app.markdown)
+    assert not [e for e in app.expander if "조회 결과" in e.label]
 
 
 def test_home_left_cards_and_agent_on_right(app):
