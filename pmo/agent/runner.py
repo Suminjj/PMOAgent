@@ -140,18 +140,42 @@ def _drop_redirect(answer: str) -> str:
     return " ".join(kept).strip()
 
 
-def _with_mm_breakdown(answer: str, calls: list[dict]) -> str:
+def _several_months(data) -> dict:
+    """도구 결과 어디든 있는 months_with_several_assignments(달 → '과제 a + 과제 b = 합계')를 모은다."""
+    found: dict = {}
+    if isinstance(data, dict):
+        found.update(data.get("months_with_several_assignments") or {})
+        for v in data.values():
+            found.update(_several_months(v))
+    elif isinstance(data, list):
+        for v in data:
+            found.update(_several_months(v))
+    return found
+
+
+def _with_mm_breakdown(answer: str, calls: list[dict], question: str = "") -> str:
     """한 기간에 과제가 여럿인 MM을 합계만 답하면 과제별 값을 붙인다(v3 평가 S08: 0.25 + 0.75를 빼고 1.000만 답함)."""
     for call in calls:
         data = call.get("data") if call.get("ok") and call["tool"] == "calculate_mm" else None
         rows = (data or {}).get("assignments") or []
         if answer and len(rows) > 1 and not all(str(r["mm"]) in answer for r in rows):
             answer += f"\n\n과제별: {data['summary']}"
+    # 11/10 PC 평가 S08: '정협력 8월 MM'에 인력 찾기 요약의 합계(1MM)만 답함 → 물은 달의 과제별 값을 붙인다
+    if answer and "mm" in question.casefold() and "과제별" not in answer:
+        months = {}
+        for call in calls:
+            if call.get("ok"):
+                months.update(_several_months(call.get("data")))
+        for month, text in sorted(months.items()):
+            values = re.findall(r"\d+(?:\.\d+)?(?= \+| =)", text)
+            asked = re.search(rf"(?<!\d){int(month[5:])}\s*월", question)
+            if asked and not all(v in answer for v in values):
+                answer += f"\n\n{int(month[5:])}월 과제별: {text}"
     return answer
 
 
 def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:
-    answer = _with_mm_breakdown(answer, calls)
+    answer = _with_mm_breakdown(answer, calls, question)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
     if error is None and not answer:
@@ -185,6 +209,10 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
         if named and (allowed is None or "find_people" in allowed):
             # 11/09: '이협력 투입 중인 과제'를 '협력' 분류 조건으로 찾음 → 질문의 인력 이름으로 찾는다
             call["name"], call["arguments"] = "find_people", {"name": named}
+        # 11/10: 인력 찾기는 질문 속 인력(업체로 동명이인 구분)으로, 조회 조건은 질문에 있는 조건으로 바로잡는다
+        call["arguments"] = (guardrails.pin_person(service, call["name"], call["arguments"], question)
+                             or guardrails.condition_from_question(call["name"], call["arguments"], question)
+                             or call["arguments"])
     problem = problem or (guardrails.missing_target(call["name"], call["arguments"])
                or guardrails.invented_name(call["name"], call["arguments"], texts, guardrails.seen_text(calls))
                or _ungrounded(service, call["name"], call["arguments"], user_texts)

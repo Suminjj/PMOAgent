@@ -745,10 +745,13 @@ class Service:
         return rows
 
     def search_people(self, company: str | None = None, category: str | None = None,
-                      job_role: str | None = None, without_account: bool = False) -> list[dict]:
-        """조건으로 인력을 찾는다(업체·분류·직무·계정 ID 미발급). 권한 범위 안에서만.
+                      job_role: str | None = None, without_account: bool = False,
+                      without_revenue_project: bool = False) -> list[dict]:
+        """조건으로 인력을 찾는다(업체·분류·직무·계정 ID 미발급·매출귀속 프로젝트 미정). 권한 범위 안에서만.
 
         v2.1: '계정 ID가 아직 없는 사람' 같은 조건 조회(v2 평가 A01).
+        11/10: without_revenue_project — 현재·예정 투입(종료일이 오늘 이후) 중 매출귀속 프로젝트가 비어 있는 사람(평가 R04).
+        결과에 그 투입의 과제명을 projects_without_revenue_project로 붙인다.
         """
         company, job_role = str(company or "").strip(), str(job_role or "").strip()
         rows = self.people()
@@ -760,6 +763,14 @@ class Service:
             rows = [p for p in rows if job_role in (p["job_role"] or "")]
         if without_account:
             rows = [p for p in rows if not p["account_id"]]
+        if without_revenue_project:
+            today = self.clock().isoformat()
+            missing: dict[str, list[str]] = {}
+            for a in self.assignments():
+                if a["end_date"] >= today and not str(a.get("revenue_project") or "").strip():
+                    missing.setdefault(a["person_id"], []).append(a["project"] or "과제 미입력")
+            rows = [dict(p, projects_without_revenue_project=sorted(set(missing[p["id"]])))
+                    for p in rows if p["id"] in missing]
         return rows
 
     def contracts_ending(self, year: int, month: int, company: str | None = None,
