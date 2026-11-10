@@ -137,7 +137,8 @@ def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: in
             with st.container(border=True):
                 st.markdown(f"**{TOOL_LABELS.get(call['tool'], call['tool'])}**")
                 render_plan(service, call["data"]["plan"], f"act{turn_index}_{number}", actor, turn, number)
-        elif not call["ok"]:
+        elif not call["ok"] and not call.get("blocked"):
+            # 가드레일이 막은 호출(blocked)의 오류는 모델에게 주는 지시라 화면에 보이지 않는다(11/10)
             st.info(f"확인 카드를 만들지 않았습니다: {call.get('error')}")
     seconds = f"{turn['duration_ms'] / 1000:.1f}초"
     # 11/10 담당자: 답변 아래 '조회 결과' 접기 상자는 보이지 않는다(필요한 정보만, 답변에 표로 담는다).

@@ -90,20 +90,41 @@ GROUNDED_FIELDS = {
 }
 
 
+# 11/10: 말하지 않으면 기본값을 쓰는 칸(이동: 매출귀속 프로젝트 미정·매입단가는 기존 투입에서 이어받음, 교체: 매출귀속 프로젝트는
+# 기존과 같게·매입단가 미입력). 모델이 사람의 기존 값(인력 찾기 결과)을 채워 넣으면 막지 않고 칸을 비운다.
+# ('이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘'에 기존 매출귀속 D043을 넣어 확인 카드가 막히고 값을 되물음)
+OPTIONAL_UNSAID = {
+    "prepare_assignment_transfer": ("revenue_project", "purchase_rate", "grade"),
+    "prepare_assignment_replace": ("revenue_project", "purchase_rate"),
+}
+
+
+def _said(service: Service, value: str, texts: list[str]) -> bool:
+    # 코드 앞부분(30133686-)·금액 쉼표를 붙이거나 뗀 경우도 사용자 값으로 본다
+    forms = {value, value.split("-")[-1], value.replace(",", "")}
+    if value in {p["name"] for p in service.people()}:
+        return False
+    return any(f.casefold() in t.casefold().replace(",", "") for f in forms for t in texts)
+
+
+def _drop_unsaid(service: Service, tool: str, args: dict, texts: list[str]) -> dict:
+    """기본값이 있는 칸에 사용자가 말하지 않은 값이 들어 있으면 그 칸을 뺀다(기본값을 쓴다)."""
+    dropped = [f for f in OPTIONAL_UNSAID.get(tool, ()) if str(args.get(f) or "").strip()
+               and not _said(service, str(args[f]).strip(), texts)]
+    return {k: v for k, v in args.items() if k not in dropped} if dropped else args
+
+
 def _ungrounded(service: Service, tool: str, args: dict, texts: list[str]) -> str | None:
     """사용자가 말하지 않은 값을 넣었으면 되물을 문장을 돌려준다.
 
     작은 로컬 모델이 맡은 도구로 할 수 없는 요청(예: 인력관리 Agent에 계약 삭제)을 받으면 비슷한 저장 도구를
     대신 부르고 값을 지어내는 일이 있다. 이런 값은 사용자 문장(이번 질문·최근 사용자 메시지)에 그대로 있어야 한다.
     """
-    names = {p["name"] for p in service.people()}
     for field, label in GROUNDED_FIELDS.get(tool, {}).items():
         value = str(args.get(field) or "").strip()
         if not value:
             continue
-        # 코드 앞부분(30133686-)·금액 쉼표를 붙이거나 뗀 경우도 사용자 값으로 본다
-        forms = {value, value.split("-")[-1], value.replace(",", "")}
-        if value in names or not any(f.casefold() in t.casefold().replace(",", "") for f in forms for t in texts):
+        if not _said(service, value, texts):
             return (f"{label} '{value}'은(는) 사용자가 말한 값이 아닙니다. 값을 지어내지 마세요. "
                     "사용자가 요청한 작업이 이 도구로 할 일이 맞는지 다시 보고, 맞으면 값을 물어보세요.")
     return None
@@ -216,6 +237,7 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
         call["arguments"] = (guardrails.pin_person(service, call["name"], call["arguments"], question)
                              or guardrails.condition_from_question(call["name"], call["arguments"], question)
                              or call["arguments"])
+    call["arguments"] = _drop_unsaid(service, call["name"], call["arguments"], user_texts)
     problem = problem or (guardrails.missing_target(call["name"], call["arguments"])
                or guardrails.invented_name(call["name"], call["arguments"], texts, guardrails.seen_text(calls))
                or _ungrounded(service, call["name"], call["arguments"], user_texts)

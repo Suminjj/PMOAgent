@@ -364,3 +364,25 @@ def test_timeline_question_answers_with_table(tmp_path):
     # 동명이인(여러 명)이면 되묻기 답을 그대로 둔다
     client = ScriptedClient([tool_call("find_people", name="김협력"), text("김협력이 두 명입니다. 어느 업체인가요?")])
     assert ask(s, "김협력 지금 무슨 과제야?", client, agent="staff")["answer"].startswith("김협력이 두 명")
+
+
+def test_transfer_with_unsaid_revenue_project_still_makes_card(tmp_path):
+    """11/10 화면 확인: '이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘'에 모델이 기존 매출귀속(D043)을 넣어
+    카드가 막히고 '코드를 알려주세요'로 되물음 → 말하지 않은 매출귀속·매입단가는 빼고(미정·이어받기) 카드를 만든다."""
+    from pmo.agent.runner import ask
+    from tests.test_agent import ScriptedClient, text, tool_call
+    s = _eval_service(tmp_path)
+    client = ScriptedClient([tool_call("prepare_assignment_transfer", person_id="이협력", to_project="APC Analysis",
+                                       start_date="2027-02-01", revenue_project="30133686-D043"),
+                             text("이동 준비를 마쳤습니다.")])
+    result = ask(s, "이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘.", client, agent="staff")
+    card = result["calls"][0]
+    assert card["ok"] and "revenue_project" not in card["arguments"]
+    rows = {r["항목"]: r["변경"] for r in card["data"]["plan"]["rows"]}
+    assert rows["새 투입 매출귀속 프로젝트"].startswith("미정")
+    # 사용자가 말한 값은 그대로 쓴다
+    client = ScriptedClient([tool_call("prepare_assignment_transfer", person_id="이협력", to_project="APC Analysis",
+                                       start_date="2027-02-01", revenue_project="30133686-D038"),
+                             text("이동 준비를 마쳤습니다.")])
+    result = ask(s, "이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘. 매출귀속은 30133686-D038", client, agent="staff")
+    assert result["calls"][0]["arguments"]["revenue_project"] == "30133686-D038"
