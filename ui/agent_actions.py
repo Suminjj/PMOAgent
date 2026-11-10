@@ -31,7 +31,8 @@ def _render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_ind
         st.markdown(f"**확인 후 {verb} · {plan['title']}**  \n아래 내용으로 바꿀까요? 아직 {verb}되지 않았습니다.")
     st.table(plan["rows"])
     if call_index in done:
-        (st.info if done[call_index].startswith("취소") else st.success)(done[call_index])
+        # 결과 문장은 카드 아래 Agent 말풍선으로 보인다(11/10 담당자). 카드에는 짧은 표시만.
+        st.caption("✖ 취소됨" if done[call_index].startswith("취소") else "✔ 처리 완료")
         return
     if plan.get("request"):
         _render_request(service, plan, key, turn, call_index)
@@ -53,7 +54,6 @@ def _render_plan(service, plan: dict, key: str, actor: str, turn: dict, call_ind
         try:
             message = execute_plan(service, plan, token=token, actor=actor.strip(), checked=checked)
             done[call_index] = message
-            st.session_state["saved_message"] = message
             st.rerun()
         except ConflictError as exc:
             st.error(f"{exc} 같은 요청을 채팅에 다시 입력해 새 확인 카드를 만드세요.")
@@ -78,7 +78,6 @@ def _render_request(service, plan: dict, key: str, turn: dict, call_index: int) 
             service.create_change_request(project=req["project"], person_id=req["person_id"],
                                           content=request_text(plan), action=req["action"])
             done[call_index] = "수정 요청을 보냈습니다. PM·PMO가 승인하면 반영됩니다. '인력 관리 › 수정 요청'에서 상태를 볼 수 있습니다."
-            st.session_state["saved_message"] = done[call_index]
             st.rerun()
         except (ValidationError, ConflictError) as exc:
             st.error(str(exc))

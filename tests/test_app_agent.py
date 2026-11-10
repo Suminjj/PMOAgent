@@ -121,6 +121,8 @@ def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
     assert contract_end(service) == "2027-12-31"
+    # 11/10 담당자: 저장 결과는 위쪽 알림 띠가 아니라 Agent 말풍선으로
+    assert any("저장했습니다" in m.value for m in app.markdown) and not any("저장했습니다" in s.value for s in app.success)
 
 
 def test_cancel_does_not_save(app):
@@ -130,7 +132,7 @@ def test_cancel_does_not_save(app):
     assert not app.exception
     service = Service(Path(os.environ["PMO_DB_PATH"]))
     assert next(p for p in service.people() if p["id"] == "DEMO-002")["account_id"] is None
-    assert any("취소했습니다" in i.value for i in app.info)
+    assert any("취소했습니다" in m.value for m in app.markdown)     # 11/10: 결과는 Agent 말풍선으로
 
 
 def test_category_selector_limits_agent_tools(app):

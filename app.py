@@ -106,6 +106,27 @@ if st.session_state.get("page") != page:
     st.session_state.pop("pending", None)
     st.session_state.pop("ck_pending", None)
     st.session_state["page"] = page
+
+def run_pending_turn(turns: list[dict], index: int, service, client) -> None:
+    """보낸 질문에 답한다(11/10 담당자: 질문은 바로 내 말풍선에, 조회 중 안내는 Agent 말풍선에)."""
+    turn = turns[index]
+    agent = AGENTS[turn.get("agent_key") or AUTO]
+    history = []
+    for done in turns[:index]:
+        if done.get("ok"):
+            history += [{"role": "user", "content": done["question"]},
+                        {"role": "assistant", "content": done["answer"]}]
+    with st.chat_message("assistant"):
+        if agent.key == AUTO:
+            previous = (turns[index - 1].get("routing") or {}).get("agents") if index else None
+            with st.spinner("질문에 맞는 Agent를 고르고 조회하는 중입니다."):
+                result = ask_routed(service, turn["question"], client, history=history, previous=previous)
+        else:
+            with st.spinner(f"{agent.label} Agent가 조회하는 중입니다."):
+                result = ask(service, turn["question"], client, history=history, agent=agent)
+    turns[index] = dict(result, question=turn["question"])
+    st.rerun()
+
 if message := st.session_state.pop("saved_message", None):
     st.success(message)
 
@@ -486,6 +507,10 @@ if page == "홈":
             for index, turn in enumerate(turns):
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
+                if turn.get("pending"):
+                    # 11/10 담당자: 보낸 질문은 바로 내 말풍선에, 조회 중 안내는 Agent 말풍선에 보인다
+                    run_pending_turn(turns, index, service, client)
+                    continue
                 with st.chat_message("assistant"):
                     routing = turn.get("routing")
                     if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
@@ -502,26 +527,17 @@ if page == "홈":
                     else:
                         st.error(turn["error"])
                         st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
-                    for message in turn.get("done", {}).values():
-                        st.success(message)
                     render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
+                # 11/10 담당자: 확인 카드의 저장·취소·요청 결과는 Agent 말풍선으로 알린다
+                for message in turn.get("done", {}).values():
+                    with st.chat_message("assistant"):
+                        st.markdown(message)
         # 11/09 담당자: 입력창 아래 예시 질문 버튼은 없앤다(예시는 첫 안내 말풍선에 적는다).
         typed = st.chat_input("질문을 입력하세요", key="home_chat")
         asked = (typed or "").strip()
         if asked:
-            history = []
-            for turn in turns:
-                if turn["ok"]:
-                    history += [{"role": "user", "content": turn["question"]},
-                                {"role": "assistant", "content": turn["answer"]}]
-            if agent.key == AUTO:
-                previous = (turns[-1].get("routing") or {}).get("agents") if turns else None
-                with st.spinner(f"질문에 맞는 Agent를 고르고 조회하는 중입니다 — '{asked}'"):
-                    result = ask_routed(service, asked, client, history=history, previous=previous)
-            else:
-                with st.spinner(f"{agent.label} Agent — '{asked}' 도구를 고르고 조회하는 중입니다…"):
-                    result = ask(service, asked, client, history=history, agent=agent)
-            turns.append(dict(result, question=asked))
+            # 질문을 먼저 대화에 넣고 다시 그린다. 답은 다음 화면 그리기에서 Agent 말풍선 안에서 만든다(run_pending_turn).
+            turns.append({"question": asked, "pending": True, "agent_key": agent.key})
             st.rerun()
         if turns and st.button("대화 지우기", key="home_clear"):
             turns.clear()
