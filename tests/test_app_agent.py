@@ -71,8 +71,9 @@ def test_question_shows_answer_and_tool_results(app):
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
     assert not app.exception
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
-    assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 답변 아래 조회 결과의 도구 이름
-    assert app.dataframe and len(app.dataframe[-1].value) == 2
+    # 11/10 담당자: 답변 아래 '조회 결과' 접기 상자는 보이지 않는다(응답 시간만)
+    assert not [e for e in app.expander if "조회 결과" in e.label]
+    assert any(c.value.startswith("응답 ") for c in app.caption)
     # 11/08 담당자: 채팅 화면에는 도구 입력(함수 모양)·JSON 원본을 보이지 않는다(실행 기록에만 남김)
     assert not app.json
     assert not any("pending_contract_alerts(" in c.value for c in app.caption)
@@ -87,8 +88,7 @@ def test_follow_up_keeps_conversation(app):
     roles = [m["role"] for m in RECEIVED[-2]["messages"]]
     assert roles[:4] == ["system", "user", "assistant", "user"]
     assert not any(s.label == "결과를 볼 질문" for s in app.selectbox)   # 11/08: 질문 고르기 없이 한 화면 채팅
-    results = [e for e in app.expander if "조회 결과" in e.label]
-    assert len(results) == 2                                           # 답변마다 그 아래에 조회 결과
+    assert not [e for e in app.expander if "조회 결과" in e.label]     # 11/10: 조회 결과 접기 상자 숨김
 
 
 def test_intro_examples_and_llm_unavailable(app, monkeypatch):
