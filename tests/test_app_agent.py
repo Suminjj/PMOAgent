@@ -156,7 +156,9 @@ def test_auto_category_routes_to_specialist(app):
     assert not app.exception
     sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
     assert sent == set(AGENTS["contract"].tools)                      # '알림' → 구매계약 Agent의 도구만
-    assert any("자동 배정" in c.value and "구매계약 Agent" in c.value for c in app.caption)
+    # 11/10 담당자: 답변 위에는 처리한 Agent만(판정 방법 '자동 배정(키워드)'은 빼고)
+    assert any(c.value == "📄 구매계약 Agent" for c in app.caption)
+    assert not any("자동 배정(" in c.value for c in app.caption)
 
 
 def test_home_mm_calculator_on_screen_with_one_calendar(app):

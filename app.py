@@ -489,13 +489,11 @@ if page == "홈":
                 with st.chat_message("assistant"):
                     routing = turn.get("routing")
                     if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
-                        how = {"keyword": "키워드", "multi": "여러 업무", "llm": "LLM 분류", "follow_up": "이어지는 대화",
-                               "precheck": "가드레일", "fallback": "전체 Agent", "people": "인력 정보",
-                               "clarify": "되묻기"}.get(routing["method"], routing["method"])
-                        keys = ([routing["rerouted_from"]] if routing.get("rerouted_from") else []) + routing["agents"]
-                        chosen = " → ".join(theme.agent_label(k, AGENTS[k].label if k != AUTO else "전체") + " Agent"
-                                            for k in keys)
-                        st.caption(f"🧭 자동 배정({how})" + (f" · {chosen}" if chosen else ""))
+                        # 11/10 담당자: 판정 방법('자동 배정(키워드)')은 빼고 처리한 Agent만 보인다.
+                        # 판정 방법은 실행 기록(router)에 남는다. 다시 맡긴 경우는 마지막에 답한 Agent만.
+                        keys = [k for k in routing["agents"] if k != AUTO]
+                        st.caption(" → ".join(theme.agent_label(k, AGENTS[k].label) + " Agent" for k in keys)
+                                   if keys else theme.agent_label(AUTO, "PMO Agent"))
                     else:
                         st.caption(theme.agent_label(turn.get("agent", AUTO),
                                                      f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
