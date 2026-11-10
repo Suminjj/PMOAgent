@@ -8,7 +8,7 @@ import time
 from datetime import date, datetime
 
 from pmo.agent.llm import ChatClient, LLMError
-from pmo.agent import guardrails
+from pmo.agent import answer_format, guardrails
 from pmo.agent.agents import AGENTS, AgentSpec, allowed_tools, get_agent, system_prompt
 from pmo.config import TIMEZONE
 from pmo.service import Service
@@ -175,6 +175,9 @@ def _with_mm_breakdown(answer: str, calls: list[dict], question: str = "") -> st
 
 
 def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:
+    # 11/10 담당자: 한 사람의 투입을 묻는 질문은 줄글 대신 도구 결과로 만든 표(과거·현재·예정)로 답한다
+    if error is None and answer:
+        answer = answer_format.timeline_answer(question, calls) or answer
     answer = _with_mm_breakdown(answer, calls, question)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)

@@ -341,3 +341,26 @@ def test_month_breakdown_added_from_find_people_summary(tmp_path):
     client = ScriptedClient([tool_call("find_people", name="정협력"),
                              text("8월은 APC Analysis 0.75, Soft Lab 고도화 0.25로 합계 1MM입니다.")])
     assert "8월 과제별" not in ask(s, "정협력 8월 MM 얼마야?", client, agent="staff")["answer"]
+
+
+def test_timeline_question_answers_with_table(tmp_path):
+    """11/10 담당자: '이협력 투입 중인 과제 뭐야?'는 줄글 대신 과거·현재·예정 표로 답한다(현재 행은 굵게)."""
+    from pmo.agent.runner import ask
+    from tests.test_agent import ScriptedClient, text, tool_call
+    s = _eval_service(tmp_path)
+    client = ScriptedClient([tool_call("find_people", name="이협력"),
+                             text("이협력은 현재 Soft Lab 고도화 과제를 수행 중입니다. 매출귀속 프로젝트는 ...")])
+    answer = ask(s, "이협력 투입 중인 과제 뭐야?", client, agent="staff")["answer"]
+    lines = answer.splitlines()
+    assert lines[0].startswith("이협력(알파솔루션)의 투입 현황입니다")
+    assert "| 구분 | 과제명 | 매출귀속 프로젝트 | 기간 | 등급 | 투입 Type | 투입 MM |" in lines
+    rows = [l for l in lines if l.startswith("| ") and "구분" not in l]
+    assert [r.split("|")[1].strip("* ") for r in rows] == ["과거", "현재", "예정"]
+    assert rows[1].startswith("| **현재** | **Soft Lab 고도화** | **30133686-D036** |") and "**6.737**" in rows[1]
+    assert "전표작성 자동화" in rows[2] and "2026-12-01 \\~ 2027-05-31" in rows[2]
+    # MM·변경 질문은 표로 바꾸지 않는다
+    client = ScriptedClient([tool_call("find_people", name="정협력"), text("정협력 8월 MM은 0.25 + 0.75입니다.")])
+    assert "|" not in ask(s, "정협력 8월 MM 얼마야?", client, agent="staff")["answer"]
+    # 동명이인(여러 명)이면 되묻기 답을 그대로 둔다
+    client = ScriptedClient([tool_call("find_people", name="김협력"), text("김협력이 두 명입니다. 어느 업체인가요?")])
+    assert ask(s, "김협력 지금 무슨 과제야?", client, agent="staff")["answer"].startswith("김협력이 두 명")
