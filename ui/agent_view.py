@@ -119,6 +119,9 @@ def _render_data(tool: str, data) -> None:
         st.write(data)
 
 
+SHOW_LOOKUP_RESULTS = False     # 11/10 담당자: 조회 결과 접기 상자 숨김(다시 보이려면 True)
+
+
 def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: int = 0, latest: bool = False) -> None:
     """채팅 답변 아래에 붙는 수행 결과(11/08 담당자: 질문·답변을 한 화면에).
 
@@ -134,11 +137,14 @@ def render_turn_inline(turn: dict, service=None, actor: str = "", turn_index: in
             with st.container(border=True):
                 st.markdown(f"**{TOOL_LABELS.get(call['tool'], call['tool'])}**")
                 render_plan(service, call["data"]["plan"], f"act{turn_index}_{number}", actor, turn, number)
-        elif not call["ok"]:
+        elif not call["ok"] and not call.get("blocked"):
+            # 가드레일이 막은 호출(blocked)의 오류는 모델에게 주는 지시라 화면에 보이지 않는다(11/10)
             st.info(f"확인 카드를 만들지 않았습니다: {call.get('error')}")
     seconds = f"{turn['duration_ms'] / 1000:.1f}초"
-    if not reads:
-        st.caption(f"도구 {len(calls)}개 사용 · {seconds}")
+    # 11/10 담당자: 답변 아래 '조회 결과' 접기 상자는 보이지 않는다(필요한 정보만, 답변에 표로 담는다).
+    # 도구 입력·결과 원본은 실행 기록(변경 이력 › 실행 기록 › Agent 도구 호출 상세)에서 본다.
+    # 11/10 담당자: 응답 시간도 화면에 보이지 않는다(실행 기록·평가 결과에는 남는다)
+    if not SHOW_LOOKUP_RESULTS or not reads:
         return
     with st.expander(f"🔎 조회 결과 · 도구 {len(calls)}개 · {seconds}", expanded=latest):
         for number, call in reads:

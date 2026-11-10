@@ -71,8 +71,9 @@ def test_question_shows_answer_and_tool_results(app):
     app.chat_input[0].set_value("처리 안 한 계약 만료 알림 있어?").run()
     assert not app.exception
     assert any("미확인 알림은 2건" in m.value for m in app.markdown)
-    assert any("미확인 계약 종료 알림" in m.value for m in app.markdown)   # 답변 아래 조회 결과의 도구 이름
-    assert app.dataframe and len(app.dataframe[-1].value) == 2
+    # 11/10 담당자: 답변 아래 '조회 결과' 접기 상자는 보이지 않는다(응답 시간만)
+    assert not [e for e in app.expander if "조회 결과" in e.label]
+    assert not any(c.value.startswith("응답 ") for c in app.caption)   # 11/10: 응답 시간도 숨김
     # 11/08 담당자: 채팅 화면에는 도구 입력(함수 모양)·JSON 원본을 보이지 않는다(실행 기록에만 남김)
     assert not app.json
     assert not any("pending_contract_alerts(" in c.value for c in app.caption)
@@ -87,8 +88,7 @@ def test_follow_up_keeps_conversation(app):
     roles = [m["role"] for m in RECEIVED[-2]["messages"]]
     assert roles[:4] == ["system", "user", "assistant", "user"]
     assert not any(s.label == "결과를 볼 질문" for s in app.selectbox)   # 11/08: 질문 고르기 없이 한 화면 채팅
-    results = [e for e in app.expander if "조회 결과" in e.label]
-    assert len(results) == 2                                           # 답변마다 그 아래에 조회 결과
+    assert not [e for e in app.expander if "조회 결과" in e.label]     # 11/10: 조회 결과 접기 상자 숨김
 
 
 def test_intro_examples_and_llm_unavailable(app, monkeypatch):
@@ -121,6 +121,8 @@ def test_agent_request_shows_confirm_card_and_saves_only_after_confirm(app):
     app.button(key="act0_1_confirm").click().run()
     assert not app.exception
     assert contract_end(service) == "2027-12-31"
+    # 11/10 담당자: 저장 결과는 위쪽 알림 띠가 아니라 Agent 말풍선으로
+    assert any("저장했습니다" in m.value for m in app.markdown) and not any("저장했습니다" in s.value for s in app.success)
 
 
 def test_cancel_does_not_save(app):
@@ -130,7 +132,7 @@ def test_cancel_does_not_save(app):
     assert not app.exception
     service = Service(Path(os.environ["PMO_DB_PATH"]))
     assert next(p for p in service.people() if p["id"] == "DEMO-002")["account_id"] is None
-    assert any("취소했습니다" in i.value for i in app.info)
+    assert any("취소했습니다" in m.value for m in app.markdown)     # 11/10: 결과는 Agent 말풍선으로
 
 
 def test_category_selector_limits_agent_tools(app):
@@ -156,7 +158,9 @@ def test_auto_category_routes_to_specialist(app):
     assert not app.exception
     sent = {t["function"]["name"] for t in RECEIVED[0]["tools"]}
     assert sent == set(AGENTS["contract"].tools)                      # '알림' → 구매계약 Agent의 도구만
-    assert any("자동 배정" in c.value and "구매계약 Agent" in c.value for c in app.caption)
+    # 11/10 담당자: 답변 위에는 처리한 Agent만(판정 방법 '자동 배정(키워드)'은 빼고)
+    assert any(c.value == "📄 구매계약 Agent" for c in app.caption)
+    assert not any("자동 배정(" in c.value for c in app.caption)
 
 
 def test_home_mm_calculator_on_screen_with_one_calendar(app):
@@ -178,7 +182,9 @@ def test_mm_question_shows_readable_result_not_json(app):
     app.chat_input[0].set_value("11월 2일부터 15일까지 MM 얼마야?").run()
     assert not app.exception and not app.json
     assert any("0.476 MM" in m.value for m in app.markdown)
-    assert any("기간 MM 계산" in m.value for m in app.markdown)
+    # 11/10 담당자: 도구 이름·결과 표가 있던 '조회 결과' 접기 상자는 보이지 않는다
+    assert not any("기간 MM 계산" in m.value for m in app.markdown)
+    assert not [e for e in app.expander if "조회 결과" in e.label]
 
 
 def test_home_left_cards_and_agent_on_right(app):

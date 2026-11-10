@@ -106,6 +106,27 @@ if st.session_state.get("page") != page:
     st.session_state.pop("pending", None)
     st.session_state.pop("ck_pending", None)
     st.session_state["page"] = page
+
+def run_pending_turn(turns: list[dict], index: int, service, client) -> None:
+    """보낸 질문에 답한다(11/10 담당자: 질문은 바로 내 말풍선에, 조회 중 안내는 Agent 말풍선에)."""
+    turn = turns[index]
+    agent = AGENTS[turn.get("agent_key") or AUTO]
+    history = []
+    for done in turns[:index]:
+        if done.get("ok"):
+            history += [{"role": "user", "content": done["question"]},
+                        {"role": "assistant", "content": done["answer"]}]
+    with st.chat_message("assistant"):
+        if agent.key == AUTO:
+            previous = (turns[index - 1].get("routing") or {}).get("agents") if index else None
+            with st.spinner("질문에 맞는 Agent를 고르고 조회하는 중입니다."):
+                result = ask_routed(service, turn["question"], client, history=history, previous=previous)
+        else:
+            with st.spinner(f"{agent.label} Agent가 조회하는 중입니다."):
+                result = ask(service, turn["question"], client, history=history, agent=agent)
+    turns[index] = dict(result, question=turn["question"])
+    st.rerun()
+
 if message := st.session_state.pop("saved_message", None):
     st.success(message)
 
@@ -457,7 +478,7 @@ if page == "홈":
                   on_click=theme.go, args=("수정 요청",))
         mm_calculator(day)          # 11/09 담당자: 모달 대신 화면에서 바로 계산
     # 11/08 담당자: 왼쪽 질문·오른쪽 결과로 나누지 않고, 채팅창처럼 한 화면에서 질문과 답변을 차례로 보여준다.
-    # 조회 결과 표는 답변 아래 접기 상자, 확인 카드는 답변 바로 아래에 둔다.
+    # 확인 카드는 답변 바로 아래에 둔다. 조회 결과 접기 상자는 11/10 담당자 요청으로 숨긴다.
     with main, st.container(key="home_chat_panel"):
         # 11/09 담당자: 시안 A '그라데이션 헤더' — 네이비→인디고→보라 머리띠, 알약 모양 카테고리, 둥근 입력창
         with st.container(key="home_agent_head"):
@@ -486,16 +507,18 @@ if page == "홈":
             for index, turn in enumerate(turns):
                 with st.chat_message("user"):
                     st.markdown(turn["question"])
+                if turn.get("pending"):
+                    # 11/10 담당자: 보낸 질문은 바로 내 말풍선에, 조회 중 안내는 Agent 말풍선에 보인다
+                    run_pending_turn(turns, index, service, client)
+                    continue
                 with st.chat_message("assistant"):
                     routing = turn.get("routing")
                     if routing:     # v3.1: 라우터가 고른 Agent를 보여준다
-                        how = {"keyword": "키워드", "multi": "여러 업무", "llm": "LLM 분류", "follow_up": "이어지는 대화",
-                               "precheck": "가드레일", "fallback": "전체 Agent", "people": "인력 정보",
-                               "clarify": "되묻기"}.get(routing["method"], routing["method"])
-                        keys = ([routing["rerouted_from"]] if routing.get("rerouted_from") else []) + routing["agents"]
-                        chosen = " → ".join(theme.agent_label(k, AGENTS[k].label if k != AUTO else "전체") + " Agent"
-                                            for k in keys)
-                        st.caption(f"🧭 자동 배정({how})" + (f" · {chosen}" if chosen else ""))
+                        # 11/10 담당자: 판정 방법('자동 배정(키워드)')은 빼고 처리한 Agent만 보인다.
+                        # 판정 방법은 실행 기록(router)에 남는다. 다시 맡긴 경우는 마지막에 답한 Agent만.
+                        keys = [k for k in routing["agents"] if k != AUTO]
+                        st.caption(" → ".join(theme.agent_label(k, AGENTS[k].label) + " Agent" for k in keys)
+                                   if keys else theme.agent_label(AUTO, "PMO Agent"))
                     else:
                         st.caption(theme.agent_label(turn.get("agent", AUTO),
                                                      f"{turn.get('agent_label', AGENTS[AUTO].label)} Agent"))
@@ -504,26 +527,17 @@ if page == "홈":
                     else:
                         st.error(turn["error"])
                         st.caption("LLM 없이도 왼쪽 메뉴의 각 화면에서 같은 정보를 조회할 수 있습니다.")
-                    for message in turn.get("done", {}).values():
-                        st.success(message)
                     render_turn_inline(turn, service, actor, index, latest=index == len(turns) - 1)
+                # 11/10 담당자: 확인 카드의 저장·취소·요청 결과는 Agent 말풍선으로 알린다
+                for message in turn.get("done", {}).values():
+                    with st.chat_message("assistant"):
+                        st.markdown(message)
         # 11/09 담당자: 입력창 아래 예시 질문 버튼은 없앤다(예시는 첫 안내 말풍선에 적는다).
         typed = st.chat_input("질문을 입력하세요", key="home_chat")
         asked = (typed or "").strip()
         if asked:
-            history = []
-            for turn in turns:
-                if turn["ok"]:
-                    history += [{"role": "user", "content": turn["question"]},
-                                {"role": "assistant", "content": turn["answer"]}]
-            if agent.key == AUTO:
-                previous = (turns[-1].get("routing") or {}).get("agents") if turns else None
-                with st.spinner(f"질문에 맞는 Agent를 고르고 조회하는 중입니다 — '{asked}'"):
-                    result = ask_routed(service, asked, client, history=history, previous=previous)
-            else:
-                with st.spinner(f"{agent.label} Agent — '{asked}' 도구를 고르고 조회하는 중입니다…"):
-                    result = ask(service, asked, client, history=history, agent=agent)
-            turns.append(dict(result, question=asked))
+            # 질문을 먼저 대화에 넣고 다시 그린다. 답은 다음 화면 그리기에서 Agent 말풍선 안에서 만든다(run_pending_turn).
+            turns.append({"question": asked, "pending": True, "agent_key": agent.key})
             st.rerun()
         if turns and st.button("대화 지우기", key="home_clear"):
             turns.clear()
