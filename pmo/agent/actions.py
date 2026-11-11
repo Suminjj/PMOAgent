@@ -272,12 +272,15 @@ def _pick_assignment(service, person: dict, *, project=None, on: date | None = N
         raise ValidationError(f"{person['name']}에게 등록된 투입이 없습니다.")
     found = rows
     hint = str(project or "").strip()
-    if hint:
-        found = [a for a in found if hint in (a["project"] or "")] or found
     if on:
         found = [a for a in found if a["start_date"] <= on.isoformat() <= a["end_date"]]
     if month:
         found = [a for a in found if a["start_date"] <= month[1].isoformat() and a["end_date"] >= month[0].isoformat()]
+    if hint:
+        # 과제명은 날짜로 고른 투입 안에서만 좁힌다. 맞는 것이 없으면 날짜로 고른 투입을 쓴다(확인 카드에 실제 과제가 보인다).
+        # 11/11: '이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘'에 모델이 기존 과제를 현재 과제(Soft Lab 고도화)로 넣어,
+        # 2027-02-01을 덮는 전표작성 자동화 투입이 있는데도 '해당 투입 없음'으로 막힘.
+        found = [a for a in found if hint in (a["project"] or "")] or found
     if not on and not month and not hint:
         today = service.clock().isoformat()
         found = [a for a in found if a["end_date"] >= today] or found

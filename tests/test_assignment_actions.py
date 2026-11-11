@@ -155,3 +155,17 @@ def test_values_the_user_did_not_say_are_rejected(service):
     assert _ungrounded(service, "prepare_assignment_update", {"revenue_project": "30133686-D047"}, texts) is None
     assert _ungrounded(service, "prepare_assignment_update", {"revenue_project": "30133686-D099"}, texts)
     assert _ungrounded(service, "prepare_assignment_replace", {"grade": "L5"}, ["노협력(L6)으로 교체해줘"])
+
+
+def test_transfer_ignores_wrong_from_project_when_date_picks_one(tmp_path):
+    """11/11: 기존 과제를 현재 과제(Soft Lab)로 잘못 넣어도 이동일을 덮는 투입(전표작성 자동화)으로 카드를 만든다."""
+    from pmo.eval_data import TODAY, seed_eval
+    from pmo.service import Service
+    from pmo.tools import call_tool
+    s = Service(tmp_path / "t.db", clock=lambda: TODAY)
+    seed_eval(s, TODAY)
+    r = call_tool(s, "prepare_assignment_transfer", {"person_id": "이협력", "to_project": "APC Analysis",
+                                                     "start_date": "2027-02-01", "from_project": "Soft Lab 고도화"})
+    assert r["ok"], r.get("error")
+    text = str(r["data"])
+    assert "전표작성 자동화" in text and "APC Analysis" in text
