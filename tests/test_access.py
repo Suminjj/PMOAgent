@@ -195,7 +195,7 @@ def test_find_people_summary_respects_leader_scope(db):
     s = as_user(db, "leader-softlab")
     lee = call_tool(s, "find_people", {"name": "이협력"})["data"][0]["summary"]
     assert lee["upcoming"] == [] and "전표작성 자동화" not in str(lee)          # 12월 전표작성 자동화 예정 투입은 안 보임
-    assert call_tool(s, "find_people", {"name": "김컨설"})["data"] == []
+    assert "과제 인력만 조회가 가능합니다" in call_tool(s, "find_people", {"name": "김컨설"})["error"]
     assert "12,000,000" not in str(call_tool(s, "find_people", {"name": "정협력"}))
 
 

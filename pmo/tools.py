@@ -404,6 +404,9 @@ def _find_people(service: Service, name: str, company: str | None = None) -> lis
             raise ValidationError(hint)
         if similar_names(service, value):          # v3: 오타면 비슷한 이름을 되묻게 한다(빈 결과로 '없다'고 끝내지 않음)
             raise ValidationError(typo_message(service, value))
+        if service.access is not None and not service.access.all_projects:
+            # 11/11: 과제 리더에게는 '등록되어 있지 않다' 대신 담당 과제 인력만 조회된다고 안내(없는 이름도 같은 문장)
+            raise ValidationError(typo_message(service, value))
     if len(found) != 1:
         return found
     person = found[0]

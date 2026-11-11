@@ -64,6 +64,10 @@ def typo_message(service, given: str) -> str:
         # 작은 모델이 오류 문장을 그대로 옮기므로 사용자에게 바로 보여줄 수 있는 문장으로 쓴다(v3 평가 T01·T03)
         return (f"'{given}'에 해당하는 인력이 없습니다. " + " 또는 ".join(f"'{n}'" for n in close)
                 + "을(를) 말씀하신 건가요?")
+    access = getattr(service, "access", None)
+    if access is not None and not access.all_projects:      # 11/11: 과제 리더에게는 담당 과제 인력만 조회된다고 안내
+        from pmo.agent.guardrails import person_scope_message
+        return person_scope_message(service, given)
     return f"'{given}'에 해당하는 인력이 없습니다. 이름을 확인하세요."
 
 

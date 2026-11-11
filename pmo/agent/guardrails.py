@@ -66,6 +66,7 @@ UNSUPPORTED = re.compile(r"연봉|급여|월급|보너스|성과급|연락처|�
 
 ANSWERS = {
     "scope": "'{project}' 과제는 조회할 수 있는 과제가 아닙니다. 담당 과제({mine})만 조회할 수 있습니다.",
+    "person_scope": "'{name}'은(는) 조회할 수 있는 인력이 아닙니다. {mine} 과제 인력만 조회가 가능합니다.",
     "redirect_failed": "이 요청은 {here} 업무인데 처리하지 못했습니다. 인력 이름과 기간 등을 넣어 다시 요청해 주세요.",
     "injection": "이전 지시를 무시하거나 바꾸라는 요청은 따를 수 없습니다. 인력·투입·구매계약 업무를 요청해 주세요.",
     "unsupported": "이 서비스는 인력의 {what} 정보를 관리하지 않아 답할 수 없습니다. "
@@ -86,6 +87,32 @@ def _vocabulary(service) -> set[str]:
     return {w for w in words if len(w) >= 2}
 
 
+PERSON_SCOPE = re.compile(r"과제 인력만 조회가 가능합니다")
+
+
+def person_scope_message(service, name: str) -> str:
+    """11/11 담당자: 과제 리더가 볼 수 없는 인력을 물으면 '등록되어 있지 않습니다' 대신 담당 과제 인력만 조회된다고 안내한다.
+
+    다른 과제에 있는 인력이든 아예 없는 이름이든 같은 문장이라 다른 과제 인력의 존재는 알리지 않는다.
+    """
+    mine = ", ".join(service.project_names()) or "담당"
+    return ANSWERS["person_scope"].format(name=str(name or "").strip(), mine=mine)
+
+
+def hidden_people(service, question: str) -> list[str]:
+    """질문 속 등록 인력 중 이 사용자(과제 리더)가 볼 수 없는 이름. 전체 접근이면 빈 목록."""
+    access = getattr(service, "access", None)
+    if access is None or access.all_projects:
+        return []
+    from pmo.service import Service
+    visible = {p["name"] for p in service.people() if p.get("name")}
+    everyone = {p["name"] for p in Service(service.path, clock=service.clock).people() if p.get("name")}
+    q = question or ""
+    # 볼 수 있는 이름의 일부로만 나온 경우(예: '김협력' 안의 '협력')는 빼고, 동명이인이 볼 수 있는 쪽에 있으면 묻지 않는다
+    return sorted(n for n in everyone - visible
+                  if len(n) >= 2 and n in q and not any(n in v and v in q for v in visible))
+
+
 def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str],
              history: list[dict] | None = None) -> dict | None:
     """LLM을 부르기 전에 답이 정해진 요청이면 {"kind", "answer"}를 돌려준다. 아니면 None."""
@@ -104,6 +131,10 @@ def precheck(service, question: str, agent_key: str, agent_labels: dict[str, str
         if asked:
             return {"kind": "scope", "answer": ANSWERS["scope"].format(project=asked[0],
                                                                        mine=", ".join(service.project_names()) or "없음")}
+        # 11/11 담당자: 다른 과제 인력을 물으면 '등록되어 있지 않습니다'(전체에 없는 사람처럼 보임) 대신 담당 과제 인력만 조회된다고 답한다
+        hidden = hidden_people(service, q)
+        if hidden and not mentioned_people(service, q):
+            return {"kind": "person_scope", "answer": person_scope_message(service, hidden[0])}
     if INJECTION.search(q):
         return {"kind": "injection", "answer": ANSWERS["injection"]}
     if NOT_OFFERED.search(q):

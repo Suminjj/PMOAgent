@@ -182,7 +182,8 @@ def test_name_typos_ask_back_with_similar_names(service):
     assert call_tool(service, "find_people", {"name": "홍길동"})["data"] == []          # 비슷한 이름이 없으면 그대로 없음
     leader = Service(service.path, clock=lambda: TODAY,
                      access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
-    assert call_tool(leader, "find_people", {"name": "김컨썰"})["data"] == []           # 다른 과제 인력은 제안하지 않음
+    error = call_tool(leader, "find_people", {"name": "김컨썰"})["error"]                 # 다른 과제 인력은 제안하지 않음
+    assert "김컨설'" not in error and "Soft Lab 고도화 과제 인력만 조회가 가능합니다" in error
     error = call_tool(leader, "get_project_members", {"project": "전표작성 자동화"})["error"]
     assert "조회할 수 있는 과제가 아닙니다" in error and "대신 보여주지" in error         # v2 평가 P01
 
@@ -386,3 +387,20 @@ def test_transfer_with_unsaid_revenue_project_still_makes_card(tmp_path):
                              text("이동 준비를 마쳤습니다.")])
     result = ask(s, "이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘. 매출귀속은 30133686-D038", client, agent="staff")
     assert result["calls"][0]["arguments"]["revenue_project"] == "30133686-D038"
+
+
+def test_leader_asking_other_project_person_is_told_scope(service):
+    """11/11 담당자: 과제 리더가 다른 과제 인력(김컨설)을 물으면 '등록되어 있지 않다' 대신 담당 과제 인력만 조회된다고 답한다."""
+    leader = Service(service.path, clock=lambda: TODAY,
+                     access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
+    client = ScriptedClient([])                                   # LLM을 부르지 않는다
+    result = ask(leader, "김컨설 지금 무슨 과제에 투입되어 있어?", client)
+    assert result["guardrail"] == "person_scope" and not client.seen
+    assert result["answer"] == "'김컨설'은(는) 조회할 수 있는 인력이 아닙니다. Soft Lab 고도화 과제 인력만 조회가 가능합니다."
+    # 아예 없는 이름도 같은 문장(다른 과제 인력의 존재를 알리지 않음). 모델이 바꿔 말해도 정해진 문장으로 답한다
+    client = ScriptedClient([tool_call("find_people", name="홍길동"), text("홍길동은 등록되어 있지 않습니다.")])
+    result = ask(leader, "홍길동 투입 과제 알려줘.", client)
+    assert result["answer"] == "'홍길동'은(는) 조회할 수 있는 인력이 아닙니다. Soft Lab 고도화 과제 인력만 조회가 가능합니다."
+    # PMO·PM에게는 그대로 '없다'
+    assert call_tool(service, "find_people", {"name": "홍길동"})["data"] == []
+    assert guardrails.precheck(service, "김컨설 지금 무슨 과제야?", "auto", {}) is None
