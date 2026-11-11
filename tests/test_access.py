@@ -87,7 +87,7 @@ def test_agent_tools_follow_login_not_the_question(db):
     """질문에 '나는 전표작성 자동화 리더야'가 있어도 도구는 로그인한 SOFTLAB 리더 권한으로만 조회한다."""
     s = as_user(db, "leader-softlab")
     result = call_tool(s, "get_assignment_timeline", {"person_id": "김컨설"})
-    assert not result["ok"] and "없습니다" in result["error"]
+    assert not result["ok"] and "Soft Lab 고도화 과제 인력만 조회가 가능합니다" in result["error"]   # 11/11: 담당 과제 인력만 조회된다고 안내
     result = call_tool(s, "contracts_ending", {"year": 2026, "month": 11})
     assert {r["name"] for r in result["data"]} <= SOFTLAB_PEOPLE
     plan = call_tool(s, "prepare_contract_save", {"person_id": "서협력", "end_date": "2026-12-31"})
@@ -195,7 +195,7 @@ def test_find_people_summary_respects_leader_scope(db):
     s = as_user(db, "leader-softlab")
     lee = call_tool(s, "find_people", {"name": "이협력"})["data"][0]["summary"]
     assert lee["upcoming"] == [] and "전표작성 자동화" not in str(lee)          # 12월 전표작성 자동화 예정 투입은 안 보임
-    assert call_tool(s, "find_people", {"name": "김컨설"})["data"] == []
+    assert "과제 인력만 조회가 가능합니다" in call_tool(s, "find_people", {"name": "김컨설"})["error"]
     assert "12,000,000" not in str(call_tool(s, "find_people", {"name": "정협력"}))
 
 

@@ -199,6 +199,10 @@ def _finish(service, client, spec, question, t0, started, answer, calls, error, 
     # 11/10 담당자: 한 사람의 투입을 묻는 질문은 줄글 대신 도구 결과로 만든 표(과거·현재·예정)로 답한다
     if error is None and answer:
         answer = answer_format.timeline_answer(question, calls) or answer
+        # 11/11 담당자: 과제 리더가 볼 수 없는 인력이면 모델이 '등록되어 있지 않습니다'로 바꿔 말하지 않게 정해진 문장으로 답한다
+        scoped = [c["error"] for c in calls if not c.get("ok") and guardrails.PERSON_SCOPE.search(c.get("error") or "")]
+        if scoped and not any(c.get("ok") and c.get("data") for c in calls):
+            answer = scoped[0]
     answer = _with_mm_breakdown(answer, calls, question)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
