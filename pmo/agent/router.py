@@ -115,8 +115,8 @@ def router_client(client: ChatClient | None) -> ChatClient | None:
     model = os.environ.get("PMO_ROUTER_MODEL", "").strip()
     if not model or client is None or getattr(client, "model", None) == model:
         return client
-    from pmo.agent.llm import OllamaClient
-    return OllamaClient(model=model)
+    from pmo.agent.llm import make_client
+    return make_client(model)
 
 
 def route(service: Service, question: str, client: ChatClient | None = None,

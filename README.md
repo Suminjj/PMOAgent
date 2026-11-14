@@ -127,6 +127,23 @@ $env:PMO_DB_PATH = "data\eval.db"; $env:PMO_TODAY = "2026-11-15"
 0원으로 대체하지 않습니다. 이름·업체명이 같아도 별도의 내부 관리번호로 등록할 수 있습니다.
 검수 금액 계산, 월별 구매 필요 판정, 자연어 등록·수정은 후속 단계입니다.
 
+## 외부 OpenAI API로 자연어 조회 (선택)
+
+기본은 로컬 Ollama입니다. 지원받은 OpenAI API 키로 바꿔 쓸 수 있지만, 이때는 **질문과 조회 결과(인력 이름·과제·단가 등)가
+OpenAI 서버로 전송**됩니다. 그래서 실제 데이터 DB(`data\pmo.db`)에서는 화면·`scripts.ask`가 질문을 받지 않고,
+가상 데이터 DB(`PMO_DB_PATH`)로 시연·평가할 때만 씁니다. 화면 왼쪽 아래와 Agent 머리띠에 '외부 API'로 표시됩니다.
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."              # 키는 이 창에서만. 파일·Git·채팅에 적지 않는다
+$env:PMO_LLM_PROVIDER = "openai"
+$env:PMO_OPENAI_MODEL = "gpt-6.1-sol"       # 빠르고 싸게: gpt-6-luna
+$env:PMO_DB_PATH = "data\demo-show.db"; $env:PMO_TODAY = "2026-11-15"
+.venv\Scripts\python.exe -m streamlit run app.py
+.venv\Scripts\python.exe -m scripts.run_evals --set eval --model gpt-6.1-sol,gpt-6-luna   # 평가(가상 데이터)
+```
+
+다시 Ollama로 돌아가려면 `Remove-Item Env:PMO_LLM_PROVIDER` 후 다시 실행합니다. Text-to-SQL(자유 조회)도 같은 API를 씁니다.
+
 ## 로컬 LLM으로 자연어 조회 (Ollama)
 
 LLM은 PC에서 직접 실행하는 [Ollama](https://ollama.com)를 사용합니다. 질문과 데이터가 PC 밖으로 나가지 않습니다.
@@ -212,6 +229,11 @@ CPU/GPU로 나뉘면 질문당 1분 이상 걸릴 수 있습니다. 이때는 �
 | PMO_OLLAMA_URL | http://localhost:11434 | Ollama 서버 주소 |
 | PMO_OLLAMA_THINK | false | 추론 모드. 기본 끔(평가에서 정답률은 같고 약 4배 빠름). `true`로 켜고, `model`이면 모델 기본값 |
 | PMO_OLLAMA_NUM_CTX | 8192 | 모델이 한 번에 읽는 길이(토큰). Ollama 기본 4096은 지시문·도구 설명이 잘릴 수 있어 늘려 둠 |
+| PMO_LLM_PROVIDER | ollama | `openai`로 바꾸면 OpenAI API를 쓴다(아래 '외부 OpenAI API' 참고) |
+| OPENAI_API_KEY | 빈 값 | OpenAI API 키. 코드·Git·채팅에 적지 않고 환경변수로만 넣는다 |
+| PMO_OPENAI_MODEL | gpt-6.1-sol | OpenAI 모델 |
+| PMO_OPENAI_REASONING | 빈 값(모델 기본) | 추론 정도 none·minimal·low·medium·high. 낮을수록 빠름 |
+| PMO_OPENAI_BASE_URL | https://api.openai.com/v1 | OpenAI 형식 주소(사내 게이트웨이를 받았으면 그 주소) |
 
 Windows PowerShell 예:
 

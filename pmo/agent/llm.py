@@ -116,8 +116,141 @@ class _ThinkUnsupported(Exception):
     pass
 
 
+class OpenAIClient:
+    """OpenAI API(/chat/completions, 11/14 담당자 요청). 질문과 도구 결과가 PC 밖(OpenAI 서버)으로 나간다.
+
+    기본은 여전히 로컬 Ollama다. PMO_LLM_PROVIDER=openai로 켤 때만 쓰고, 화면은 실제 데이터 DB(data/pmo.db)에서는
+    막는다(`external_blocked`). 키는 환경변수 OPENAI_API_KEY로만 받고 코드·로그에 남기지 않는다.
+    PMO_OPENAI_BASE_URL을 바꾸면 OpenAI 형식을 따르는 다른 주소(사내 게이트웨이 등)도 쓸 수 있다.
+    """
+
+    def __init__(self, model: str | None = None, base_url: str | None = None, api_key: str | None = None,
+                 timeout: float = 120.0):
+        self.model = model or os.environ.get("PMO_OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+        self.base_url = (base_url or os.environ.get("PMO_OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+        self._key = api_key if api_key is not None else os.environ.get("OPENAI_API_KEY", "")
+        self.timeout = timeout
+        # 추론 모델(gpt-5 이후)의 생각 정도: none·minimal·low·medium·high. 비우면 모델 기본값(보내지 않음)
+        self.reasoning = os.environ.get("PMO_OPENAI_REASONING", "").strip().lower()
+        self.name = f"openai:{self.model}"
+
+    def _request(self, path: str, payload: dict | None = None) -> dict:
+        if not self._key:
+            raise LLMError("OpenAI API 키가 없습니다. 환경변수 OPENAI_API_KEY에 키를 넣고 다시 실행하세요.")
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            data=None if payload is None else json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self._key}"},
+            method="GET" if payload is None else "POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            hint = {401: "API 키가 맞지 않습니다(OPENAI_API_KEY 확인).",
+                    403: "이 키로 쓸 수 없는 모델이거나 권한이 없습니다.",
+                    404: f"모델 {self.model}을(를) 찾을 수 없습니다(PMO_OPENAI_MODEL 확인).",
+                    429: "사용 한도(요청 수·크레딧)를 넘었습니다. 잠시 뒤 다시 하거나 한도를 확인하세요."}.get(exc.code, "")
+            raise LLMError(f"OpenAI 오류({exc.code}). {hint} {detail}".strip()) from exc
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            raise LLMError(f"OpenAI API에 연결할 수 없습니다({self.base_url}). 인터넷·회사 프록시 설정을 확인하세요.") from exc
+
+    def check(self) -> None:
+        """키와 모델을 쓸 수 있는지 확인한다(모델 목록 조회, 토큰을 쓰지 않음)."""
+        body = self._request("/models")
+        names = {m.get("id") for m in body.get("data") or []}
+        if names and self.model not in names:
+            chat = sorted(n for n in names if n and n.startswith("gpt"))
+            raise LLMError(f"이 키로 쓸 수 있는 모델에 {self.model}이(가) 없습니다. 쓸 수 있는 모델: {', '.join(chat[:15])}")
+
+    def chat(self, messages: list[dict], tools: list[dict]) -> dict:
+        payload = {"model": self.model, "messages": to_openai_messages(messages)}
+        if tools:
+            payload["tools"] = [{"type": "function", "function": {
+                "name": t["name"], "description": t["description"], "parameters": t["input_schema"],
+            }} for t in tools]
+        if self.reasoning:
+            payload["reasoning_effort"] = self.reasoning
+        body = self._request("/chat/completions", payload)
+        message = ((body.get("choices") or [{}])[0]).get("message") or {}
+        usage = body.get("usage") or {}
+        return {
+            "usage": {"prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens")},
+            "content": (message.get("content") or "").strip(),
+            "tool_calls": [{"name": (c.get("function") or {}).get("name", ""),
+                            "arguments": _arguments((c.get("function") or {}).get("arguments"))}
+                           for c in message.get("tool_calls") or []],
+        }
+
+
+DEFAULT_OPENAI_MODEL = "gpt-6.1-sol"
+
+
+def to_openai_messages(messages: list[dict]) -> list[dict]:
+    """Agent 실행 루프의 메시지(Ollama 모양)를 OpenAI 모양으로 바꾼다.
+
+    OpenAI는 도구 호출마다 id가 있어야 하고, 도구 결과는 그 id(tool_call_id)로 답해야 하며, 인자는 JSON 문자열이다.
+    실행 루프는 도구 호출 직후 호출 순서대로 결과를 붙이므로 순서대로 id를 맞춘다.
+    """
+    out, waiting, n = [], [], 0
+    for m in messages:
+        role = m.get("role")
+        if role == "assistant" and m.get("tool_calls"):
+            calls = []
+            for c in m["tool_calls"]:
+                n += 1
+                f = c.get("function") or {}
+                calls.append({"id": f"call_{n}", "type": "function", "function": {
+                    "name": f.get("name", ""), "arguments": json.dumps(f.get("arguments") or {}, ensure_ascii=False)}})
+            waiting = [c["id"] for c in calls]
+            out.append({"role": "assistant", "content": m.get("content") or None, "tool_calls": calls})
+        elif role == "tool":
+            if waiting:
+                out.append({"role": "tool", "tool_call_id": waiting.pop(0), "content": str(m.get("content") or "")})
+            else:                                  # 짝이 없는 도구 결과는 일반 정보로 넘긴다
+                out.append({"role": "user", "content": f"[도구 결과 {m.get('tool_name', '')}] {m.get('content') or ''}"})
+        else:
+            out.append({"role": role, "content": str(m.get("content") or "")})
+    return out
+
+
+def provider() -> str:
+    return os.environ.get("PMO_LLM_PROVIDER", "ollama").strip().lower() or "ollama"
+
+
+def is_external() -> bool:
+    """질문·조회 결과가 PC 밖으로 나가는 제공자인지."""
+    return provider() != "ollama"
+
+
+def make_client(model: str | None = None) -> ChatClient:
+    """PMO_LLM_PROVIDER(기본 ollama)에 맞는 클라이언트. model을 주면 그 모델로."""
+    name = provider()
+    if name == "ollama":
+        return OllamaClient(model=model)
+    if name == "openai":
+        return OpenAIClient(model=model)
+    raise LLMError(f"지원하지 않는 LLM 제공자입니다: {name} (ollama 또는 openai)")
+
+
 def client_from_env() -> ChatClient:
-    provider = os.environ.get("PMO_LLM_PROVIDER", "ollama")
-    if provider == "ollama":
-        return OllamaClient()
-    raise LLMError(f"지원하지 않는 LLM 제공자입니다: {provider}")
+    return make_client()
+
+
+def model_label() -> str:
+    """화면 표시용 모델 이름."""
+    if provider() == "openai":
+        return os.environ.get("PMO_OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+    return os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b")
+
+
+def external_blocked(db_file) -> str | None:
+    """외부 API를 실제 데이터 DB에 쓰려 하면 막는 이유. 괜찮으면 None.
+
+    AGENTS.md: 실제 인력·계약 데이터는 PC 밖으로 보내지 않는다. 외부 API는 가상 데이터 DB(PMO_DB_PATH)로 시연·평가할 때만 쓴다.
+    """
+    from pathlib import Path
+    if is_external() and Path(db_file).name == "pmo.db":
+        return ("외부 LLM API(PMO_LLM_PROVIDER=openai)는 실제 데이터 DB(data\\pmo.db)에서 쓸 수 없습니다. "
+                "가상 데이터 DB(PMO_DB_PATH)로 실행하거나 PMO_LLM_PROVIDER를 지우고 로컬 Ollama를 쓰세요.")
+    return None

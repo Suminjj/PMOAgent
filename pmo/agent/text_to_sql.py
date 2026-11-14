@@ -119,6 +119,41 @@ class SQLGenerator(Protocol):
     def generate(self, question: str) -> str: ...
 
 
+def _ollama_llm(Ollama, model, base_url):
+    think = os.environ.get("PMO_OLLAMA_THINK", "false").strip().lower()
+    llm_kwargs = dict(
+        model=model or os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"),
+        base_url=(base_url or os.environ.get("PMO_OLLAMA_URL", "http://localhost:11434")).rstrip("/"),
+        request_timeout=300.0, temperature=0.0,
+        context_window=int(os.environ.get("PMO_OLLAMA_NUM_CTX", "8192")))
+    if think in ("true", "false"):
+        llm_kwargs["thinking"] = think == "true"
+    return Ollama(**llm_kwargs)
+
+
+def _chat_client_llm():
+    """LlamaIndex가 우리 ChatClient(OpenAI 등)로 SQL 문장을 만들게 하는 얇은 연결(새 패키지 없이)."""
+    from llama_index.core.llms import CompletionResponse, CustomLLM, LLMMetadata
+    from llama_index.core.llms.callbacks import llm_completion_callback
+    from pmo.agent.llm import make_client
+
+    class ChatClientLLM(CustomLLM):
+        @property
+        def metadata(self) -> LLMMetadata:
+            return LLMMetadata(context_window=128000, num_output=1024, model_name="pmo-chat-client")
+
+        @llm_completion_callback()
+        def complete(self, prompt: str, formatted: bool = False, **kwargs) -> CompletionResponse:
+            reply = make_client().chat([{"role": "user", "content": prompt}], [])
+            return CompletionResponse(text=reply["content"])
+
+        @llm_completion_callback()
+        def stream_complete(self, prompt: str, formatted: bool = False, **kwargs):
+            yield self.complete(prompt, formatted=formatted)
+
+    return ChatClientLLM()
+
+
 class LlamaIndexSQLGenerator:
     """LlamaIndex NLSQLTableQueryEngine으로 SQL만 만든다(sql_only=True, 실행하지 않음)."""
 
@@ -140,17 +175,14 @@ class LlamaIndexSQLGenerator:
         engine = create_engine("sqlite://", creator=lambda: readonly_connect(path), poolclass=NullPool)
         self._sql_engine = engine
         database = SQLDatabase(engine, include_tables=list(SAFE_TABLES), sample_rows_in_table_info=2)
-        think = os.environ.get("PMO_OLLAMA_THINK", "false").strip().lower()
-        llm_kwargs = dict(
-            model=model or os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"),
-            base_url=(base_url or os.environ.get("PMO_OLLAMA_URL", "http://localhost:11434")).rstrip("/"),
-            request_timeout=300.0, temperature=0.0,
-            context_window=int(os.environ.get("PMO_OLLAMA_NUM_CTX", "8192")))
-        if think in ("true", "false"):
-            llm_kwargs["thinking"] = think == "true"
+        from pmo.agent.llm import is_external
+        if is_external():
+            llm = _chat_client_llm()            # 11/14: 외부 API를 고르면 SQL 생성도 같은 API로(Ollama 없이)
+        else:
+            llm = _ollama_llm(Ollama, model, base_url)
         self._uri = uri
         self._engine = NLSQLTableQueryEngine(
-            sql_database=database, tables=list(SAFE_TABLES), llm=Ollama(**llm_kwargs),
+            sql_database=database, tables=list(SAFE_TABLES), llm=llm,
             context_query_kwargs=TABLE_CONTEXT, context_str_prefix=context_prefix(today),
             sql_only=True, synthesize_response=False,
             embed_model=MockEmbedding(embed_dim=1),  # 기본 파서는 임베딩을 쓰지 않는다(외부 모델 호출 방지)

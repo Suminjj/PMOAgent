@@ -89,7 +89,8 @@ actor = f"{user.name}({user.login})"                       # 변경 이력의 �
 # 시연 DB와 업무 DB를 헷갈리지 않도록 지금 연결된 DB를 항상 보여준다.
 if _people_count == 0:
     st.sidebar.info("등록된 인력이 없습니다. 시연하려면 PMO_DB_PATH를 data\\demo.db로 지정해 실행하세요.")
-theme.sidebar_footer(service.path.name, _people_count, os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b"))
+from pmo.agent.llm import is_external, model_label   # noqa: E402 - 11/14: 외부 API를 고르면 화면에 그대로 밝힌다
+theme.sidebar_footer(service.path.name, _people_count, model_label(), external=is_external())
 # 11/09 담당자: 로그인 정보·로그아웃은 왼쪽 메뉴가 아니라 화면 오른쪽 위에 둔다.
 _title_col, _user_col, _logout_col = st.columns([6, 2.2, 0.9], vertical_alignment="center")
 with _title_col:
@@ -447,12 +448,13 @@ def mm_calculator(day: date) -> None:
 
 if page == "홈":
     from pmo.agent.agents import AGENTS, AUTO
-    from pmo.agent.llm import OllamaClient
+    from pmo.agent.llm import external_blocked, make_client
     from pmo.agent.router import ROUTER_LABEL, ask_routed
     from pmo.agent.runner import ask
     from ui.agent_view import render_turn_inline
 
-    client = OllamaClient()
+    client = make_client()
+    blocked = external_blocked(service.path)   # 실제 데이터 DB에서는 외부 API로 보내지 않는다
     turns = st.session_state.setdefault("chat_turns", [])
     day = service.clock()
     try:
@@ -482,7 +484,7 @@ if page == "홈":
     with main, st.container(key="home_chat_panel"):
         # 11/09 담당자: 시안 A '그라데이션 헤더' — 네이비→인디고→보라 머리띠, 알약 모양 카테고리, 둥근 입력창
         with st.container(key="home_agent_head"):
-            theme.agent_header()
+            theme.agent_header(external=is_external())
         # 업무 카테고리: 이모티콘을 붙인 알약 버튼 (10/20 담당자). 고른 버튼은 그라데이션(primary).
         # '자동 배정'은 질문을 보고 맞는 전문 Agent를 고르고, 여러 업무면 차례로 불러 답을 합친다. 직접 고르면 그 Agent만 답한다.
         agent_key = st.session_state.setdefault("home_category", AUTO)
@@ -533,7 +535,9 @@ if page == "홈":
                     with st.chat_message("assistant"):
                         st.markdown(message)
         # 11/09 담당자: 입력창 아래 예시 질문 버튼은 없앤다(예시는 첫 안내 말풍선에 적는다).
-        typed = st.chat_input("질문을 입력하세요", key="home_chat")
+        if blocked:     # 11/14: 외부 API + 실제 데이터 DB면 질문을 받지 않는다(실제 데이터는 PC 밖으로 보내지 않음)
+            st.error(blocked)
+        typed = st.chat_input("질문을 입력하세요", key="home_chat", disabled=bool(blocked))
         asked = (typed or "").strip()
         if asked:
             # 질문을 먼저 대화에 넣고 다시 그린다. 답은 다음 화면 그리기에서 Agent 말풍선 안에서 만든다(run_pending_turn).
