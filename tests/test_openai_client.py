@@ -10,6 +10,7 @@ from pmo.agent.llm import LLMError, OpenAIClient, external_blocked, make_client,
 
 
 class FakeOpenAI(BaseHTTPRequestHandler):
+    headers_seen = []
     received = []
     reply = {}
     status = 200
@@ -30,6 +31,7 @@ class FakeOpenAI(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeOpenAI.received.append((self.path, self.headers.get("Authorization"), body))
+        FakeOpenAI.headers_seen.append(self.headers.get("api-key"))
         self._send(FakeOpenAI.status, FakeOpenAI.reply)
 
     def log_message(self, *args):
@@ -117,3 +119,18 @@ def test_provider_choice_and_real_db_block(monkeypatch, tmp_path):
     monkeypatch.setenv("PMO_LLM_PROVIDER", "gemini")
     with pytest.raises(LLMError, match="지원하지 않는"):
         make_client()
+
+
+def test_azure_style_gateway(fake_openai, monkeypatch):
+    """11/14 지원받은 키: Azure OpenAI와 같은 게이트웨이(배포 이름이 주소에, api-version 쿼리, api-key 헤더)."""
+    monkeypatch.setenv("PMO_OPENAI_API_VERSION", "2024-12-01-preview")
+    monkeypatch.delenv("PMO_OPENAI_REASONING", raising=False)
+    FakeOpenAI.reply = {"choices": [{"message": {"role": "assistant", "content": "안녕하세요"}}]}
+    base = fake_openai.removesuffix("/v1")
+    client = OpenAIClient(model="gpt-6.1-sol", base_url=base, api_key="atl-test")
+    assert client.chat([{"role": "user", "content": "hi"}], [])["content"] == "안녕하세요"
+    path, auth, _ = FakeOpenAI.received[-1]
+    assert path == "/openai/deployments/gpt-6.1-sol/chat/completions?api-version=2024-12-01-preview"
+    assert FakeOpenAI.headers_seen[-1] == "atl-test" and auth is None
+    client.check()                                              # 모델 목록 대신 짧은 질문으로 확인
+    assert FakeOpenAI.received[-1][0].startswith("/openai/deployments/gpt-6.1-sol/chat/completions")

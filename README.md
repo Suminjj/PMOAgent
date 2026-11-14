@@ -142,6 +142,14 @@ $env:PMO_DB_PATH = "data\demo-show.db"; $env:PMO_TODAY = "2026-11-15"
 .venv\Scripts\python.exe -m scripts.run_evals --set eval --model gpt-6.1-sol,gpt-6-luna   # 평가(가상 데이터)
 ```
 
+Azure OpenAI와 같은 게이트웨이(경로 `/openai/deployments/{deployment}/chat/completions`, `api-version`)를 받았으면
+주소에는 base URL만 넣고 api-version을 함께 넣습니다(모델 이름이 배포 이름으로 쓰임).
+
+```powershell
+$env:PMO_OPENAI_BASE_URL = "https://skax.ai-talentlab.com"
+$env:PMO_OPENAI_API_VERSION = "2024-12-01-preview"
+```
+
 다시 Ollama로 돌아가려면 `Remove-Item Env:PMO_LLM_PROVIDER` 후 다시 실행합니다. Text-to-SQL(자유 조회)도 같은 API를 씁니다.
 
 ## 로컬 LLM으로 자연어 조회 (Ollama)
@@ -234,6 +242,7 @@ CPU/GPU로 나뉘면 질문당 1분 이상 걸릴 수 있습니다. 이때는 �
 | PMO_OPENAI_MODEL | gpt-6.1-sol | OpenAI 모델 |
 | PMO_OPENAI_REASONING | 빈 값(모델 기본) | 추론 정도 none·minimal·low·medium·high. 낮을수록 빠름 |
 | PMO_OPENAI_BASE_URL | https://api.openai.com/v1 | OpenAI 형식 주소(사내 게이트웨이를 받았으면 그 주소) |
+| PMO_OPENAI_API_VERSION | 빈 값 | 넣으면 Azure OpenAI 방식(배포 이름=모델 이름, api-key 헤더). 예: 2024-12-01-preview |
 
 Windows PowerShell 예:
 

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Protocol
 
@@ -122,6 +123,8 @@ class OpenAIClient:
     기본은 여전히 로컬 Ollama다. PMO_LLM_PROVIDER=openai로 켤 때만 쓰고, 화면은 실제 데이터 DB(data/pmo.db)에서는
     막는다(`external_blocked`). 키는 환경변수 OPENAI_API_KEY로만 받고 코드·로그에 남기지 않는다.
     PMO_OPENAI_BASE_URL을 바꾸면 OpenAI 형식을 따르는 다른 주소(사내 게이트웨이 등)도 쓸 수 있다.
+    PMO_OPENAI_API_VERSION을 주면 Azure OpenAI 방식으로 부른다(11/14 지원받은 키의 게이트웨이):
+    {BASE_URL}/openai/deployments/{모델}/chat/completions?api-version=…, 인증 헤더 api-key.
     """
 
     def __init__(self, model: str | None = None, base_url: str | None = None, api_key: str | None = None,
@@ -132,15 +135,21 @@ class OpenAIClient:
         self.timeout = timeout
         # 추론 모델(gpt-5 이후)의 생각 정도: none·minimal·low·medium·high. 비우면 모델 기본값(보내지 않음)
         self.reasoning = os.environ.get("PMO_OPENAI_REASONING", "").strip().lower()
+        self.api_version = os.environ.get("PMO_OPENAI_API_VERSION", "").strip()   # 있으면 Azure OpenAI 방식
         self.name = f"openai:{self.model}"
 
     def _request(self, path: str, payload: dict | None = None) -> dict:
         if not self._key:
             raise LLMError("OpenAI API 키가 없습니다. 환경변수 OPENAI_API_KEY에 키를 넣고 다시 실행하세요.")
+        if self.api_version:      # Azure OpenAI: 모델(배포) 이름이 주소에, api-version이 쿼리에 들어간다
+            url = (f"{self.base_url}/openai/deployments/{urllib.parse.quote(self.model, safe='')}{path}"
+                   f"?api-version={urllib.parse.quote(self.api_version)}")
+            auth = {"api-key": self._key}
+        else:
+            url, auth = f"{self.base_url}{path}", {"Authorization": f"Bearer {self._key}"}
         request = urllib.request.Request(
-            f"{self.base_url}{path}",
-            data=None if payload is None else json.dumps(payload, ensure_ascii=False).encode(),
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self._key}"},
+            url, data=None if payload is None else json.dumps(payload, ensure_ascii=False).encode(),
+            headers={"Content-Type": "application/json", **auth},
             method="GET" if payload is None else "POST")
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -149,7 +158,7 @@ class OpenAIClient:
             detail = exc.read().decode("utf-8", "replace")[:300]
             hint = {401: "API 키가 맞지 않습니다(OPENAI_API_KEY 확인).",
                     403: "이 키로 쓸 수 없는 모델이거나 권한이 없습니다.",
-                    404: f"모델 {self.model}을(를) 찾을 수 없습니다(PMO_OPENAI_MODEL 확인).",
+                    404: f"모델(배포) {self.model}을(를) 찾을 수 없습니다(PMO_OPENAI_MODEL·PMO_OPENAI_BASE_URL 확인).",
                     429: "사용 한도(요청 수·크레딧)를 넘었습니다. 잠시 뒤 다시 하거나 한도를 확인하세요."}.get(exc.code, "")
             raise LLMError(f"OpenAI 오류({exc.code}). {hint} {detail}".strip()) from exc
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
@@ -157,6 +166,9 @@ class OpenAIClient:
 
     def check(self) -> None:
         """키와 모델을 쓸 수 있는지 확인한다(모델 목록 조회, 토큰을 쓰지 않음)."""
+        if self.api_version:      # Azure 방식은 모델 목록 주소가 없어 짧은 질문 한 번으로 확인한다
+            self._request("/chat/completions", {"model": self.model, "messages": [{"role": "user", "content": "ping"}]})
+            return
         body = self._request("/models")
         names = {m.get("id") for m in body.get("data") or []}
         if names and self.model not in names:
