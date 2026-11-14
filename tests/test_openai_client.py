@@ -134,3 +134,23 @@ def test_azure_style_gateway(fake_openai, monkeypatch):
     assert FakeOpenAI.headers_seen[-1] == "atl-test" and auth is None
     client.check()                                              # 모델 목록 대신 짧은 질문으로 확인
     assert FakeOpenAI.received[-1][0].startswith("/openai/deployments/gpt-6.1-sol/chat/completions")
+
+
+def test_reasoning_with_tools_falls_back_to_none(fake_openai, monkeypatch):
+    """11/14 PC: gpt-6.1-sol은 /chat/completions에서 도구 + reasoning_effort를 거절(400) → 'none'으로 다시 보낸다."""
+    monkeypatch.setenv("PMO_OPENAI_REASONING", "low")
+    replies = iter([(400, {"error": {"message": "Function tools with reasoning_effort are not supported for gpt-6.1-sol "
+                                                "in /v1/chat/completions. ... set reasoning_effort to 'none'.",
+                                     "param": "reasoning_effort"}}),
+                    (200, {"choices": [{"message": {"role": "assistant", "content": "됐습니다"}}]})])
+
+    def post(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        FakeOpenAI.received.append((self.path, None, body))
+        status, reply = next(replies)
+        self._send(status, reply)
+
+    monkeypatch.setattr(FakeOpenAI, "do_POST", post)
+    reply = OpenAIClient(model="gpt-6.1-sol", base_url=fake_openai, api_key="k").chat([], TOOLS)
+    assert reply["content"] == "됐습니다"
+    assert [b["reasoning_effort"] for _, _, b in FakeOpenAI.received[-2:]] == ["low", "none"]

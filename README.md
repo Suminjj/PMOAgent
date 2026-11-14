@@ -240,7 +240,7 @@ CPU/GPU로 나뉘면 질문당 1분 이상 걸릴 수 있습니다. 이때는 �
 | PMO_LLM_PROVIDER | ollama | `openai`로 바꾸면 OpenAI API를 쓴다(아래 '외부 OpenAI API' 참고) |
 | OPENAI_API_KEY | 빈 값 | OpenAI API 키. 코드·Git·채팅에 적지 않고 환경변수로만 넣는다 |
 | PMO_OPENAI_MODEL | gpt-6.1-sol | OpenAI 모델 |
-| PMO_OPENAI_REASONING | 빈 값(모델 기본) | 추론 정도 none·minimal·low·medium·high. 낮을수록 빠름 |
+| PMO_OPENAI_REASONING | 빈 값(모델 기본) | 추론 정도 none·minimal·low·medium·high. gpt-6.1-sol은 도구와 함께 쓰면 none만 됨(자동으로 none으로 다시 보냄) |
 | PMO_OPENAI_BASE_URL | https://api.openai.com/v1 | OpenAI 형식 주소(사내 게이트웨이를 받았으면 그 주소) |
 | PMO_OPENAI_API_VERSION | 빈 값 | 넣으면 Azure OpenAI 방식(배포 이름=모델 이름, api-key 헤더). 예: 2024-12-01-preview |
 

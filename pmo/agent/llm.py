@@ -183,7 +183,15 @@ class OpenAIClient:
             }} for t in tools]
         if self.reasoning:
             payload["reasoning_effort"] = self.reasoning
-        body = self._request("/chat/completions", payload)
+        try:
+            body = self._request("/chat/completions", payload)
+        except LLMError as exc:
+            # 11/14: gpt-6.1-sol은 /chat/completions에서 도구와 추론(reasoning_effort)을 함께 쓰지 못한다
+            # ("set reasoning_effort to 'none'"). 이 오류면 추론을 끄고 한 번 다시 보낸다.
+            if "reasoning_effort" not in str(exc) or payload.get("reasoning_effort") == "none":
+                raise
+            payload["reasoning_effort"] = "none"
+            body = self._request("/chat/completions", payload)
         message = ((body.get("choices") or [{}])[0]).get("message") or {}
         usage = body.get("usage") or {}
         return {
