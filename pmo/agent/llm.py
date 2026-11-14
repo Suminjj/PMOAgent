@@ -203,7 +203,7 @@ class OpenAIClient:
         }
 
 
-DEFAULT_OPENAI_MODEL = "gpt-6.1-sol"
+DEFAULT_OPENAI_MODEL = "gpt-6-luna"   # 11/14 담당자: PC 확인에서 빠르고 정확(gpt-6.1-sol은 이 게이트웨이에서 도구 호출 불가)
 
 
 def to_openai_messages(messages: list[dict]) -> list[dict]:
@@ -234,18 +234,44 @@ def to_openai_messages(messages: list[dict]) -> list[dict]:
     return out
 
 
-def provider() -> str:
-    return os.environ.get("PMO_LLM_PROVIDER", "ollama").strip().lower() or "ollama"
+def _real_db(db_file) -> bool:
+    """실제 데이터 DB(data/pmo.db)인지. 모르면(None) 앱 설정의 DB(PMO_DB_PATH, 없으면 data/pmo.db)로 본다."""
+    from pathlib import Path
+    if db_file is None:
+        from pmo.config import db_path
+        db_file = db_path()
+    return Path(db_file).name == "pmo.db"
 
 
-def is_external() -> bool:
+def provider(db_file=None) -> str:
+    """쓸 LLM 제공자. 11/14 담당자 확정: 시연·평가(가상 데이터 DB)는 API, 실제 데이터 DB는 로컬 Ollama.
+
+    PMO_LLM_PROVIDER를 주면 그대로 따른다. 없으면 API 키(OPENAI_API_KEY)가 있고 가상 데이터 DB일 때 openai, 아니면 ollama.
+    """
+    chosen = os.environ.get("PMO_LLM_PROVIDER", "").strip().lower()
+    if chosen:
+        return chosen
+    return "openai" if os.environ.get("OPENAI_API_KEY") and not _real_db(db_file) else "ollama"
+
+
+def is_external(db_file=None) -> bool:
     """질문·조회 결과가 PC 밖으로 나가는 제공자인지."""
-    return provider() != "ollama"
+    return provider(db_file) != "ollama"
 
 
-def make_client(model: str | None = None) -> ChatClient:
-    """PMO_LLM_PROVIDER(기본 ollama)에 맞는 클라이언트. model을 주면 그 모델로."""
-    name = provider()
+def _provider_of_model(model: str) -> str | None:
+    """모델 이름으로 제공자를 알 수 있으면(평가에서 qwen3:8b,gpt-6-luna를 한 번에 비교) 그 제공자."""
+    name = model.strip().lower()
+    if name.startswith(("gpt", "o1", "o3", "o4")):
+        return "openai"
+    if ":" in name or name.startswith(("qwen", "gemma", "llama", "mistral", "exaone")):
+        return "ollama"
+    return None
+
+
+def make_client(model: str | None = None, db_file=None) -> ChatClient:
+    """제공자에 맞는 클라이언트. model을 주면 그 모델로(이름으로 제공자를 알 수 있으면 그 제공자)."""
+    name = (_provider_of_model(model) if model else None) or provider(db_file)
     if name == "ollama":
         return OllamaClient(model=model)
     if name == "openai":
@@ -257,20 +283,19 @@ def client_from_env() -> ChatClient:
     return make_client()
 
 
-def model_label() -> str:
+def model_label(db_file=None) -> str:
     """화면 표시용 모델 이름."""
-    if provider() == "openai":
+    if provider(db_file) == "openai":
         return os.environ.get("PMO_OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
     return os.environ.get("PMO_OLLAMA_MODEL", "qwen3:8b")
 
 
-def external_blocked(db_file) -> str | None:
-    """외부 API를 실제 데이터 DB에 쓰려 하면 막는 이유. 괜찮으면 None.
+def external_blocked(client, db_file) -> str | None:
+    """외부 API 클라이언트를 실제 데이터 DB에 쓰려 하면 막는 이유. 괜찮으면 None.
 
     AGENTS.md: 실제 인력·계약 데이터는 PC 밖으로 보내지 않는다. 외부 API는 가상 데이터 DB(PMO_DB_PATH)로 시연·평가할 때만 쓴다.
     """
-    from pathlib import Path
-    if is_external() and Path(db_file).name == "pmo.db":
-        return ("외부 LLM API(PMO_LLM_PROVIDER=openai)는 실제 데이터 DB(data\\pmo.db)에서 쓸 수 없습니다. "
-                "가상 데이터 DB(PMO_DB_PATH)로 실행하거나 PMO_LLM_PROVIDER를 지우고 로컬 Ollama를 쓰세요.")
+    if isinstance(client, OpenAIClient) and _real_db(db_file):
+        return ("외부 LLM API는 실제 데이터 DB(data\\pmo.db)에서 쓸 수 없습니다. "
+                "가상 데이터 DB(PMO_DB_PATH)로 실행하거나 PMO_LLM_PROVIDER=openai 설정을 지우고 로컬 Ollama를 쓰세요.")
     return None

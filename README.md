@@ -127,30 +127,33 @@ $env:PMO_DB_PATH = "data\eval.db"; $env:PMO_TODAY = "2026-11-15"
 0원으로 대체하지 않습니다. 이름·업체명이 같아도 별도의 내부 관리번호로 등록할 수 있습니다.
 검수 금액 계산, 월별 구매 필요 판정, 자연어 등록·수정은 후속 단계입니다.
 
-## 외부 OpenAI API로 자연어 조회 (선택)
+## 시연·평가는 OpenAI API, 실제 데이터는 로컬 Ollama
 
-기본은 로컬 Ollama입니다. 지원받은 OpenAI API 키로 바꿔 쓸 수 있지만, 이때는 **질문과 조회 결과(인력 이름·과제·단가 등)가
-OpenAI 서버로 전송**됩니다. 그래서 실제 데이터 DB(`data\pmo.db`)에서는 화면·`scripts.ask`가 질문을 받지 않고,
-가상 데이터 DB(`PMO_DB_PATH`)로 시연·평가할 때만 씁니다. 화면 왼쪽 아래와 Agent 머리띠에 '외부 API'로 표시됩니다.
+11/14 담당자 확정: **가상 데이터 DB로 시연·평가할 때는 지원받은 OpenAI API(기본 모델 `gpt-6-luna`)**,
+**실제 데이터 DB(`data\pmo.db`)는 로컬 Ollama**를 씁니다. API 키가 있으면 앱이 DB를 보고 알아서 고릅니다.
+API를 쓰면 질문과 조회 결과(인력 이름·과제·단가 등)가 게이트웨이로 전송되므로 실제 데이터에는 쓰지 않습니다.
+화면 왼쪽 아래와 Agent 머리띠에 '외부 API' 또는 '로컬 LLM'으로 표시됩니다.
+
+처음 한 번, 키와 게이트웨이 정보를 Windows 사용자 환경변수로 저장합니다(저장소·파일에 적지 않음). 저장 후 새 PowerShell 창부터 적용됩니다.
 
 ```powershell
-$env:OPENAI_API_KEY = "sk-..."              # 키는 이 창에서만. 파일·Git·채팅에 적지 않는다
-$env:PMO_LLM_PROVIDER = "openai"
-$env:PMO_OPENAI_MODEL = "gpt-6.1-sol"       # 빠르고 싸게: gpt-6-luna
+setx OPENAI_API_KEY "atl-..."                       # 지원받은 키
+setx PMO_OPENAI_BASE_URL "https://<지원받은 base url>"
+setx PMO_OPENAI_API_VERSION "2024-12-01-preview"    # Azure OpenAI 방식 게이트웨이일 때
+```
+
+시연(새 창):
+
+```powershell
+Copy-Item data\demo-original.db data\demo-show.db -Force
 $env:PMO_DB_PATH = "data\demo-show.db"; $env:PMO_TODAY = "2026-11-15"
-.venv\Scripts\python.exe -m streamlit run app.py
-.venv\Scripts\python.exe -m scripts.run_evals --set eval --model gpt-6.1-sol,gpt-6-luna   # 평가(가상 데이터)
+.venv\Scripts\python.exe -m streamlit run app.py          # → 외부 API gpt-6-luna
+.venv\Scripts\python.exe -m scripts.run_evals --set eval --model gpt-6-luna,qwen3:8b   # API·로컬 모델 비교 평가
 ```
 
-Azure OpenAI와 같은 게이트웨이(경로 `/openai/deployments/{deployment}/chat/completions`, `api-version`)를 받았으면
-주소에는 base URL만 넣고 api-version을 함께 넣습니다(모델 이름이 배포 이름으로 쓰임).
-
-```powershell
-$env:PMO_OPENAI_BASE_URL = "https://skax.ai-talentlab.com"
-$env:PMO_OPENAI_API_VERSION = "2024-12-01-preview"
-```
-
-다시 Ollama로 돌아가려면 `Remove-Item Env:PMO_LLM_PROVIDER` 후 다시 실행합니다. Text-to-SQL(자유 조회)도 같은 API를 씁니다.
+`PMO_DB_PATH` 없이 실행하면(실제 데이터) 로컬 Ollama를 씁니다. 가상 데이터에서도 Ollama로 보려면 `$env:PMO_LLM_PROVIDER = "ollama"`.
+게이트웨이 메모: gpt-6.1-sol은 이 방식(`/chat/completions`)에서 도구 호출과 추론 설정을 함께 쓸 수 없어 Agent에 쓸 수 없습니다(11/14 PC 확인).
+OpenAI에 직접 연결하려면 `PMO_OPENAI_BASE_URL=https://api.openai.com/v1`, `PMO_OPENAI_API_VERSION`은 비웁니다.
 
 ## 로컬 LLM으로 자연어 조회 (Ollama)
 
@@ -237,10 +240,10 @@ CPU/GPU로 나뉘면 질문당 1분 이상 걸릴 수 있습니다. 이때는 �
 | PMO_OLLAMA_URL | http://localhost:11434 | Ollama 서버 주소 |
 | PMO_OLLAMA_THINK | false | 추론 모드. 기본 끔(평가에서 정답률은 같고 약 4배 빠름). `true`로 켜고, `model`이면 모델 기본값 |
 | PMO_OLLAMA_NUM_CTX | 8192 | 모델이 한 번에 읽는 길이(토큰). Ollama 기본 4096은 지시문·도구 설명이 잘릴 수 있어 늘려 둠 |
-| PMO_LLM_PROVIDER | ollama | `openai`로 바꾸면 OpenAI API를 쓴다(아래 '외부 OpenAI API' 참고) |
+| PMO_LLM_PROVIDER | 자동 | 비우면 API 키가 있고 가상 데이터 DB일 때 openai, 아니면 ollama. `openai`·`ollama`로 직접 고를 수 있음(실제 데이터 DB에서 openai는 막힘) |
 | OPENAI_API_KEY | 빈 값 | OpenAI API 키. 코드·Git·채팅에 적지 않고 환경변수로만 넣는다 |
-| PMO_OPENAI_MODEL | gpt-6.1-sol | OpenAI 모델 |
-| PMO_OPENAI_REASONING | 빈 값(모델 기본) | 추론 정도 none·minimal·low·medium·high. gpt-6.1-sol은 도구와 함께 쓰면 none만 됨(자동으로 none으로 다시 보냄) |
+| PMO_OPENAI_MODEL | gpt-6-luna | OpenAI 모델(Azure 방식이면 배포 이름) |
+| PMO_OPENAI_REASONING | 빈 값(모델 기본) | 추론 정도 none·minimal·low·medium·high. 도구와 함께 거절되면 none으로 한 번 다시 보냄 |
 | PMO_OPENAI_BASE_URL | https://api.openai.com/v1 | OpenAI 형식 주소(사내 게이트웨이를 받았으면 그 주소) |
 | PMO_OPENAI_API_VERSION | 빈 값 | 넣으면 Azure OpenAI 방식(배포 이름=모델 이름, api-key 헤더). 예: 2024-12-01-preview |
 

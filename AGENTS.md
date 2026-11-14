@@ -70,10 +70,12 @@
 - [확정] LLM: PC에서 실행하는 로컬 LLM(Ollama). 데이터를 외부로 보내지 않는다.
 - [확정] 현재 기본 모델 `qwen3:8b`, 추론 모드 끔, 문맥 8192토큰 (10/17 평가: 질문 7개 모두 정답, 평균 응답 27초 · CPU 실행)
 - [제안] 평가 질문을 늘린 뒤 `qwen3:14b`·`gemma4:12b`와 다시 비교해 기본 모델을 재검토한다
-- [제안] 11/14 담당자 요청(지원받은 OpenAI API 키): OpenAI API를 선택형으로 추가했다(`pmo/agent/llm.py` OpenAIClient,
-  `PMO_LLM_PROVIDER=openai`, 기본 모델 gpt-6.1-sol). 위 [확정](로컬 LLM·외부 전송 없음)과 부딪혀 기본은 Ollama로 두고,
-  실제 데이터 DB(data/pmo.db)에서는 외부 API로 질문을 받지 않는다(`external_blocked`). 가상 데이터 DB로 시연·평가할 때만 쓴다.
-  화면에 '외부 API'로 표시한다. 기본을 API로 바꾸거나 실제 데이터에 쓰려면 담당자 확정이 필요하다.
+- [확정] 11/14 담당자: 시연·평가(가상 데이터 DB)는 지원받은 OpenAI API(Azure OpenAI 방식 게이트웨이), 기본 모델 `gpt-6-luna`
+  (PC 확인: 빠르고 정확). 실제 데이터 DB(data/pmo.db)는 위 [확정]대로 로컬 Ollama — 실제 데이터는 PC 밖으로 보내지 않는다.
+  [제안] 구현(`pmo/agent/llm.py`): PMO_LLM_PROVIDER가 없으면 API 키가 있고 가상 데이터 DB일 때 openai, 아니면 ollama.
+  직접 openai를 골라도 실제 데이터 DB에서는 질문을 받지 않는다(`external_blocked`). 평가 `--model`은 모델 이름으로 제공자를 고른다
+  (gpt-… = API, qwen3:8b 등 = Ollama). 키·게이트웨이 주소는 사용자 환경변수로만(저장소에 적지 않음, 공개 저장소).
+  gpt-6.1-sol은 이 게이트웨이의 /chat/completions에서 도구 호출과 reasoning_effort를 함께 쓸 수 없어(none 미지원) Agent에 쓰지 않는다.
 - [확정] 초기부터 복잡한 프레임워크를 도입하지 않고 MVP 완성을 우선한다. LangGraph 등 도입 시점은 [TODO]
 - [제안] 데이터 처리는 표준 라이브러리 우선, 필요 시 pandas
 - 기존 저장소의 구성·의존성과 충돌하면 먼저 설명한다.
@@ -564,7 +566,7 @@
 - [ ] 갱신·종료 후 미처리 알림 해제 기준
 - [ ] 사내 신청·예약 시스템 연동 가능 여부, 상시 알림 실행 환경
 - [x] LLM 실행 방식: 로컬 Ollama
-- [x] 현재 기본 모델: qwen3:8b, 추론 끔
+- [x] 현재 기본 모델: qwen3:8b, 추론 끔 (실제 데이터) · 시연·평가는 OpenAI API gpt-6-luna (11/14)
 - [ ] 평가 질문 확대 후 qwen3:14b·gemma4:12b 재비교
 - [x] Text-to-SQL: LlamaIndex 사용 (조회 SQL 생성만)
 - [ ] LangGraph 등 Agent 프레임워크 도입 시점

@@ -131,7 +131,7 @@ def _ollama_llm(Ollama, model, base_url):
     return Ollama(**llm_kwargs)
 
 
-def _chat_client_llm():
+def _chat_client_llm(db_file):
     """LlamaIndex가 우리 ChatClient(OpenAI 등)로 SQL 문장을 만들게 하는 얇은 연결(새 패키지 없이)."""
     from llama_index.core.llms import CompletionResponse, CustomLLM, LLMMetadata
     from llama_index.core.llms.callbacks import llm_completion_callback
@@ -144,7 +144,7 @@ def _chat_client_llm():
 
         @llm_completion_callback()
         def complete(self, prompt: str, formatted: bool = False, **kwargs) -> CompletionResponse:
-            reply = make_client().chat([{"role": "user", "content": prompt}], [])
+            reply = make_client(db_file=db_file).chat([{"role": "user", "content": prompt}], [])
             return CompletionResponse(text=reply["content"])
 
         @llm_completion_callback()
@@ -176,8 +176,8 @@ class LlamaIndexSQLGenerator:
         self._sql_engine = engine
         database = SQLDatabase(engine, include_tables=list(SAFE_TABLES), sample_rows_in_table_info=2)
         from pmo.agent.llm import is_external
-        if is_external():
-            llm = _chat_client_llm()            # 11/14: 외부 API를 고르면 SQL 생성도 같은 API로(Ollama 없이)
+        if is_external(path):
+            llm = _chat_client_llm(path)            # 11/14: 외부 API를 고르면 SQL 생성도 같은 API로(Ollama 없이)
         else:
             llm = _ollama_llm(Ollama, model, base_url)
         self._uri = uri

@@ -107,18 +107,25 @@ def test_check_lists_models(fake_openai):
 
 
 def test_provider_choice_and_real_db_block(monkeypatch, tmp_path):
-    monkeypatch.delenv("PMO_LLM_PROVIDER", raising=False)
-    assert isinstance(make_client(), llm.OllamaClient) and external_blocked(tmp_path / "pmo.db") is None
-    monkeypatch.setenv("PMO_LLM_PROVIDER", "openai")
-    monkeypatch.setenv("PMO_OPENAI_MODEL", "gpt-6-luna")
-    client = make_client()
-    assert isinstance(client, OpenAIClient) and client.name == "openai:gpt-6-luna"
-    assert make_client("gpt-6.1-sol").model == "gpt-6.1-sol"
-    assert "실제 데이터 DB" in external_blocked(tmp_path / "pmo.db")       # 실제 데이터는 PC 밖으로 보내지 않는다
-    assert external_blocked(tmp_path / "demo-show.db") is None              # 가상 데이터 DB는 허용
+    """11/14 담당자: 시연·평가(가상 데이터 DB)는 API, 실제 데이터 DB(pmo.db)는 로컬 Ollama."""
+    real, demo = tmp_path / "pmo.db", tmp_path / "demo-show.db"
+    assert isinstance(make_client(db_file=demo), llm.OllamaClient)            # 키가 없으면 Ollama
+    monkeypatch.setenv("OPENAI_API_KEY", "atl-test")
+    client = make_client(db_file=demo)
+    assert isinstance(client, OpenAIClient) and client.model == "gpt-6-luna"  # 기본 모델
+    assert isinstance(make_client(db_file=real), llm.OllamaClient)            # 실제 데이터는 PC 밖으로 보내지 않는다
+    assert external_blocked(make_client(db_file=real), real) is None
+    assert make_client("qwen3:8b", db_file=demo).name == "ollama:qwen3:8b"     # 평가에서 모델 이름으로 제공자 선택
+    assert make_client("gpt-4.1", db_file=demo).name == "openai:gpt-4.1"
+    monkeypatch.setenv("PMO_LLM_PROVIDER", "openai")                         # 직접 고르면 따르되, 실제 DB에서는 막는다
+    forced = make_client(db_file=real)
+    assert isinstance(forced, OpenAIClient) and "실제 데이터 DB" in external_blocked(forced, real)
+    assert external_blocked(make_client(db_file=demo), demo) is None
+    monkeypatch.setenv("PMO_LLM_PROVIDER", "ollama")
+    assert isinstance(make_client(db_file=demo), llm.OllamaClient)
     monkeypatch.setenv("PMO_LLM_PROVIDER", "gemini")
     with pytest.raises(LLMError, match="지원하지 않는"):
-        make_client()
+        make_client(db_file=demo)
 
 
 def test_azure_style_gateway(fake_openai, monkeypatch):

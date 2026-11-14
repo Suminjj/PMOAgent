@@ -24,11 +24,11 @@ def main() -> int:
     parser.add_argument("--agent", choices=list(AGENTS), default="auto",
                         help="업무 카테고리: " + ", ".join(f"{k}={a.label}" for k, a in AGENTS.items()))
     args = parser.parse_args()
-    blocked = external_blocked(db_path())
+    client = make_client(args.model, db_file=db_path())
+    blocked = external_blocked(client, db_path())
     if blocked:
         print(blocked)
         return 2
-    client = make_client(args.model)
     result = ask(Service(db_path()), args.question, client, agent=args.agent)
     for call in result["calls"]:
         print(f"[도구] {call['tool']} {call['arguments']} → {'성공' if call['ok'] else '실패'}")
