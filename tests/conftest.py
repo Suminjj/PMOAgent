@@ -1,6 +1,19 @@
 """화면 테스트 공통: v2 로그인. 앱은 로그인한 사용자만 쓸 수 있으므로 테스트 계정으로 세션을 연다(가상 데이터)."""
 from pathlib import Path
 
+import pytest
+
+# 11/14: 외부 API 설정(PMO_LLM_PROVIDER=openai 등)을 켜 둔 창에서 pytest를 돌려도 테스트는 가짜 Ollama 서버만 쓴다
+# (실제 API를 부르거나 키를 쓰지 않게). OpenAI 테스트는 필요한 값을 테스트 안에서 넣는다.
+_LLM_ENV = ("PMO_LLM_PROVIDER", "OPENAI_API_KEY", "PMO_OPENAI_MODEL", "PMO_OPENAI_BASE_URL",
+            "PMO_OPENAI_API_VERSION", "PMO_OPENAI_REASONING", "PMO_ROUTER_MODEL", "PMO_ROUTER_MODE")
+
+
+@pytest.fixture(autouse=True)
+def _local_llm_only(monkeypatch):
+    for name in _LLM_ENV:
+        monkeypatch.delenv(name, raising=False)
+
 TEST_PASSWORD = "test-pass-1234"
 
 
