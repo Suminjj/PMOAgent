@@ -432,3 +432,12 @@ def test_answer_hides_internal_ids():
     assert hide_internal_ids(table, []) == "| 이름 | 계약번호 |\n| --- | --- |\n| 박협력 | 450011101 |"
     uuid = "3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
     assert hide_internal_ids(f"김가상({uuid}) 계약번호 450012201", []) == "김가상 계약번호 450012201"
+
+
+def test_hide_ids_keeps_names_put_in_person_id():
+    """11/15 qwen3:8b 평가: 모델이 person_id에 이름(신협력)을 넣으면 답변의 이름까지 지워 '의 …'로 시작했다."""
+    from pmo.agent.answer_format import hide_internal_ids
+    calls = [{"tool": "prepare_assignment_update", "arguments": {"person_id": "신협력"},
+              "data": {"person": {"id": "EV-17", "name": "신협력"}}}]
+    answer = "신협력의 12월 매출귀속 프로젝트 변경을 준비했습니다. (EV-17)"
+    assert hide_internal_ids(answer, calls) == "신협력의 12월 매출귀속 프로젝트 변경을 준비했습니다."
