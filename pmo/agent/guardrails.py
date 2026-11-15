@@ -70,7 +70,7 @@ ANSWERS = {
     "redirect_failed": "이 요청은 {here} 업무인데 처리하지 못했습니다. 인력 이름과 기간 등을 넣어 다시 요청해 주세요.",
     "injection": "이전 지시를 무시하거나 바꾸라는 요청은 따를 수 없습니다. 인력·투입·구매계약 업무를 요청해 주세요.",
     "unsupported": "이 서비스는 인력의 {what} 정보를 관리하지 않아 답할 수 없습니다. "
-                   "투입 과제·기간, 구매계약 정보만 조회할 수 있습니다.",
+                   "인력·투입(과제·기간·MM), 구매계약, 검수 금액 정보만 조회할 수 있습니다.",
     "out_of_scope": "이 요청은 도와드릴 수 없습니다. 인력·투입, 구매계약, 검수 업무만 도와드립니다. "
                     "예: '김정직 지금 무슨 과제에 투입되어 있어?'",
     "redirect": "이 요청은 {here} 카테고리에서 처리할 수 없습니다. 홈 화면에서 '{there}'를 골라 다시 요청해 주세요.",
@@ -346,7 +346,28 @@ def hold_answer(service, question: str, names: list[str]) -> tuple[str, str]:
     """답변 보류 문장. 대상 없이 변경을 요청했으면 지어낸 이름 대신 대상을 묻는다(v3 평가 G02 전문)."""
     if not mentioned_people(service, question) and any(w in question for w in CHANGE_WORDS):
         return ANSWERS["ask_target"], "ask_target"
+    typo = typo_in_question(service, question, names)
+    if typo:
+        # 11/16 판정 T03: '박헙력'을 모델이 '박협력'으로 바꿔 답해 보류됨 → 내부 보류 문장 대신 오타를 되묻는다
+        from pmo.agent.actions import typo_message
+        return typo_message(service, typo), "typo"
     return ANSWERS["hold"].format(names=", ".join(names)), "hold"
+
+
+_WORD = re.compile(r"[가-힣]{2,5}")
+
+
+def typo_in_question(service, question: str, names: list[str]) -> str | None:
+    """질문 속 낱말 중 등록되지 않았고, 답변에 지어 넣은 이름과 비슷한(오타로 보이는) 말."""
+    registered = {p["name"] for p in service.people() if p.get("name")}
+    for word in _WORD.findall(question or ""):
+        for size in range(len(word), 1, -1):          # 조사가 붙은 말('박헙력이')도 앞부분으로 맞춘다
+            part = word[:size]
+            if part in registered:
+                break
+            if difflib.get_close_matches(part, names, n=1, cutoff=0.6):
+                return part
+    return None
 
 
 def mentioned_people(service, text: str) -> list[str]:
