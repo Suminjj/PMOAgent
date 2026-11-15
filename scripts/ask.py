@@ -11,7 +11,7 @@ import argparse
 import sys
 
 from pmo.agent.agents import AGENTS
-from pmo.agent.llm import OllamaClient
+from pmo.agent.llm import external_blocked, make_client
 from pmo.agent.runner import ask
 from pmo.config import db_path
 from pmo.service import Service
@@ -20,11 +20,15 @@ from pmo.service import Service
 def main() -> int:
     parser = argparse.ArgumentParser(description="PMOAgent 자연어 조회")
     parser.add_argument("question")
-    parser.add_argument("--model", help="Ollama 모델 (기본: PMO_OLLAMA_MODEL 또는 qwen3:8b)")
+    parser.add_argument("--model", help="모델 (기본: PMO_OLLAMA_MODEL 또는 qwen3:8b, PMO_LLM_PROVIDER=openai면 PMO_OPENAI_MODEL)")
     parser.add_argument("--agent", choices=list(AGENTS), default="auto",
                         help="업무 카테고리: " + ", ".join(f"{k}={a.label}" for k, a in AGENTS.items()))
     args = parser.parse_args()
-    client = OllamaClient(model=args.model)
+    client = make_client(args.model, db_file=db_path())
+    blocked = external_blocked(client, db_path())
+    if blocked:
+        print(blocked)
+        return 2
     result = ask(Service(db_path()), args.question, client, agent=args.agent)
     for call in result["calls"]:
         print(f"[도구] {call['tool']} {call['arguments']} → {'성공' if call['ok'] else '실패'}")

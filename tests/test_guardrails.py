@@ -367,6 +367,17 @@ def test_timeline_question_answers_with_table(tmp_path):
     assert ask(s, "김협력 지금 무슨 과제야?", client, agent="staff")["answer"].startswith("김협력이 두 명")
 
 
+def test_timeline_table_when_no_current_assignment():
+    """11/15 평가(gpt-6-luna): 인력 찾기 요약의 현재 투입이 '현재 투입 없음' 문장이면 표 만들다 멈췄다(AttributeError)."""
+    from pmo.agent.answer_format import timeline_answer
+    past = {"project": "APC Analysis", "revenue_project": "D040", "start_date": "2026-01-01", "end_date": "2026-06-30",
+            "grade": "L6", "assignment_type": "Full time", "mm": "6.000"}
+    calls = [{"tool": "find_people", "ok": True, "data": [{"name": "가협력", "company": "알파솔루션", "summary": {
+        "today": "2026-11-15", "current": "현재 투입 없음", "upcoming": [], "past": [past]}}]}]
+    answer = timeline_answer("가협력 투입 과제 알려줘", calls)
+    assert "현재 투입 중인 과제는 없습니다" in answer and "| 과거 | APC Analysis |" in answer
+
+
 def test_transfer_with_unsaid_revenue_project_still_makes_card(tmp_path):
     """11/10 화면 확인: '이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘'에 모델이 기존 매출귀속(D043)을 넣어
     카드가 막히고 '코드를 알려주세요'로 되물음 → 말하지 않은 매출귀속·매입단가는 빼고(미정·이어받기) 카드를 만든다."""
@@ -404,3 +415,20 @@ def test_leader_asking_other_project_person_is_told_scope(service):
     # PMO·PM에게는 그대로 '없다'
     assert call_tool(service, "find_people", {"name": "홍길동"})["data"] == []
     assert guardrails.precheck(service, "김컨설 지금 무슨 과제야?", "auto", {}) is None
+
+
+def test_answer_hides_internal_ids():
+    """11/15 평가: 네 모델 모두 답변에 내부 관리번호(EV-07)를 적었다 → 10/20 확정(화면에 보이지 않음)대로 코드가 지운다."""
+    from pmo.agent.answer_format import hide_internal_ids
+    calls = [{"tool": "find_people", "data": [{"id": "EV-03", "name": "김협력"}, {"id": "EV-04", "name": "김협력"}]}]
+    answer = ("동명이인입니다. (이름 또는 관리번호로 알려주세요.)\n\n- 김협력 · 알파솔루션 · 관리번호 EV-03\n"
+              "- 김협력 · 감마테크 (EV-04)")
+    hidden = hide_internal_ids(answer, calls)
+    assert "EV-0" not in hidden and "관리번호" not in hidden
+    assert "- 김협력 · 알파솔루션\n- 김협력 · 감마테크" in hidden
+    assert hide_internal_ids("정협력 · 감마테크 · EV-07 기준 8월 MM은 1MM입니다.", []) == "정협력 · 감마테크 기준 8월 MM은 1MM입니다."
+    assert hide_internal_ids("이협력 · 알파솔루션 · EV-05의 현재 투입", []) == "이협력 · 알파솔루션의 현재 투입"
+    table = "| 이름 | 관리번호 | 계약번호 |\n|---|---|---|\n| 박협력 | EV-06 | 450011101 |"
+    assert hide_internal_ids(table, []) == "| 이름 | 계약번호 |\n| --- | --- |\n| 박협력 | 450011101 |"
+    uuid = "3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
+    assert hide_internal_ids(f"김가상({uuid}) 계약번호 450012201", []) == "김가상 계약번호 450012201"

@@ -258,10 +258,12 @@ def sidebar_brand() -> None:
         unsafe_allow_html=True)
 
 
-def sidebar_footer(db_name: str, people: int, model: str) -> None:
+def sidebar_footer(db_name: str, people: int, model: str, external: bool = False) -> None:
+    where = f"외부 API {escape(model)} · 질문·조회 결과가 PC 밖으로 전송됨" if external \
+        else f"로컬 LLM {escape(model)} · PC 밖 전송 없음"
     st.sidebar.markdown(
         f'<div class="pmo-side-foot">연결된 DB · {escape(db_name)} · 인력 {people}명<br>'
-        f'<span class="pmo-dot"></span>로컬 LLM {escape(model)} · PC 밖 전송 없음</div>',
+        f'<span class="pmo-dot"></span>{where}</div>',
         unsafe_allow_html=True)
 
 
@@ -298,10 +300,11 @@ def auth_hero(subtitle: str) -> None:
                 f'<div class="pmo-auth-sub">{escape(subtitle)}</div></div>', unsafe_allow_html=True)
 
 
-def agent_header() -> None:
-    """홈 PMO Agent 머리띠(11/09 담당자 시안 A). 배지는 실제 연결 확인이 아니라 '로컬 LLM' 사용 표시다."""
+def agent_header(external: bool = False) -> None:
+    """홈 PMO Agent 머리띠(11/09 담당자 시안 A). 배지는 실제 연결 확인이 아니라 쓰는 LLM 종류 표시다(로컬·외부 API)."""
+    badge = "외부 API" if external else "로컬 LLM"
     st.markdown('<div class="pmo-agent-head"><div class="pmo-agent-title"><span class="pmo-agent-spark">✦</span>'
-                'PMO Agent</div><span class="pmo-agent-live">로컬 LLM</span></div>', unsafe_allow_html=True)
+                f'PMO Agent</div><span class="pmo-agent-live">{badge}</span></div>', unsafe_allow_html=True)
 
 
 def kpi_row(items: list[tuple[str, int, str, bool]], columns: int = 4) -> None:

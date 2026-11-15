@@ -115,8 +115,11 @@ def router_client(client: ChatClient | None) -> ChatClient | None:
     model = os.environ.get("PMO_ROUTER_MODEL", "").strip()
     if not model or client is None or getattr(client, "model", None) == model:
         return client
-    from pmo.agent.llm import OllamaClient
-    return OllamaClient(model=model)
+    from pmo.agent.llm import OpenAIClient, make_client
+    judge = make_client(model)
+    if isinstance(judge, OpenAIClient) and not isinstance(client, OpenAIClient):
+        return client       # 답변을 로컬 모델로 하는 중(실제 데이터)이면 판정만 외부 API로 보내지 않는다
+    return judge
 
 
 def route(service: Service, question: str, client: ChatClient | None = None,

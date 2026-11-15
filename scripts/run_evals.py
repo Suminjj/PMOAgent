@@ -73,8 +73,8 @@ def print_route_row(row: dict) -> None:
 
 def routing_only(models: list[str], modes: list[str]) -> int:
     """판정 질문 세트로 라우터만 채점한다. 모델이 없으면 규칙만."""
-    from pmo.agent.llm import LLMError, OllamaClient
-    clients = [OllamaClient(model=m) for m in models] or [None]
+    from pmo.agent.llm import LLMError, make_client
+    clients = [make_client(m) for m in models] or [None]
     try:
         for client in clients:
             if client is not None:
@@ -104,7 +104,7 @@ def main() -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(description="PMOAgent 평가 질문 실행")
-    parser.add_argument("--model", help="Ollama 모델 이름. 쉼표로 여러 개를 비교한다. 없으면 oracle")
+    parser.add_argument("--model", help="모델 이름(PMO_LLM_PROVIDER에 따라 Ollama 또는 OpenAI). 쉼표로 여러 개를 비교한다. 없으면 oracle")
     parser.add_argument("--set", default="v1", choices=("v1", "eval"),
                         help="v1: 기존 평가 질문 9개(시연 데이터) · eval: 정확도 평가 세트(evals/eval_set.json, 기준일 11/15)")
     parser.add_argument("--only", help="골라 실행할 질문 ID 또는 목표 버전(쉼표로). 예: O04,P01,P02 또는 v2")
@@ -127,9 +127,8 @@ def main() -> int:
     if not args.model:
         planners = [OraclePlanner()]
     else:
-        from pmo.agent.llm import OllamaClient
-        from pmo.agent.llm import LLMError
-        clients = [OllamaClient(model=m.strip()) for m in args.model.split(",") if m.strip()]
+        from pmo.agent.llm import LLMError, make_client
+        clients = [make_client(m.strip()) for m in args.model.split(",") if m.strip()]
         try:
             for client in clients:
                 client.check()  # 서버·모델이 없으면 질문을 돌리기 전에 바로 멈춘다
@@ -137,8 +136,12 @@ def main() -> int:
             print(f"시작할 수 없습니다: {exc}")
             return 2
         planners = [AgentPlanner(c, r) for c in clients for r in routings]
-        print("설정: 문맥 " + str(clients[0].num_ctx) + "토큰, 추론 모드 "
-              + os.environ.get("PMO_OLLAMA_THINK", "false"), flush=True)
+        if hasattr(clients[0], "num_ctx"):
+            print("설정: 문맥 " + str(clients[0].num_ctx) + "토큰, 추론 모드 "
+                  + os.environ.get("PMO_OLLAMA_THINK", "false"), flush=True)
+        else:
+            print("설정: 외부 API " + clients[0].name + ", 추론 정도 "
+                  + (os.environ.get("PMO_OPENAI_REASONING") or "모델 기본값"), flush=True)
     results = []
     for planner in planners:
         print(f"\n=== {planner.name} === (질문 하나가 끝날 때마다 표시됩니다)", flush=True)

@@ -228,7 +228,18 @@ def run(planner: Planner | None = None, questions_path: Path = QUESTIONS,
                 from pmo.eval_data import EVAL_PASSWORD
                 service = Service(base.path, clock=lambda: today,
                                   access=authenticate(base.path, q["user"], EVAL_PASSWORD))
-            calls = planner.plan(q, tool_specs(), service)
+            try:
+                calls = planner.plan(q, tool_specs(), service)
+            except Exception as exc:     # 11/15: 한 질문의 오류로 평가 전체가 멈추지 않게 실패로 기록하고 계속한다
+                row = {"id": q["id"], "question": q["question"], "agent": q.get("agent"),
+                       "route_tag": tag_agents(q.get("agent")), "tools": [], "graded": q["steps"] is not None,
+                       "success": False if q["steps"] is not None else None,
+                       "problems": [f"실행 오류: {type(exc).__name__}: {exc}"], "answer_key": q.get("answer"),
+                       "duration_ms": round((time.perf_counter() - t0) * 1000)}
+                rows.append(row)
+                if on_result:
+                    on_result(row)
+                continue
             called = [c[0] for c in calls]
             if q["steps"] is None:
                 # 답변 채점 질문: 맞는 도구가 없거나 답변 내용이 핵심. 기록만 하고 v4 저지가 answer 키로 채점한다.
