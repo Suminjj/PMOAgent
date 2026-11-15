@@ -367,6 +367,17 @@ def test_timeline_question_answers_with_table(tmp_path):
     assert ask(s, "김협력 지금 무슨 과제야?", client, agent="staff")["answer"].startswith("김협력이 두 명")
 
 
+def test_timeline_table_when_no_current_assignment():
+    """11/15 평가(gpt-6-luna): 인력 찾기 요약의 현재 투입이 '현재 투입 없음' 문장이면 표 만들다 멈췄다(AttributeError)."""
+    from pmo.agent.answer_format import timeline_answer
+    past = {"project": "APC Analysis", "revenue_project": "D040", "start_date": "2026-01-01", "end_date": "2026-06-30",
+            "grade": "L6", "assignment_type": "Full time", "mm": "6.000"}
+    calls = [{"tool": "find_people", "ok": True, "data": [{"name": "가협력", "company": "알파솔루션", "summary": {
+        "today": "2026-11-15", "current": "현재 투입 없음", "upcoming": [], "past": [past]}}]}]
+    answer = timeline_answer("가협력 투입 과제 알려줘", calls)
+    assert "현재 투입 중인 과제는 없습니다" in answer and "| 과거 | APC Analysis |" in answer
+
+
 def test_transfer_with_unsaid_revenue_project_still_makes_card(tmp_path):
     """11/10 화면 확인: '이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘'에 모델이 기존 매출귀속(D043)을 넣어
     카드가 막히고 '코드를 알려주세요'로 되물음 → 말하지 않은 매출귀속·매입단가는 빼고(미정·이어받기) 카드를 만든다."""

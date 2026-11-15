@@ -63,7 +63,9 @@ def timeline_answer(question: str, calls: list[dict]) -> str | None:
     if not found:
         return None
     label, t = found
-    by_start = lambda rows: sorted(rows or [], key=lambda a: a.get("start_date") or "")
+    # 인력 찾기 요약은 현재 투입이 없으면 목록 대신 '현재 투입 없음' 문장을 준다 → 목록(dict)만 쓴다(11/15 평가 오류)
+    by_start = lambda rows: sorted((a for a in rows if isinstance(a, dict)) if isinstance(rows, list) else [],
+                                   key=lambda a: a.get("start_date") or "")
     past, current, upcoming = by_start(t.get("past")), by_start(t.get("current")), by_start(t.get("upcoming"))
     if not (past or current or upcoming):
         return None
