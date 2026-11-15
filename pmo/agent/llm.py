@@ -203,7 +203,7 @@ class OpenAIClient:
         }
 
 
-DEFAULT_OPENAI_MODEL = "gpt-6-luna"   # 11/14 담당자: PC 확인에서 빠르고 정확(gpt-6.1-sol은 이 게이트웨이에서 도구 호출 불가)
+DEFAULT_OPENAI_MODEL = "gpt-4.1"   # 11/15 담당자: 평가 세트 54문항 4개 모델 비교에서 오답 없이 빠름(AGENTS.md 3장)
 
 
 def to_openai_messages(messages: list[dict]) -> list[dict]:

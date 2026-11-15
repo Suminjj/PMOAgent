@@ -112,7 +112,7 @@ def test_provider_choice_and_real_db_block(monkeypatch, tmp_path):
     assert isinstance(make_client(db_file=demo), llm.OllamaClient)            # 키가 없으면 Ollama
     monkeypatch.setenv("OPENAI_API_KEY", "atl-test")
     client = make_client(db_file=demo)
-    assert isinstance(client, OpenAIClient) and client.model == "gpt-6-luna"  # 기본 모델
+    assert isinstance(client, OpenAIClient) and client.model == "gpt-4.1"    # 기본 모델(11/15)
     assert isinstance(make_client(db_file=real), llm.OllamaClient)            # 실제 데이터는 PC 밖으로 보내지 않는다
     assert external_blocked(make_client(db_file=real), real) is None
     assert make_client("qwen3:8b", db_file=demo).name == "ollama:qwen3:8b"     # 평가에서 모델 이름으로 제공자 선택
