@@ -77,3 +77,71 @@ def timeline_answer(question: str, calls: list[dict]) -> str | None:
     if not current:
         head += " 현재 투입 중인 과제는 없습니다."
     return head + "\n\n" + "\n".join(lines)
+
+
+# 11/15 평가: 모델이 답변에 내부 관리번호(EV-07, DEMO-002, uuid)를 적었다(네 모델 모두 15~16문항).
+# 10/20 담당자 [확정]: 내부 관리번호는 화면에 보이지 않는다 → 이번 턴 도구 결과에 나온 관리번호를 답변에서 지운다.
+_ID_KEYS = {"id", "person_id", "new_person_id", "assignment_id", "contract_id", "previous_contract_id"}
+# 한글 조사가 바로 붙어도(EV-05의) 찾도록 \b 대신 영문·숫자 경계를 본다
+_KNOWN_ID = re.compile(r"(?<![A-Za-z0-9])(?:(?:EV|DEMO)-\d+(?!\d)|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])")
+
+
+def _ids_in(value, found: set[str]) -> None:
+    if isinstance(value, dict):
+        for key, v in value.items():
+            if key in _ID_KEYS and isinstance(v, str) and len(v) >= 3:
+                found.add(v)
+            else:
+                _ids_in(v, found)
+    elif isinstance(value, list):
+        for v in value:
+            _ids_in(v, found)
+
+
+def hide_internal_ids(answer: str, calls: list[dict]) -> str:
+    """답변에서 내부 관리번호와 그 앞뒤 표시('관리번호', ' · ', 괄호)를 지운다. 이름·업체·계약번호는 그대로."""
+    if not answer:
+        return answer
+    ids: set[str] = set(_KNOWN_ID.findall(answer))
+    for call in calls:
+        _ids_in(call.get("data"), ids)
+        _ids_in(call.get("arguments"), ids)
+    answer = _drop_id_columns(answer)
+    answer = re.sub(r"\s*(?:또는|이나|혹은)\s*(?:내부\s*)?관리\s*번호(?:로|를)?", "", answer)   # '이름 또는 관리번호로'
+    ids = {i for i in ids if i in answer}
+    if not ids:
+        return answer
+    label = r"(?:내부\s*)?관리\s*번호\s*[:：]?\s*"
+    for value in sorted(ids, key=len, reverse=True):
+        v = re.escape(value)
+        answer = re.sub(rf"\s*[(（]\s*(?:{label})?{v}\s*[)）]", "", answer)       # (EV-07) · (관리번호 EV-07)
+        answer = re.sub(rf"\s*[·,/]\s*(?:{label})?{v}", "", answer)               # · EV-07 · 관리번호 EV-07
+        answer = re.sub(rf"(?:{label})?{v}\s*[·,/]?\s*", "", answer)              # 맨 앞이나 홀로 쓴 경우
+    answer = re.sub(r"[ \t]+\n", "\n", answer)
+    answer = re.sub(r"[ \t]{2,}(?=\S)", " ", answer)
+    return answer.strip()
+
+
+_ID_HEADER = re.compile(r"^\s*(?:내부\s*)?관리\s*번호\s*$|^\s*(?:person_)?id\s*$", re.I)
+
+
+def _drop_id_columns(answer: str) -> str:
+    """표(마크다운)에 '관리번호' 열이 있으면 그 열을 통째로 뺀다."""
+    lines = answer.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        if line.strip().startswith("|") and i + 1 < len(lines) and set(lines[i + 1].replace("|", "").strip()) <= set("-: "):
+            cells = [c for c in line.strip().strip("|").split("|")]
+            drop = {k for k, c in enumerate(cells) if _ID_HEADER.match(c)}
+            if drop:
+                j = i
+                while j < len(lines) and lines[j].strip().startswith("|"):
+                    row = lines[j].strip().strip("|").split("|")
+                    out.append("| " + " | ".join(c.strip() for k, c in enumerate(row) if k not in drop) + " |")
+                    j += 1
+                i = j
+                continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)

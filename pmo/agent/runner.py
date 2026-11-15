@@ -204,6 +204,7 @@ def _finish(service, client, spec, question, t0, started, answer, calls, error, 
         if scoped and not any(c.get("ok") and c.get("data") for c in calls):
             answer = scoped[0]
     answer = _with_mm_breakdown(answer, calls, question)
+    answer = answer_format.hide_internal_ids(answer, calls)   # 11/15: 내부 관리번호는 화면에 보이지 않는다(10/20 확정)
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
     if error is None and not answer:

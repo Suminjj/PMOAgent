@@ -415,3 +415,20 @@ def test_leader_asking_other_project_person_is_told_scope(service):
     # PMO·PM에게는 그대로 '없다'
     assert call_tool(service, "find_people", {"name": "홍길동"})["data"] == []
     assert guardrails.precheck(service, "김컨설 지금 무슨 과제야?", "auto", {}) is None
+
+
+def test_answer_hides_internal_ids():
+    """11/15 평가: 네 모델 모두 답변에 내부 관리번호(EV-07)를 적었다 → 10/20 확정(화면에 보이지 않음)대로 코드가 지운다."""
+    from pmo.agent.answer_format import hide_internal_ids
+    calls = [{"tool": "find_people", "data": [{"id": "EV-03", "name": "김협력"}, {"id": "EV-04", "name": "김협력"}]}]
+    answer = ("동명이인입니다. (이름 또는 관리번호로 알려주세요.)\n\n- 김협력 · 알파솔루션 · 관리번호 EV-03\n"
+              "- 김협력 · 감마테크 (EV-04)")
+    hidden = hide_internal_ids(answer, calls)
+    assert "EV-0" not in hidden and "관리번호" not in hidden
+    assert "- 김협력 · 알파솔루션\n- 김협력 · 감마테크" in hidden
+    assert hide_internal_ids("정협력 · 감마테크 · EV-07 기준 8월 MM은 1MM입니다.", []) == "정협력 · 감마테크 기준 8월 MM은 1MM입니다."
+    assert hide_internal_ids("이협력 · 알파솔루션 · EV-05의 현재 투입", []) == "이협력 · 알파솔루션의 현재 투입"
+    table = "| 이름 | 관리번호 | 계약번호 |\n|---|---|---|\n| 박협력 | EV-06 | 450011101 |"
+    assert hide_internal_ids(table, []) == "| 이름 | 계약번호 |\n| --- | --- |\n| 박협력 | 450011101 |"
+    uuid = "3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
+    assert hide_internal_ids(f"김가상({uuid}) 계약번호 450012201", []) == "김가상 계약번호 450012201"
