@@ -129,7 +129,7 @@ def _attach_answer(row: dict, last: dict | None) -> bool:
                             "rows": len(c["data"]) if isinstance(c.get("data"), list) else None,
                             "error": (c.get("error") or "")[:200] or None,
                             **({"blocked": True} if c.get("blocked") else {}),
-                            # v4 판정 모델이 근거성(지어내기)을 볼 수 있게 결과 앞부분만 남긴다(가상 평가 데이터)
+                            # v4 판정 모델이 근거성(지어내기)을 볼 수 있게 결과 앞 4,000자만 남긴다(가상 평가 데이터)
                             **({"evidence": _excerpt(c["data"])} if c.get("data") is not None else {})}
                            for c in last.get("calls") or []]
     if last.get("routing"):    # v3.1 라우터: 고른 Agent와 정답 카테고리 태그 비교(태그가 없는 질문은 채점하지 않음)
@@ -141,7 +141,7 @@ def _attach_answer(row: dict, last: dict | None) -> bool:
     return bool(last["error"])
 
 
-EVIDENCE_CHARS = 1500
+EVIDENCE_CHARS = 4000   # 11/16 판정: 1,500자로는 인력 찾기 요약의 계약 정보가 잘려 '근거 없음'으로 봄(M01·C06)
 
 
 def _excerpt(data) -> str:
