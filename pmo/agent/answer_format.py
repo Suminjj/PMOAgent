@@ -86,16 +86,18 @@ _ID_KEYS = {"id", "person_id", "new_person_id", "assignment_id", "contract_id", 
 _KNOWN_ID = re.compile(r"(?<![A-Za-z0-9])(?:(?:EV|DEMO)-\d+(?!\d)|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])")
 
 
-def _ids_in(value, found: set[str]) -> None:
+def _ids_in(value, found: set[str], names: set[str]) -> None:
     if isinstance(value, dict):
         for key, v in value.items():
             if key in _ID_KEYS and isinstance(v, str) and len(v) >= 3:
                 found.add(v)
+            elif key == "name" and isinstance(v, str):
+                names.add(v)
             else:
-                _ids_in(v, found)
+                _ids_in(v, found, names)
     elif isinstance(value, list):
         for v in value:
-            _ids_in(v, found)
+            _ids_in(v, found, names)
 
 
 def hide_internal_ids(answer: str, calls: list[dict]) -> str:
@@ -103,12 +105,14 @@ def hide_internal_ids(answer: str, calls: list[dict]) -> str:
     if not answer:
         return answer
     ids: set[str] = set(_KNOWN_ID.findall(answer))
+    names: set[str] = set()
     for call in calls:
-        _ids_in(call.get("data"), ids)
-        _ids_in(call.get("arguments"), ids)
+        # 도구 결과(data)의 관리번호만 모은다. 도구 입력(arguments)의 person_id에는 모델이 이름을 넣기도 해서
+        # 그 이름까지 지우던 문제(11/15 qwen3:8b 평가: '신협력의 …'가 '의 …'로)를 막는다.
+        _ids_in(call.get("data"), ids, names)
     answer = _drop_id_columns(answer)
     answer = re.sub(r"\s*(?:또는|이나|혹은)\s*(?:내부\s*)?관리\s*번호(?:로|를)?", "", answer)   # '이름 또는 관리번호로'
-    ids = {i for i in ids if i in answer}
+    ids = {i for i in ids if i in answer and i not in names and not re.fullmatch(r"[가-힣]{2,5}", i)}
     if not ids:
         return answer
     label = r"(?:내부\s*)?관리\s*번호\s*[:：]?\s*"
