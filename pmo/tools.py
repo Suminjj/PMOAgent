@@ -519,7 +519,19 @@ def _inspection(service: Service, company: str, contract_no: str = "", year: int
 def _query_database(service: Service, question: str) -> dict:
     """v2 권한: 과제 리더는 볼 수 있는 행만 담은 임시 DB에서 Text-to-SQL을 실행한다."""
     with service.read_snapshot() as path:
-        return query_database(path, service.clock(), question)
+        result = query_database(path, service.clock(), question)
+    notes = []
+    if service._hides_rates() and any("rate" in c.lower() or "단가" in c for c in result.get("columns") or []):
+        # 11/16 판정 O04: 가린 단가(빈 칸)를 모델이 '미입력'으로 답함 → 값을 '권한 없음'으로 바꾸고 알린다
+        cols = [c for c in result["columns"] if "rate" in c.lower() or "단가" in c]
+        result["rows"] = [dict(r, **{c: "권한 없음" for c in cols}) for r in result["rows"]]
+        notes.append("단가는 PM·PMO만 볼 수 있어 '권한 없음'으로 가렸습니다(미입력이 아님). 답변에도 권한 없음으로 적으세요.")
+    if service._scoped():
+        notes.append(f"과제 리더 권한이라 담당 과제({', '.join(service.project_names())}) 인력만 조회됩니다. "
+                     "'전체'를 물었어도 담당 과제 범위라고 밝히세요.")
+    if notes:
+        result["notice"] = " ".join(notes)
+    return result
 
 
 def tool_specs(include_planned: bool = False, names=None) -> list[dict]:

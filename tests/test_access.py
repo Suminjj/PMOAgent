@@ -223,6 +223,7 @@ def test_rates_are_hidden_from_leaders_everywhere(db, monkeypatch):
 
     monkeypatch.setattr(text_to_sql, "SQL_GENERATOR_FACTORY", Fake)
     rows = call_tool(leader, "query_database", {"question": "단가"})["data"]["rows"]
-    assert rows and all(v is None for r in rows for v in (r.values() if isinstance(r, dict) else r))
+    # 임시 DB에서 단가는 비어 있고(NULL), 11/16부터 결과에는 '미입력'과 구분되게 '권한 없음'으로 보인다
+    assert rows and all(v == "권한 없음" for r in rows for v in r.values())
     pmo_rows = call_tool(pmo, "query_database", {"question": "단가"})["data"]["rows"]
     assert any(v for r in pmo_rows for v in (r.values() if isinstance(r, dict) else r))

@@ -441,3 +441,37 @@ def test_hide_ids_keeps_names_put_in_person_id():
               "data": {"person": {"id": "EV-17", "name": "신협력"}}}]
     answer = "신협력의 12월 매출귀속 프로젝트 변경을 준비했습니다. (EV-17)"
     assert hide_internal_ids(answer, calls) == "신협력의 12월 매출귀속 프로젝트 변경을 준비했습니다."
+
+
+def test_unsupported_answer_lists_inspection_too(service):
+    """11/16 판정 G01·G03: 범위 안내에 검수 금액이 빠져 있었다."""
+    result = ask(service, "서협력 연락처 알려줘.", ScriptedClient([]))
+    assert "검수 금액" in result["answer"] and "구매계약" in result["answer"]
+
+
+def test_hold_with_typo_in_question_asks_back_instead(service):
+    """11/16 판정 T03: '박헙력'을 모델이 '박협력'으로 바꿔 답하면 내부 보류 문장 대신 오타를 되묻는다."""
+    answer, kind = guardrails.hold_answer(service, "박헙력 구매계약 언제까지야?", ["박협력"])
+    assert kind == "typo" and "'박협력'" in answer and "보류" not in answer
+    assert guardrails.hold_answer(service, "구매계약 언제까지야?", ["박협력"])[1] == "hold"
+
+
+def test_leader_text_to_sql_marks_hidden_rates_and_scope(service, monkeypatch):
+    """11/16 판정 O04: 과제 리더에게 가린 단가를 모델이 '미입력'으로 답함 → '권한 없음'과 담당 과제 범위를 알린다."""
+    from pmo.agent import text_to_sql
+
+    class Fake:
+        def __init__(self, path, today):
+            pass
+
+        def generate(self, question):
+            return "SELECT p.name, a.purchase_rate FROM people p JOIN assignments a ON a.person_id = p.id"
+
+    monkeypatch.setattr(text_to_sql, "SQL_GENERATOR_FACTORY", Fake)
+    leader = Service(service.path, clock=lambda: TODAY,
+                     access=authenticate(service.path, "leader-softlab", EVAL_PASSWORD))
+    data = call_tool(leader, "query_database", {"question": "전체 인력 이름이랑 매입단가"})["data"]
+    assert data["rows"] and {r["purchase_rate"] for r in data["rows"]} == {"권한 없음"}
+    assert "PM·PMO" in data["notice"] and "Soft Lab 고도화" in data["notice"]
+    pmo = call_tool(service, "query_database", {"question": "전체 인력 이름이랑 매입단가"})["data"]
+    assert "notice" not in pmo and "권한 없음" not in {r["purchase_rate"] for r in pmo["rows"]}
