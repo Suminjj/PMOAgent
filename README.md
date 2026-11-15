@@ -187,6 +187,19 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
    ```
    앱에서 판정 방식·모델만 바꾸려면 `PMO_ROUTER_MODE=llm`(항상 LLM 분류), `PMO_ROUTER_MODEL=qwen3:14b`(판정용 모델)를 줍니다.
 
+   **답변 채점(LLM-as-a-Judge, v4)**: 평가 결과의 답변을 다른 LLM이 채점 기준표(정확성·근거성·완결성·안전·간결성, 1~5점)와
+   데이터에서 계산한 정답 정보로 채점해 정답·부분 정답·오답을 냅니다. 판정 모델은 답변 모델과 다른 모델을 씁니다
+   (기본 `gpt-5-mini`, 바꾸려면 `--judge` 또는 `PMO_JUDGE_MODEL`). 평가 결과는 가상 데이터라 외부 API로 판정해도 됩니다.
+
+   ```powershell
+   .venv\Scripts\python.exe -m scripts.run_evals --set eval --model gpt-4.1 --routing router   # 먼저 답변 만들기
+   .venv\Scripts\python.exe -m scripts.judge_evals                                           # 가장 최근 결과 채점
+   .venv\Scripts\python.exe -m scripts.judge_evals evals\results\eval_set-….json --judge gpt-5-mini,gpt-6-luna
+   # 사람 검토: 함께 저장된 judge-….csv를 엑셀로 열어 '사람 판정'(정답/부분 정답/오답)을 10~15문항 채운 뒤
+   .venv\Scripts\python.exe -m scripts.judge_evals --human evals\results\judge-….json evals\results\judge-….csv
+   ```
+   출력: 판정별 문항 수·정답률, 항목별 평균, 기존 글자 확인(답변 키)과 판정이 다른 질문, 판정 모델 간·사람과의 일치율과 Cohen's kappa.
+
 4. 앱 첫 화면인 '홈'에서 질문합니다. 채팅창처럼 질문과 답변이 한 화면에 차례로 나오고, 답변 아래 '조회 결과'를 펼치면 Agent가 사용한 도구와 조회 결과 표를 볼 수 있습니다.
    이전 질문의 조회 결과·확인 카드도 대화 위쪽에 그대로 남아 있습니다. 터미널에서 한 번 물어볼 수도 있습니다.
    질문이 여러 개면 오른쪽 위에서 결과를 볼 질문을 고를 수 있습니다. 터미널에서 한 번 물어볼 수도 있습니다.
