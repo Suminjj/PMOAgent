@@ -18,6 +18,7 @@ import time
 from datetime import date, datetime
 
 from pmo.agent import guardrails
+from pmo.agent import trace
 from pmo.agent.agents import AGENTS, AUTO
 from pmo.agent.llm import ChatClient, LLMError
 from pmo.config import TIMEZONE
@@ -260,6 +261,21 @@ def clarified_question(question: str, history: list[dict] | None) -> str | None:
     return f"{msgs[-2]['content']} ({reply} 기준)"
 
 
+METHOD_TEXT = {"precheck": "사전 검사(가드레일)", "follow_up": "이어지는 대화", "clarify": "되묻기(투입/계약 모호)",
+               "keyword": "키워드", "multi": "키워드·여러 업무", "llm": "LLM 분류", "people": "인력 질문", "fallback": "전체"}
+
+
+def _route_text(decision: dict, ms: int) -> str:
+    agents = " → ".join(f"{AGENTS[k].label} Agent" for k in decision["agents"] if k in AGENTS)
+    if decision["method"] in ("precheck", "clarify") or not agents:
+        agents = "Agent 부르지 않고 정해진 답"
+    scores = " · ".join(f"{AGENTS[k].label} {v}" for k, v in (decision.get("scores") or {}).items() if k in AGENTS)
+    extra = f"  (점수 {scores})" if scores else ""
+    if decision.get("reason"):
+        extra += f"  이유: {trace.short(decision['reason'], 50)}"
+    return f"{METHOD_TEXT.get(decision['method'], decision['method'])} → {agents}{extra}  {ms:,}ms"
+
+
 def ask_routed(service: Service, question: str, client: ChatClient, history: list[dict] | None = None,
                previous: list[str] | None = None, today: date | None = None) -> dict:
     """라우터로 Agent를 고르고 처리한다. 결과에 routing({"agents", "method", "scores", "labels"})을 붙인다."""
@@ -268,7 +284,10 @@ def ask_routed(service: Service, question: str, client: ChatClient, history: lis
     original = clarified_question(question, history)
     if original:
         question = original          # 되물음 대답('계약')을 원래 질문에 붙여 처리한다
+    trace.log("USER", trace.short(question, 90) + ("  (되물음 대답을 원래 질문에 붙임)" if original else ""))
+    timer = trace.Timer()
     decision = route(service, question, router_client(client), history, previous, tokens, clarified=bool(original))
+    trace.log("ROUTER", _route_text(decision, timer.ms))
     if decision["method"] == "clarify":
         from pmo.agent.runner import _finish, get_agent
         result = _finish(service, client, get_agent(AUTO), question, t0, started, CLARIFY_END, [], None, tokens, "clarify")
@@ -287,6 +306,8 @@ def ask_routed(service: Service, question: str, client: ChatClient, history: lis
             result["duration_ms"] += first["duration_ms"]
             result["calls"] = first["calls"] + result["calls"]
             decision = dict(decision, agents=[target], rerouted_from=decision["agents"][0])
+            trace.log("ROUTER", f"{AGENTS[decision['rerouted_from']].label} Agent가 다른 업무라고 답함 → "
+                                f"{AGENTS[target].label} Agent에게 다시 맡김")
     result["tokens"] = {f: result["tokens"][f] + tokens[f] for f in tokens}
     route_ms = round((time.perf_counter() - t0) * 1000) - result["duration_ms"]
     result["duration_ms"] += max(route_ms, 0)
