@@ -192,7 +192,24 @@ def _with_mm_breakdown(answer: str, calls: list[dict], question: str = "") -> st
             asked = re.search(rf"(?<!\d){int(month[5:])}\s*월", question)
             if asked and not all(v in answer for v in values):
                 answer += f"\n\n{int(month[5:])}월 과제별: {text}"
+    # 11/16 2차 판정 S07: '과제별 MM'에 월별 값만 답하고 과제별 투입 MM(4.750·1.250)을 빼먹음 → 인력 찾기 요약의 투입 MM을 붙인다
+    if answer and "과제별" in question and "mm" in question.casefold() and not re.search(r"\d+\s*월", question):
+        totals = []
+        for call in calls:
+            data = call.get("data") if call.get("ok") and call["tool"] == "find_people" else None
+            if isinstance(data, list) and len(data) == 1:
+                summary = data[0].get("summary") or {}
+                for key in ("past", "current", "upcoming"):
+                    totals += [(a["project"], a["mm"]) for a in summary.get(key) or [] if a.get("mm")]
+        if len(totals) > 1 and not all(_mm_in(mm, answer) for _, mm in totals):
+            answer += "\n\n과제별 투입 MM: " + " · ".join(f"{p} {mm}" for p, mm in totals)
     return answer
+
+
+def _mm_in(mm: str, answer: str) -> bool:
+    """'4.750'을 '4.75'·'4.750'처럼 적었는지(끝의 0 생략 허용)."""
+    short = mm.rstrip("0").rstrip(".") if "." in mm else mm
+    return re.search(rf"(?<![\d.]){re.escape(short)}(?:0*)(?![\d])", answer) is not None
 
 
 def _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail=None) -> dict:

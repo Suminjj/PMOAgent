@@ -130,7 +130,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                                       bool(a.get("without_account")), bool(a.get("without_revenue_project")))]),
     Tool("contracts_ending", "특정 연·월(선택: 업체)에 계약이 종료되는 인력 목록을 조회한다.",
          _obj({"year": INT, "month": INT, "company": STR}, ("year", "month")),
-         handler=lambda s, a: s.contracts_ending(a["year"], a["month"], a.get("company"))),
+         # 11/16 2차 판정 C06: 연장 여부 칸이 없어 모델이 '미입력'으로 답함 → 다른 계약 도구처럼 extension_registered를 붙인다
+         handler=lambda s, a: [dict(r, extension_registered=bool(r.get("has_successor")))
+                               for r in s.contracts_ending(a["year"], a["month"], a.get("company"))]),
     Tool("pending_contract_alerts", "계약 종료 14일 전부터 표시되는 미확인 만료 알림 목록을 조회한다. "
          "'연장이 필요한 인력'을 물으면 needs_extension=true(종료 14일 전~당일이면서 연장 계약 미등록만). "
          "결과의 extension_registered가 true면 이미 연장 계약이 등록된 사람이다.",
