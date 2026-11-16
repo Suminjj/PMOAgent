@@ -475,3 +475,26 @@ def test_leader_text_to_sql_marks_hidden_rates_and_scope(service, monkeypatch):
     assert "PM·PMO" in data["notice"] and "Soft Lab 고도화" in data["notice"]
     pmo = call_tool(service, "query_database", {"question": "전체 인력 이름이랑 매입단가"})["data"]
     assert "notice" not in pmo and "권한 없음" not in {r["purchase_rate"] for r in pmo["rows"]}
+
+
+def test_project_totals_added_when_asked_by_project(tmp_path):
+    """11/16 2차 판정 S07: '과제별 MM'에 월별 값만 답하면 과제별 투입 MM(4.750·1.250)을 붙인다."""
+    from pmo.agent.runner import _mm_in, ask
+    from tests.test_agent import ScriptedClient, text, tool_call
+    s = _eval_service(tmp_path)
+    client = ScriptedClient([tool_call("find_people", name="정협력"),
+                             text("APC Analysis: 8월 0.75MM, 9월 1MM … / Soft Lab 고도화: 7월 1MM, 8월 0.25MM")])
+    answer = ask(s, "정협력 투입 과제별 MM 알려줘.", client, agent="staff")["answer"]
+    assert "과제별 투입 MM: Soft Lab 고도화 1.250 · APC Analysis 4.750" in answer
+    client = ScriptedClient([tool_call("find_people", name="정협력"),
+                             text("APC Analysis 4.75MM, Soft Lab 고도화 1.25MM입니다.")])
+    assert "과제별 투입 MM" not in ask(s, "정협력 투입 과제별 MM 알려줘.", client, agent="staff")["answer"]
+    assert _mm_in("4.750", "4.75MM") and _mm_in("4.750", "4.750") and not _mm_in("4.750", "14.75")
+
+
+def test_contracts_ending_says_whether_extension_is_registered(tmp_path):
+    """11/16 2차 판정 C06: 연장 여부 칸이 없어 '미입력'으로 답함."""
+    s = _eval_service(tmp_path)
+    rows = call_tool(s, "contracts_ending", {"year": 2026, "month": 11})["data"]
+    assert rows and all(isinstance(r["extension_registered"], bool) for r in rows)
+    assert {r["name"]: r["extension_registered"] for r in rows}["조협력"] is True
