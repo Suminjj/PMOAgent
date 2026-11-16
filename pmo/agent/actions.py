@@ -528,7 +528,8 @@ def build_plan(service, action: str, values: dict) -> dict:
     return dict(plan, action=action, title=TITLES[action], built_on=date.today().isoformat())
 
 
-def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool = False) -> str:
+def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool = False,
+                 via: str = "사용자 '확인 후 저장'") -> str:
     """사용자가 확인한 계획을 정해진 업무 함수로 실행한다."""
     if plan.get("check") and not checked:
         raise ValidationError("확인란을 먼저 선택하세요.")
@@ -550,7 +551,7 @@ def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool =
         raise ValidationError("지원하지 않는 작업입니다.")
     from pmo.agent import trace
     changes = p.get("changes")
-    trace.log("SAVE", f"사용자 '확인 후 저장' → {plan['title']}"
+    trace.log("SAVE", f"{via} → {plan['title']}"
                       + (f" · {len(changes)}건 한 트랜잭션" if isinstance(changes, list) else "") + " · 변경 이력 기록")
     return f"{plan['summary']} — 저장했습니다."
 
@@ -582,6 +583,7 @@ def approve_request(service, request: dict, *, actor: str, checked: bool = False
     """
     action = request.get("action") or {}
     plan = build_plan(service, action["action"], action.get("values") or {})
-    message = execute_plan(service, plan, token=f"change-request:{request['id']}", actor=actor, checked=checked)
+    message = execute_plan(service, plan, token=f"change-request:{request['id']}", actor=actor, checked=checked,
+                           via="PM·PMO '승인 후 반영'(과제 리더 수정 요청, 승인자 권한으로 계획 다시 생성)")
     service.handle_change_request(request["id"], "처리 완료", f"승인 후 반영 · {message}")
     return message

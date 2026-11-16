@@ -77,6 +77,9 @@ def _render_request(service, plan: dict, key: str, turn: dict, call_index: int) 
         try:
             service.create_change_request(project=req["project"], person_id=req["person_id"],
                                           content=request_text(plan), action=req["action"])
+            from pmo.agent import trace
+            trace.log("REQUEST", f"과제 리더 '수정 요청 보내기' → {plan['title']} · {req['project']} · "
+                                 "데이터는 그대로, PM·PMO 승인 대기")
             done[call_index] = "수정 요청을 보냈습니다. PM·PMO가 승인하면 반영됩니다. '인력 관리 › 수정 요청'에서 상태를 볼 수 있습니다."
             st.rerun()
         except (ValidationError, ConflictError) as exc:
