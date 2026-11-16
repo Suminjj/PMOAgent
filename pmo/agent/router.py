@@ -276,6 +276,26 @@ def _route_text(decision: dict, ms: int) -> str:
     return f"{METHOD_TEXT.get(decision['method'], decision['method'])} → {agents}{extra}  {ms:,}ms"
 
 
+def _log_plan(service: Service, question: str, decision: dict) -> None:
+    """콘솔 로그: 라우터가 만든 실행 계획(어느 Agent에게 무엇을 맡기는지). LLM 분류면 규칙 후보와 비교한 결과도 보인다."""
+    keys = [k for k in decision["agents"] if k in AGENTS]
+    if not trace.enabled() or decision["method"] in ("precheck", "clarify") or not keys:
+        return
+    names = lambda ks: "·".join(AGENTS[k].label for k in ks if k in AGENTS) or "없음"
+    head = f"실행 계획 {len(keys)}단계"
+    if decision["method"] == "llm" and decision.get("rule") is not None:
+        same = decision["rule"] == decision["agents"]
+        head += (f" · 후보 2개 비교: 규칙(키워드) {names(decision['rule'])} / LLM(맥락) {names(keys)} → "
+                 + ("두 후보 일치, 채택" if same else "LLM 계획 채택"))
+    elif decision.get("reason"):
+        head += " · LLM 분류 실패 → 규칙 계획 채택"
+    split = split_question(service, question, keys) if len(keys) > 1 else {}
+    trace.log("PLANNING", head)
+    trace.sub(f"{i}) {AGENTS[k].label} Agent ← 「{trace.short(split.get(k, question), 40)}」 · 도구 "
+              + (f"{len(AGENTS[k].tools)}개" if AGENTS[k].tools is not None else "전체")
+              for i, k in enumerate(keys, 1))
+
+
 def ask_routed(service: Service, question: str, client: ChatClient, history: list[dict] | None = None,
                previous: list[str] | None = None, today: date | None = None) -> dict:
     """라우터로 Agent를 고르고 처리한다. 결과에 routing({"agents", "method", "scores", "labels"})을 붙인다."""
@@ -288,6 +308,7 @@ def ask_routed(service: Service, question: str, client: ChatClient, history: lis
     timer = trace.Timer()
     decision = route(service, question, router_client(client), history, previous, tokens, clarified=bool(original))
     trace.log("ROUTER", _route_text(decision, timer.ms))
+    _log_plan(service, question, decision)
     if decision["method"] == "clarify":
         from pmo.agent.runner import _finish, get_agent
         result = _finish(service, client, get_agent(AUTO), question, t0, started, CLARIFY_END, [], None, tokens, "clarify")

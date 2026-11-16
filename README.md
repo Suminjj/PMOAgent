@@ -44,6 +44,9 @@ python -m streamlit run app.py
 
 **Agent 처리 과정 콘솔 로그(시연용)**: `PMO_TRACE=1`을 주고 앱을 띄우면 질문마다 라우터 판정·Agent·LLM 호출(시간·토큰)·
 도구 호출(입력·결과)·가드레일·답변 검사·확인 카드·저장이 앱을 실행한 PowerShell 창에 한 줄씩 나옵니다(화면에는 보이지 않음, 기본 꺼짐).
+태그: USER · ROUTER · PLANNING(실행 계획, LLM 분류면 규칙 후보와 비교) · AGENT · LLM · TOOL CALL ·
+SIMULATE(저장 없이 만든 변경 계획과 단계) · SELF-CORRECT(코드가 입력·답변을 바로잡거나 다시 시킴) · VERIFY(답변 검사 결과) ·
+GUARD(사전 검사) · SAVE · DONE.
 도구 입력에 인력 이름이 찍히므로 실제 데이터 DB에서는 켜지 않습니다.
 
 ```powershell
