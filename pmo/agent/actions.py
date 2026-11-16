@@ -538,6 +538,10 @@ def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool =
         service.apply_assignment_changes(p["changes"], token=token, actor=actor)
     else:
         raise ValidationError("지원하지 않는 작업입니다.")
+    from pmo.agent import trace
+    changes = p.get("changes")
+    trace.log("SAVE", f"사용자 '확인 후 저장' → {plan['title']}"
+                      + (f" · {len(changes)}건 한 트랜잭션" if isinstance(changes, list) else "") + " · 변경 이력 기록")
     return f"{plan['summary']} — 저장했습니다."
 
 

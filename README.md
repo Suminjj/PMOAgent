@@ -42,6 +42,15 @@ python -m streamlit run app.py
 실제 데이터는 개인 PC에만 저장하고 Git에 커밋하지 마세요.
 별도의 샘플 데이터는 자동으로 등록하지 않습니다.
 
+**Agent 처리 과정 콘솔 로그(시연용)**: `PMO_TRACE=1`을 주고 앱을 띄우면 질문마다 라우터 판정·Agent·LLM 호출(시간·토큰)·
+도구 호출(입력·결과)·가드레일·답변 검사·확인 카드·저장이 앱을 실행한 PowerShell 창에 한 줄씩 나옵니다(화면에는 보이지 않음, 기본 꺼짐).
+도구 입력에 인력 이름이 찍히므로 실제 데이터 DB에서는 켜지 않습니다.
+
+```powershell
+$env:PMO_TRACE = "1"
+.venv\Scripts\python.exe -m streamlit run app.py
+```
+
 ## 가상 데이터로 시연하기
 
 업무 DB와 분리된 시연용 DB에 가상 인력 5명·투입·계약을 넣고 그 DB로 앱을 실행합니다.
