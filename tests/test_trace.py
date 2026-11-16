@@ -56,3 +56,24 @@ def test_trace_counts_self_corrections(monkeypatch, capsys):
     trace.log("SELF-CORRECT", "x")
     trace.log("SELF-CORRECT", "y")
     assert trace.corrections() == 2
+
+
+def test_trace_shows_leader_request_and_approval(tmp_path, monkeypatch, capsys):
+    """과제 리더의 변경은 '수정 요청 카드'로, PM·PMO 승인은 '승인 후 반영'으로 콘솔에 남는다."""
+    from pmo.access import authenticate
+    from pmo.agent.actions import approve_request
+    from pmo.eval_data import EVAL_PASSWORD
+    monkeypatch.setenv("PMO_TRACE", "1")
+    s = _service(tmp_path)
+    leader = Service(s.path, clock=lambda: TODAY, access=authenticate(s.path, "leader-softlab", EVAL_PASSWORD))
+    client = ScriptedClient([tool_call("prepare_assignment_transfer", person_id="명협력", to_project="APC Analysis",
+                                       start_date="2026-12-01"), text("수정 요청 카드를 띄웠습니다.")])
+    result = ask_routed(leader, "명협력을 12월 1일부터 APC Analysis로 옮겨줘.", client)
+    assert "수정 요청 카드(과제 리더는 저장 불가, PM·PMO 승인 대기)" in capsys.readouterr().err
+    plan = result["calls"][-1]["data"]["plan"]
+    pmo = Service(s.path, clock=lambda: TODAY, access=authenticate(s.path, "pmo", EVAL_PASSWORD))
+    req_id = leader.create_change_request(project=plan["request"]["project"], person_id=plan["request"]["person_id"],
+                                          content="이동", action=plan["request"]["action"])
+    request = next(r for r in pmo.change_requests() if r["id"] == req_id)
+    approve_request(pmo, request, actor="pmo", checked=True)
+    assert "PM·PMO '승인 후 반영'" in capsys.readouterr().err

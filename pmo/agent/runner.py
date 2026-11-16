@@ -303,7 +303,9 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
             changes = (plan.get("params") or {}).get("changes")
             size = f" · 변경 {len(changes)}건" if isinstance(changes, list) else ""
             trace.log("SIMULATE", f"{plan.get('title', plan.get('action'))}{size} 계획 생성(DB에 쓰지 않음) · "
-                                  "업무 규칙 검증 통과 → 확인 카드(사람 승인 대기)")
+                                  "업무 규칙 검증 통과 → "
+                                  + ("수정 요청 카드(과제 리더는 저장 불가, PM·PMO 승인 대기)" if plan.get("request")
+                                     else "확인 카드(사람 승인 대기)"))
             trace.sub(answer_format.hide_internal_ids(f"{i}) {r.get('항목')}: {r.get('현재')} → {r.get('변경')}",
                                                       [{"data": result.get("data")}])
                       for i, r in enumerate(plan.get("rows") or [], 1))      # 내부 관리번호는 콘솔에도 보이지 않게
