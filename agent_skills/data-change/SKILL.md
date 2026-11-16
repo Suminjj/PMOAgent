@@ -41,7 +41,7 @@ status: 연결 (prepare_* 도구 연결, 이 지침 본문은 인력관리·구�
 | `prepare_alert_ack` | 구현 | person_id |
 | `prepare_assignment_update` | 구현 | person_id, project, month(그 달만, YYYY-MM) 또는 effective_date(그날부터), revenue_project, grade, purchase_rate, start_date, end_date |
 | `prepare_assignment_transfer` | 구현 | person_id, to_project, start_date(이동일), from_project, end_date, revenue_project |
-| `prepare_assignment_replace` | 구현 | person_id(빠지는 인력), new_person_id(교체 인력), start_date(교체일), grade(교체 인력 등급), project, purchase_rate, revenue_project |
+| `prepare_assignment_replace` | 구현 | person_id(빠지는 인력), new_person_id(교체 인력), start_date(교체일), grade(교체 인력 등급, 말하지 않으면 비움 → 기존 인력 등급을 이어받음), project, purchase_rate, revenue_project |
 | 인력 신규 등록, 첫 투입 등록 | 구현 예정 | 메뉴 화면(신규 인력 등록) 안내 |
 
 ## 예외 처리

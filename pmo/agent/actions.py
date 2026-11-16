@@ -459,6 +459,10 @@ def _plan_assignment_replace(service, values: dict) -> dict:
     if start.isoformat() <= a["start_date"]:
         raise ValidationError(f"교체일 {start}이(가) {old_person['name']}의 투입 시작일({a['start_date']})보다 늦어야 합니다.")
     grade = str(values.get("grade") or "").strip() or None
+    # 11/16 담당자: 교체는 보통 같은 등급으로 하므로, 말하지 않으면 기존 인력 등급을 이어받고 확인 카드에서 확인받는다.
+    inherited = grade is None and new_person["category"] != "컨설팅" and bool(a.get("grade"))
+    if inherited:
+        grade = a["grade"]
     if grade is None and new_person["category"] != "컨설팅":
         raise ValidationError(f"교체 인력 {new_person['name']}의 등급(L7·L6·L5 등)을 사용자에게 확인하세요.")
     kind = a["assignment_type"]
@@ -485,7 +489,11 @@ def _plan_assignment_replace(service, values: dict) -> dict:
             _added("교체 인력", f"{_person_label(new_person)} · {start}~{end} {new['mm']}MM ({kind})"),
             _added("교체 인력 매출귀속 프로젝트", (revenue or "미정")
                  + (" (기존 인력과 같게)" if revenue == a["revenue_project"] else "")),
-            _added("교체 인력 등급·매입단가", f"{grade or '없음(컨설팅)'} · {_won(rate)}")]
+            _added("교체 인력 등급·매입단가", f"{grade or '없음(컨설팅)'}"
+                   + (f" (기존 인력 {old_person['name']}과 같게)" if inherited else "") + f" · {_won(rate)}")]
+    if inherited:
+        rows.append(_added("확인", f"등급을 말하지 않아 {old_person['name']}의 등급 {grade}을(를) 이어받았습니다. "
+                                   "다르면 취소하고 등급을 함께 말해 주세요."))
     changes = [{"table": "assignments", "data": dict(old, id=a["id"]), "expected_version": a["version"]},
                {"table": "assignments", "data": dict(new, id=new_id)}]
     for c in service.contracts(old_person["id"]):
@@ -501,7 +509,9 @@ def _plan_assignment_replace(service, values: dict) -> dict:
             "person_id": new_person["id"], "assignment_id": new_id, "company": new_person["company"],
             "contract_no": None, "start_date": start.isoformat(), "end_date": end.isoformat(), "status": "준비"}})
         rows.append(_added("교체 인력 구매계약", f"{new_person['company']} {start}~{end} 준비 (계약번호 발급 후 입력)"))
-    return {"rows": rows, "check": "교체 인력과 교체일이 맞는지 확인했습니다.", "params": {"changes": changes},
+    check = (f"교체 인력·교체일과 등급 {grade}(기존 인력과 같게)이 맞는지 확인했습니다." if inherited
+             else "교체 인력과 교체일이 맞는지 확인했습니다.")
+    return {"rows": rows, "check": check, "params": {"changes": changes},
             "summary": f"{a['project']} {old_person['name']} → {new_person['name']} 교체 ({start}부터)"}
 
 

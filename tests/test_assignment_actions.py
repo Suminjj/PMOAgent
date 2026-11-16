@@ -102,8 +102,35 @@ def test_replace_swaps_people_and_contracts(service):
     assert (c["status"], c["contract_no"], c["assignment_id"], c["company"]) == ("준비", None, new["id"], "알파솔루션")
 
 
+def test_replace_without_grade_inherits_old_grade_and_asks_to_check(service):
+    """11/16 담당자: 교체는 보통 같은 등급 → 등급을 말하지 않으면 기존 인력 등급을 이어받고 확인 카드에서 확인받는다."""
+    plan = build_plan(service, "assignment_replace", {"person_id": "류협력", "new_person_id": "노협력",
+                                                      "start_date": "2026-12-01"})
+    text = " ".join(str(r) for r in plan["rows"])
+    assert "L6 (기존 인력 류협력과 같게)" in text and "이어받았습니다" in text
+    assert "등급 L6" in plan["check"]
+    run(service, plan)
+    new, = rows_of(service, "EV-20")
+    assert new["grade"] == "L6"
+
+
+def test_replace_with_said_grade_has_no_inherit_notice(service):
+    plan = build_plan(service, "assignment_replace", {"person_id": "류협력", "new_person_id": "노협력",
+                                                      "start_date": "2026-12-01", "grade": "L5"})
+    text = " ".join(str(r) for r in plan["rows"])
+    assert "이어받았습니다" not in text and "L5" in text
+    assert plan["check"] == "교체 인력과 교체일이 맞는지 확인했습니다."
+
+
+def test_unsaid_replace_grade_is_cleared_not_blocked(service):
+    from pmo.agent.runner import _drop_unsaid
+    args = {"person_id": "류협력", "new_person_id": "노협력", "start_date": "2026-12-01", "grade": "L6"}
+    out = _drop_unsaid(service, "prepare_assignment_replace", args, ["류협력을 12월 1일부터 노협력으로 교체해줘"])
+    assert "grade" not in out
+    assert _drop_unsaid(service, "prepare_assignment_replace", args, ["노협력(L6)으로 교체해줘"])["grade"] == "L6"
+
+
 @pytest.mark.parametrize("action, values, words", [
-    ("assignment_replace", {"person_id": "류협력", "new_person_id": "노협력", "start_date": "2026-12-01"}, "등급"),
     ("assignment_replace", {"person_id": "류협력", "start_date": "2026-12-01", "grade": "L6"}, "교체 인력"),
     ("assignment_transfer", {"person_id": "명협력", "to_project": "APC Analisys", "start_date": "2026-12-01"},
      "'APC Analysis'"),

@@ -181,7 +181,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                "new_person_id": {"type": "string", "description": "새로 들어오는 교체 인력의 id 또는 이름"},
                "start_date": {"type": "string", "description": "교체 인력 투입 시작일 YYYY-MM-DD"},
                "project": {"type": "string", "description": "과제명(기존 인력 투입이 여러 건일 때)"},
-               "grade": {"type": "string", "description": "교체 인력 등급(L7·L6·L5 등). 사용자가 말하지 않으면 비운다"},
+               "grade": {"type": "string", "description": "교체 인력 등급(L7·L6·L5 등). 사용자가 말하지 않으면 비운다(기존 인력 등급을 이어받고 확인 카드에 표시)"},
                "purchase_rate": STR, "revenue_project": STR, "end_date": DATE},
               ("person_id", "new_person_id", "start_date")),
          handler=_plan("assignment_replace")),

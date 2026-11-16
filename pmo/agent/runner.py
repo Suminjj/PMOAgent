@@ -96,7 +96,7 @@ GROUNDED_FIELDS = {
 # ('이협력 2027년 2월 1일부터 APC Analysis로 옮겨줘'에 기존 매출귀속 D043을 넣어 확인 카드가 막히고 값을 되물음)
 OPTIONAL_UNSAID = {
     "prepare_assignment_transfer": ("revenue_project", "purchase_rate", "grade"),
-    "prepare_assignment_replace": ("revenue_project", "purchase_rate"),
+    "prepare_assignment_replace": ("revenue_project", "purchase_rate", "grade"),   # 11/16: 교체 등급은 기존 인력 등급 이어받기
 }
 
 
