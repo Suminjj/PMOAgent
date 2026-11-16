@@ -224,17 +224,21 @@ def _finish(service, client, spec, question, t0, started, answer, calls, error, 
     before = answer
     answer = _with_mm_breakdown(answer, calls, question)
     if answer != before:
-        trace.log("CHECK", "과제별 MM을 답 끝에 붙임")
+        trace.log("SELF-CORRECT", "답이 합계만 있어 과제별 MM을 도구 결과에서 붙임")
     before = answer
     answer = answer_format.hide_internal_ids(answer, calls)   # 11/15: 내부 관리번호는 화면에 보이지 않는다(10/20 확정)
     if answer != before:
-        trace.log("CHECK", "답변에서 내부 관리번호 제거")
+        trace.log("SELF-CORRECT", "답변에 내부 관리번호 → 지움(화면에 보이지 않는 값)")
     duration = round((time.perf_counter() - t0) * 1000)
     ok = error is None and bool(answer)
     if error is None and not answer:
         error = "LLM이 빈 답변을 돌려주었습니다."
     note = f"도구 {len(calls)}회 · 토큰 {tokens['prompt']}+{tokens['completion']}"
     who = f"{spec.label} Agent" if (calls or tokens["llm_calls"]) else "PMO Agent(정해진 답)"
+    if calls or tokens["llm_calls"]:
+        fixed = trace.corrections()
+        trace.log("VERIFY", "답변 검증 4항목(근거 없는 인력 이름 · 저장 전 '완료' 표현 · 과제별 MM · 내부 관리번호) → "
+                            + (f"이번 실행에서 {fixed}건 스스로 바로잡음" if fixed else "통과"))
     trace.log("DONE" if ok else "ERROR", f"{who} {'답변 완료' if ok else '실패: ' + trace.short(error, 60)} · "
                                           f"{duration:,}ms · LLM {tokens['llm_calls']}회 · 도구 {len(calls)}회"
                                           + (f" · 가드레일 {guardrail}" if guardrail else ""))
@@ -279,7 +283,7 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
                                                guardrails.seen_text(calls)))
     blocked = True
     if (call["name"], call["arguments"]) != asked:
-        trace.log("GUARD", f"입력 바로잡음: {asked[0]}({trace.args_text(asked[1])}) → "
+        trace.log("SELF-CORRECT", f"도구 입력 바로잡음: {asked[0]}({trace.args_text(asked[1])}) → "
                            f"{call['name']}({trace.args_text(call['arguments'])})")
     timer = trace.Timer()
     if allowed is not None and call["name"] not in allowed:
@@ -290,14 +294,19 @@ def _execute(service, call, allowed, spec, question, user_texts, texts, day, cal
     else:
         result, blocked = call_tool(service, call["name"], call["arguments"]), False
     if blocked:
-        trace.log("GUARD", f"실행 막음: {call['name']}({trace.args_text(call['arguments'])}) — {trace.short(result.get('error'), 70)}")
+        trace.log("SELF-CORRECT", f"실행 막음: {call['name']}({trace.args_text(call['arguments'])}) — "
+                                  f"{trace.short(result.get('error'), 70)} → 이유를 LLM에 돌려줘 다시 판단")
     else:
-        trace.log("TOOL", f"{call['name']}({trace.args_text(call['arguments'])}) → {trace.result_text(result)}  {timer.ms:,}ms")
+        trace.log("TOOL CALL", f"{call['name']}({trace.args_text(call['arguments'])}) → {trace.result_text(result)}  {timer.ms:,}ms")
         plan = (result.get("data") or {}).get("plan") if isinstance(result.get("data"), dict) else None
         if plan:
             changes = (plan.get("params") or {}).get("changes")
             size = f" · 변경 {len(changes)}건" if isinstance(changes, list) else ""
-            trace.log("PLAN", f"{plan.get('title', plan.get('action'))}{size} → 확인 카드(저장 전)")
+            trace.log("SIMULATE", f"{plan.get('title', plan.get('action'))}{size} 계획 생성(DB에 쓰지 않음) · "
+                                  "업무 규칙 검증 통과 → 확인 카드(사람 승인 대기)")
+            trace.sub(answer_format.hide_internal_ids(f"{i}) {r.get('항목')}: {r.get('현재')} → {r.get('변경')}",
+                                                      [{"data": result.get("data")}])
+                      for i, r in enumerate(plan.get("rows") or [], 1))      # 내부 관리번호는 콘솔에도 보이지 않게
     # blocked: 코드가 막아 실행하지 않은 호출(평가의 도구 순서 채점에서 뺀다)
     calls.append({"tool": call["name"], "arguments": call["arguments"], "ok": result["ok"],
                   "data": result.get("data"), "error": result.get("error"),
@@ -378,6 +387,7 @@ def ask(service: Service, question: str, client: ChatClient,
         trace.log("GUARD", f"사전 검사: {early['kind']} → 정해진 답(LLM 호출 없음)")
         answer = early["answer"]
         return _finish(service, client, spec, question, t0, started, answer, [], None, tokens, early["kind"])
+    trace.reset_corrections()
     trace.log("AGENT", f"{spec.label} Agent 시작 · 도구 {len(tools)}개 · {getattr(client, 'name', 'llm')}"
                        + (" · 자기 몫만 답하라는 지시 포함" if focus else ""))
     texts = [question] + [str(m.get("content") or "") for m in reversed(history or [])]
@@ -403,7 +413,7 @@ def ask(service: Service, question: str, client: ChatClient,
                     # v3.1 PC 평가 S07·H01·V01: 질문에 등록 인력이 있는데 도구 없이 답함('이름을 알려주세요'·'없는 인력'·추측).
                     # 한 번 다시 시켜 도구로 확인하게 한다.
                     tool_nudged, guardrail = True, "tool_retry"
-                    trace.log("GUARD", f"도구 없이 답함 → 다시 시킴(질문 속 인력 {', '.join(people)})")
+                    trace.log("SELF-CORRECT", f"도구 없이 답함 → 다시 시킴(질문 속 인력 {', '.join(people)})")
                     messages += [{"role": "assistant", "content": reply["content"]},
                                  {"role": "system", "content": f"도구를 부르지 않고 답했다. 질문의 인력({', '.join(people)})은 등록된 인력이다. "
                                                                "맡은 도구로 먼저 조회하고 도구 결과로만 답하라."}]
@@ -418,7 +428,7 @@ def ask(service: Service, question: str, client: ChatClient,
                         # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다.
                         # 질문에 등록 인력이 한 명이면 인력 찾기를 코드가 먼저 실행해 결과를 쥐여 준다(v3 평가 S08 'MM'을 검수로 보냄)
                         nudged, guardrail = True, "redirect_retry"
-                        trace.log("GUARD", "맡은 업무를 다른 카테고리로 보냄 → 다시 시킴")
+                        trace.log("SELF-CORRECT", "맡은 업무를 다른 카테고리로 보냄 → 다시 시킴")
                         messages.append({"role": "assistant", "content": reply["content"]})
                         people = guardrails.mentioned_people(service, question)
                         if len(people) == 1 and (allowed is None or "find_people" in allowed):
@@ -452,14 +462,14 @@ def ask(service: Service, question: str, client: ChatClient,
     if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
         fixed = _not_saved_yet(answer)
         if fixed != answer:
-            trace.log("CHECK", "저장 전인데 '완료' 표현 → '준비를 마쳤습니다(아직 저장 전)'로 고침")
+            trace.log("SELF-CORRECT", "저장 전인데 '완료' 표현 → '준비를 마쳤습니다(아직 저장 전)'로 고침")
         answer = fixed
     if answer and not spec.planned_notice:
         # 근거 없는 인력 이름이 답변에 있으면 한 번 다시 시키고, 그래도 있으면 답변 보류(v2 평가 C08 '김협력').
         # v3 평가 C08·G02(전문): 도구 없이 이름을 지어냄 → 다시 시키면 도구를 부르거나 대상을 되물을 기회가 생긴다.
         made_up = guardrails.ungrounded_names_in_answer(service, answer, texts, guardrails.seen_text(calls))
         if made_up and error is None:
-            trace.log("CHECK", f"근거 없는 인력 이름 {', '.join(made_up)} → 다시 쓰게 함(Self-Correction)")
+            trace.log("SELF-CORRECT", f"근거 없는 인력 이름 {', '.join(made_up)} → 다시 쓰게 함")
             messages += [{"role": "assistant", "content": answer},
                          {"role": "system", "content": f"답변의 인력({', '.join(made_up)})은 도구 결과에 없다. 인력 이름을 지어내지 말고, "
                                                        "도구를 호출해 확인하거나 대상이 없으면 누구의 일인지 사용자에게 물어라."}]
@@ -473,7 +483,7 @@ def ask(service: Service, question: str, client: ChatClient,
                 answer, guardrail = retry, "hold_retry"
             else:
                 answer, guardrail = guardrails.hold_answer(service, question, made_up)
-                trace.log("CHECK", f"다시 써도 근거 없음 → {guardrail}")
+                trace.log("SELF-CORRECT", f"다시 써도 근거 없음 → 답변 보류({guardrail})")
             if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
                 answer = _not_saved_yet(answer)
     return _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail)
