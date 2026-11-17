@@ -196,3 +196,40 @@ def test_transfer_ignores_wrong_from_project_when_date_picks_one(tmp_path):
     assert r["ok"], r.get("error")
     text = str(r["data"])
     assert "전표작성 자동화" in text and "APC Analysis" in text
+
+
+def test_replace_card_shows_scope_basis_and_followups(service):
+    """11/17 멘토 피드백: 계약 변경 범위·말하지 않아 정한 값의 근거·저장 후 남은 업무를 카드에 보인다."""
+    plan = build_plan(service, "assignment_replace", {"person_id": "류협력", "new_person_id": "노협력",
+                                                      "start_date": "2026-12-01"})
+    rows = {r["항목"]: str(r["변경"]) for r in plan["rows"]}
+    assert "류협력의 계약 행만 종료일 변경" in rows["계약 변경 범위"]
+    basis = rows["말하지 않아 정한 값"]
+    for words in ("종료일 2027-01-31 (기존 인력 투입 종료일과 같게)", "투입 Type Full time", "30133686-D047 (기존 인력과 같게)",
+                  "등급 L6", "매입단가 미입력"):
+        assert words in basis
+    assert "계약번호 미발급" in rows["저장 후 남은 업무"]
+    message = run(service, plan)
+    assert "교체 계획" in message and "남은 업무" in message and "준비" in message
+
+
+def test_replace_scope_counts_other_people_on_same_contract_no(service):
+    old = service.contracts("EV-19")[0]
+    others = {c["person_id"] for c in service.contracts()
+              if c["contract_no"] == old["contract_no"] and c["person_id"] != "EV-19"}
+    plan = build_plan(service, "assignment_replace", {"person_id": "류협력", "new_person_id": "노협력",
+                                                      "start_date": "2026-12-01"})
+    scope = next(str(r["변경"]) for r in plan["rows"] if r["항목"] == "계약 변경 범위")
+    assert (f"다른 인력 {len(others)}명 계약은 그대로" in scope) == bool(others)
+    # 같은 계약번호의 다른 인력 계약은 실제로도 바뀌지 않는다
+    before = {c["id"]: c["end_date"] for c in service.contracts() if c["person_id"] in others}
+    run(service, plan)
+    assert {c["id"]: c["end_date"] for c in service.contracts() if c["person_id"] in others} == before
+
+
+def test_replace_with_said_values_has_no_basis_for_them(service):
+    plan = build_plan(service, "assignment_replace", {"person_id": "류협력", "new_person_id": "노협력",
+                                                      "start_date": "2026-12-01", "end_date": "2026-12-31",
+                                                      "grade": "L5", "purchase_rate": "9000000"})
+    basis = next(str(r["변경"]) for r in plan["rows"] if r["항목"] == "말하지 않아 정한 값")
+    assert "종료일" not in basis and "등급" not in basis and "매입단가" not in basis and "투입 Type" in basis

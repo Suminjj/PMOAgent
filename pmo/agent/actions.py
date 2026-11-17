@@ -430,7 +430,8 @@ def _plan_assignment_transfer(service, values: dict) -> dict:
             _row("기존 투입", _asg_label(a) + f" {a['mm']}MM",
                  f"{a['project']} {a['start_date']}~{old_end} {old['mm']}MM"),
             _added("새 투입 과제", to_project),
-            _added("새 투입 기간", f"{move}~{end} {new['mm']}MM ({new['assignment_type']})"),
+            _added("새 투입 기간", f"{move}~{end} {new['mm']}MM ({new['assignment_type']})"
+                   + ("" if values.get("end_date") else " · 종료일·투입 Type은 기존 투입과 같게")),
             _added("새 투입 매출귀속 프로젝트", revenue or "미정 (나중에 보완)"),
             _added("새 투입 등급·매입단가", f"{new['grade'] or '미입력'} · {_won(new['purchase_rate'])} (기존 투입과 같게)")]
     if warning:
@@ -483,6 +484,18 @@ def _plan_assignment_replace(service, values: dict) -> dict:
     if clash:
         raise ValidationError(f"{new_person['name']}은(는) 그 기간에 이미 투입이 있습니다: "
                               + ", ".join(_asg_label(o) for o in clash) + ". 사용자에게 확인하세요.")
+    # 11/17 멘토 피드백: 사용자가 말하지 않아 코드가 정한 값과 그 근거를 카드에 따로 보인다.
+    said_rate = bool(values.get("purchase_rate"))
+    basis = []
+    if not values.get("end_date"):
+        basis.append(f"종료일 {end} (기존 인력 투입 종료일과 같게)")
+    basis.append(f"투입 Type {kind} (기존 인력 투입과 같게)")
+    if not str(values.get("revenue_project") or "").strip():
+        basis.append(f"매출귀속 프로젝트 {revenue or '미정'} (기존 인력과 같게)")
+    if inherited:
+        basis.append(f"등급 {grade} (기존 인력과 같게)")
+    if not said_rate:
+        basis.append("매입단가 미입력 (말하지 않아 비워 둠, 나중에 입력)")
     rows = [_row("과제", a["project"], a["project"]),
             _row("기존 인력", f"{_person_label(old_person)} · {_period(a)} {a['mm']}MM",
                  f"{a['start_date']}~{old_end} {old['mm']}MM (투입 종료)"),
@@ -504,14 +517,27 @@ def _plan_assignment_replace(service, values: dict) -> dict:
             changes.append({"table": "contracts", "data": dict(data, end_date=old_end.isoformat()),
                             "expected_version": c["version"]})
             rows.append(_row(f"기존 인력 계약 {c['contract_no'] or '번호 미발급'} 종료일", c["end_date"], old_end.isoformat()))
+            # 11/17 멘토 피드백: 교체는 계약번호 전체를 끝내지 않고 기존 인력의 계약 행만 바꾼다(계약번호 하나에 여러 인력).
+            others = len({o["person_id"] for o in service.contracts()
+                          if c["contract_no"] and o["contract_no"] == c["contract_no"] and o["person_id"] != old_person["id"]})
+            scope = f"{old_person['name']}의 계약 행만 종료일 변경"
+            if others:
+                scope += f" · 같은 계약번호 {c['contract_no']}의 다른 인력 {others}명 계약은 그대로"
+            rows.append(_added("계약 변경 범위", scope))
+    followups = []
     if new_person["category"] in CONTRACT_CATEGORIES:
         changes.append({"table": "contracts", "data": {
             "person_id": new_person["id"], "assignment_id": new_id, "company": new_person["company"],
             "contract_no": None, "start_date": start.isoformat(), "end_date": end.isoformat(), "status": "준비"}})
         rows.append(_added("교체 인력 구매계약", f"{new_person['company']} {start}~{end} 준비 (계약번호 발급 후 입력)"))
+        followups.append(f"{new_person['name']} 구매계약은 '준비'(계약번호 미발급) 상태입니다. "
+                         "구매시스템에서 계약번호가 나오면 입력해 주세요")
+    rows.append(_added("말하지 않아 정한 값", " · ".join(basis)))
+    if followups:
+        rows.append(_added("저장 후 남은 업무", " / ".join(followups)))
     check = (f"교체 인력·교체일과 등급 {grade}(기존 인력과 같게)이 맞는지 확인했습니다." if inherited
              else "교체 인력과 교체일이 맞는지 확인했습니다.")
-    return {"rows": rows, "check": check, "params": {"changes": changes},
+    return {"rows": rows, "check": check, "params": {"changes": changes}, "followups": followups,
             "summary": f"{a['project']} {old_person['name']} → {new_person['name']} 교체 ({start}부터)"}
 
 
@@ -553,6 +579,10 @@ def execute_plan(service, plan: dict, *, token: str, actor: str, checked: bool =
     changes = p.get("changes")
     trace.log("SAVE", f"{via} → {plan['title']}"
                       + (f" · {len(changes)}건 한 트랜잭션" if isinstance(changes, list) else "") + " · 변경 이력 기록")
+    if plan.get("followups"):
+        # 11/17 멘토 피드백: 계획 저장과 실제 계약 완료를 구분한다(계약번호 미발급이면 계약은 아직 준비 중).
+        return (f"{plan['summary']} — 교체 계획(투입·계약 {len(changes)}건)을 저장했습니다. "
+                "남은 업무: " + " / ".join(plan["followups"]) + ".")
     return f"{plan['summary']} — 저장했습니다."
 
 
