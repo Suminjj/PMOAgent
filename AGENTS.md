@@ -101,6 +101,8 @@
   tool_retry·redirect_retry로 llm에 다시) / exhausted(단계 소진) → verify(저장 전 '완료' 표현 고침·근거 없는 인력 이름 확인)
   → rewrite(한 번 더 쓰게 하고 그래도 있으면 보류) → finish(runner._finish). 판단은 기존 함수 그대로, 콘솔 GRAPH 줄에 Agent 그래프 경로.
   그래프 그림: `python -m scripts.draw_graph`(LangGraph `draw_mermaid`, 라우터·Agent 두 그래프). 확인 카드 interrupt는 여전히 VDI 운영 단계.
+  11/17 PC 확인(담당자): pytest 전체 통과, 평가 세트(gpt-4.1 라우터) 도구 39/39·라우팅 46/46. Agent 그래프 경로는 도구 1회 44건·
+  도구 2회 5건·사전 가드레일 7건·도구 없이 답 1건(rewrite 경로는 이번 실행에 없음, 테스트로 확인).
 - [제안] 데이터 처리는 표준 라이브러리 우선, 필요 시 pandas
 - 기존 저장소의 구성·의존성과 충돌하면 먼저 설명한다.
 
