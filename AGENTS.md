@@ -95,6 +95,12 @@
   확인 카드(사람 승인)는 그대로 둔다(확인 카드를 interrupt로 옮기는 것은 VDI 운영 단계). 콘솔 로그 GRAPH 줄에 지나간 노드 경로를 보인다.
   같은 평가 세트(도구 39/39·라우팅 46/46)로 결과가 같은지 PC에서 다시 확인한다.
   11/17 PC 확인(담당자): 실제 langgraph 설치 후 pytest 전체 통과, 평가 세트(`--routing router`) 통과.
+  [확정] 11/17 담당자: Agent 내부 루프도 LangGraph로 옮긴다(최종 산출물 제출 전).
+  [제안] 구현(`pmo/agent/agent_graph.py`, `runner.ask`가 준비 후 실행 — 라우터 agent 노드와 카테고리 직접 선택 모두 이 그래프를 탄다):
+  precheck(사전 가드레일, 걸리면 END) → llm ↔ tools(ReAct 반복, 도구 입력 바로잡기·막기) / check_reply(도구 없이 답하면
+  tool_retry·redirect_retry로 llm에 다시) / exhausted(단계 소진) → verify(저장 전 '완료' 표현 고침·근거 없는 인력 이름 확인)
+  → rewrite(한 번 더 쓰게 하고 그래도 있으면 보류) → finish(runner._finish). 판단은 기존 함수 그대로, 콘솔 GRAPH 줄에 Agent 그래프 경로.
+  그래프 그림: `python -m scripts.draw_graph`(LangGraph `draw_mermaid`, 라우터·Agent 두 그래프). 확인 카드 interrupt는 여전히 VDI 운영 단계.
 - [제안] 데이터 처리는 표준 라이브러리 우선, 필요 시 pandas
 - 기존 저장소의 구성·의존성과 충돌하면 먼저 설명한다.
 
@@ -554,7 +560,8 @@
    SIMULATE = 확인 카드 변경 계획(DB에 쓰지 않음, 업무 규칙 검증 후 단계별 '현재 → 변경', 내부 관리번호 제외),
    SELF-CORRECT = 도구 입력 바로잡음·실행 막고 이유를 LLM에 돌려줌·다시 시킴·답변 고침(이전 GUARD·CHECK),
    VERIFY = 답변 검사 4항목 결과(통과 또는 바로잡은 건수). GUARD는 LLM 전 사전 검사만. ToT(여러 계획 탐색)는 쓰지 않는다.
-   [제안] 11/17: GRAPH = LangGraph가 지나간 노드 경로(예: prepare → route → agent:staff → agent:contract → merge → finalize).
+   [제안] 11/17: GRAPH = LangGraph가 지나간 노드 경로. 라우터(예: prepare → route → agent:staff → agent:contract → merge → finalize)와
+   Agent마다(예: 인력관리 Agent 그래프: precheck → llm → tools → llm → check_reply → verify → finish) 한 줄씩.
    [제안] 과제 리더 수정 요청 흐름도 보인다: SIMULATE 끝이 '수정 요청 카드(과제 리더는 저장 불가, PM·PMO 승인 대기)',
    '수정 요청 보내기'는 REQUEST 줄, PM·PMO 승인은 SAVE "PM·PMO '승인 후 반영'(승인자 권한으로 계획 다시 생성)".
 9. [구현] v4 답변 채점 저지(LLM-as-a-Judge, 11/16 담당자 요청, `pmo/judge.py`·`python -m scripts.judge_evals`):
@@ -626,7 +633,7 @@
 - [x] 현재 기본 모델: qwen3:8b, 추론 끔 (실제 데이터) · 시연·평가는 OpenAI API gpt-4.1 (11/15)
 - [ ] 평가 질문 확대 후 qwen3:14b·gemma4:12b 재비교
 - [x] Text-to-SQL: LlamaIndex 사용 (조회 SQL 생성만)
-- [x] LangGraph 도입: 11/17 라우터 멀티에이전트 최상위 흐름을 StateGraph로 실행 (확인 카드 interrupt·Agent 내부 루프는 VDI 운영 단계에서 재검토 — 3장)
+- [x] LangGraph 도입: 11/17 라우터 최상위 흐름과 Agent 내부 루프(ReAct·자기 수정)를 StateGraph로 실행 (확인 카드 interrupt는 VDI 운영 단계에서 재검토 — 3장)
 - [x] 업무 카테고리별 전문 Agent 수동 선택 (3개 + 자동(전체))
 - [x] 자동 라우터 멀티에이전트 (v3.1, 키워드 → LLM 분류, 여러 업무 질문은 Agent 차례 호출)
 - [ ] Agent별 Text-to-SQL 테이블 제한
