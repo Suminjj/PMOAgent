@@ -14,14 +14,12 @@
 라우팅 결과(고른 Agent·방법·점수)는 답변과 함께 돌려주고 화면·평가·실행 기록에 남긴다.
 """
 import re
-import time
-from datetime import date, datetime
+from datetime import date
 
 from pmo.agent import guardrails
 from pmo.agent import trace
 from pmo.agent.agents import AGENTS, AUTO
 from pmo.agent.llm import ChatClient, LLMError
-from pmo.config import TIMEZONE
 from pmo.service import Service
 
 SPECIALISTS = ("staff", "contract", "inspection")
@@ -220,15 +218,21 @@ def split_question(service: Service, question: str, keys: list[str]) -> dict[str
     return out
 
 
-def ask_agents(service: Service, question: str, client: ChatClient, keys: list[str],
-               history: list[dict] | None = None, today: date | None = None) -> dict:
-    """정해진 Agent들에게 차례로 묻고 답을 합친다(Agent가 하나면 그 결과 그대로)."""
+def ask_one(service: Service, question: str, client: ChatClient, key: str, keys: list[str],
+            split: dict[str, str] | None = None, history: list[dict] | None = None,
+            today: date | None = None) -> dict:
+    """keys 중 key Agent 하나에게 묻는다. Agent가 여럿이면 자기 몫의 질문(split)과 '자기 업무만' 지시(focus)를 준다."""
     from pmo.agent.runner import ask
     if len(keys) == 1:
-        return ask(service, question, client, today=today, history=history, agent=keys[0])
-    split = split_question(service, question, keys)
-    parts = [ask(service, split.get(k, question), client, today=today, history=history, agent=k,
-                 focus=focus_note(k, keys)) for k in keys]
+        return ask(service, question, client, today=today, history=history, agent=key)
+    return ask(service, (split or {}).get(key, question), client, today=today, history=history, agent=key,
+               focus=focus_note(key, keys))
+
+
+def merge_parts(keys: list[str], parts: list[dict]) -> dict:
+    """여러 Agent의 결과를 Agent 이름 머리말로 이어 하나로 합친다(Agent가 하나면 그 결과 그대로)."""
+    if len(parts) == 1:
+        return parts[0]
     answer = "\n\n".join(f"**{AGENTS[k].label}**\n\n{p['answer'] or p['error'] or ''}".strip()
                          for k, p in zip(keys, parts))
     errors = [p["error"] for p in parts if p["error"]]
@@ -239,6 +243,13 @@ def ask_agents(service: Service, question: str, client: ChatClient, keys: list[s
             "model": parts[0]["model"], "tokens": tokens,
             "agent": "+".join(keys), "agent_label": " + ".join(AGENTS[k].label for k in keys),
             "guardrail": next((p["guardrail"] for p in parts if p["guardrail"]), None)}
+
+
+def ask_agents(service: Service, question: str, client: ChatClient, keys: list[str],
+               history: list[dict] | None = None, today: date | None = None) -> dict:
+    """정해진 Agent들에게 차례로 묻고 답을 합친다(Agent가 하나면 그 결과 그대로)."""
+    split = split_question(service, question, keys) if len(keys) > 1 else None
+    return merge_parts(keys, [ask_one(service, question, client, k, keys, split, history, today) for k in keys])
 
 
 def redirect_target(answer: str, current: str) -> str | None:
@@ -298,41 +309,10 @@ def _log_plan(service: Service, question: str, decision: dict) -> None:
 
 def ask_routed(service: Service, question: str, client: ChatClient, history: list[dict] | None = None,
                previous: list[str] | None = None, today: date | None = None) -> dict:
-    """라우터로 Agent를 고르고 처리한다. 결과에 routing({"agents", "method", "scores", "labels"})을 붙인다."""
-    t0, started = time.perf_counter(), datetime.now(TIMEZONE).isoformat()
-    tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
-    original = clarified_question(question, history)
-    if original:
-        question = original          # 되물음 대답('계약')을 원래 질문에 붙여 처리한다
-    trace.log("USER", trace.short(question, 90) + ("  (되물음 대답을 원래 질문에 붙임)" if original else ""))
-    timer = trace.Timer()
-    decision = route(service, question, router_client(client), history, previous, tokens, clarified=bool(original))
-    trace.log("ROUTER", _route_text(decision, timer.ms))
-    _log_plan(service, question, decision)
-    if decision["method"] == "clarify":
-        from pmo.agent.runner import _finish, get_agent
-        result = _finish(service, client, get_agent(AUTO), question, t0, started, CLARIFY_END, [], None, tokens, "clarify")
-        result.update(agent_label=ROUTER_LABEL, routing=dict(decision, labels=[]))
-        service.record_run("router", (question,), {"agents": [], "method": "clarify"}, True, "clarify", None, t0, started)
-        return result
-    result = ask_agents(service, question, client, decision["agents"], history, today)
-    if len(decision["agents"]) == 1:
-        # 11/09: 자동 배정에서는 사용자가 카테고리를 고르지 않는다. 고른 Agent가 '다른 카테고리를 골라 다시 요청하라'고
-        # 답하면 사용자에게 넘기지 않고 그 Agent에게 한 번 다시 맡긴다('12월 구매해야 하는 인력'을 인력관리가 받음).
-        target = redirect_target(result.get("answer") or "", decision["agents"][0])
-        if target:
-            first = result
-            result = ask_agents(service, question, client, [target], history, today)
-            result["tokens"] = {f: result["tokens"][f] + first["tokens"][f] for f in tokens}
-            result["duration_ms"] += first["duration_ms"]
-            result["calls"] = first["calls"] + result["calls"]
-            decision = dict(decision, agents=[target], rerouted_from=decision["agents"][0])
-            trace.log("ROUTER", f"{AGENTS[decision['rerouted_from']].label} Agent가 다른 업무라고 답함 → "
-                                f"{AGENTS[target].label} Agent에게 다시 맡김")
-    result["tokens"] = {f: result["tokens"][f] + tokens[f] for f in tokens}
-    route_ms = round((time.perf_counter() - t0) * 1000) - result["duration_ms"]
-    result["duration_ms"] += max(route_ms, 0)
-    result["routing"] = dict(decision, labels=[AGENTS[k].label for k in decision["agents"]])
-    service.record_run("router", (question,), {"agents": decision["agents"], "method": decision["method"]},
-                       True, f"{'+'.join(decision['agents'])} ({decision['method']})", None, t0, started)
-    return result
+    """라우터로 Agent를 고르고 처리한다. 결과에 routing({"agents", "method", "scores", "labels"})을 붙인다.
+
+    11/17: 처리 흐름(되물음 대답 합치기 → 라우터 → 되묻기 또는 전문 Agent 차례 호출 → 다른 업무면 재배정 → 정리)은
+    LangGraph StateGraph로 실행한다(pmo/agent/graph.py). 각 단계의 판단은 이 파일의 함수를 그대로 쓴다.
+    """
+    from pmo.agent.graph import run_routed
+    return run_routed(service, question, client, history=history, previous=previous, today=today)

@@ -87,6 +87,14 @@
   짧고 고정돼 있어, 함수로 연결해 단계마다 가드레일·테스트를 넣는 쪽이 쉬웠다. 바꾸면 평가 결과(도구 39/39·라우팅 46/46)를 처음부터 다시 확인해야 한다.
   사내 VDI 실제 운영·구매시스템 연동처럼 단계가 길어지고 승인 대기가 생기면 기존 함수를 노드로 감싸 LangGraph로 옮기고
   (확인 카드 = interrupt), Langfuse로 실행을 추적한다. 옮길 때는 같은 평가 세트로 결과가 같은지 확인한 뒤 바꾼다.
+  [확정] 11/17 담당자: 평가 기준에 LangGraph·LangChain이 들어가 LangGraph를 넣는다. 범위는 최상위 처리 흐름만(담당자 선택).
+  [제안] 구현(`pmo/agent/graph.py`, `router.ask_routed`가 호출): 라우터 멀티에이전트 흐름을 LangGraph StateGraph로 실행한다.
+  노드 prepare(되물음 대답 합치기) → route(사전 가드레일·키워드 점수·LLM 분류) → clarify(투입/계약 되묻기, END) 또는
+  agent(전문 Agent 하나씩, 남은 Agent가 있으면 같은 노드를 다시 돎) → merge → reroute(다른 업무라고 답하면 재배정) → finalize(토큰·시간·실행 기록).
+  각 노드는 router.py·runner.py의 기존 함수를 그대로 불러 판단은 바뀌지 않는다. Agent 안의 LLM↔도구 반복·가드레일과
+  확인 카드(사람 승인)는 그대로 둔다(확인 카드를 interrupt로 옮기는 것은 VDI 운영 단계). 콘솔 로그 GRAPH 줄에 지나간 노드 경로를 보인다.
+  같은 평가 세트(도구 39/39·라우팅 46/46)로 결과가 같은지 PC에서 다시 확인한다.
+  11/17 PC 확인(담당자): 실제 langgraph 설치 후 pytest 전체 통과, 평가 세트(`--routing router`) 통과.
 - [제안] 데이터 처리는 표준 라이브러리 우선, 필요 시 pandas
 - 기존 저장소의 구성·의존성과 충돌하면 먼저 설명한다.
 
@@ -546,6 +554,7 @@
    SIMULATE = 확인 카드 변경 계획(DB에 쓰지 않음, 업무 규칙 검증 후 단계별 '현재 → 변경', 내부 관리번호 제외),
    SELF-CORRECT = 도구 입력 바로잡음·실행 막고 이유를 LLM에 돌려줌·다시 시킴·답변 고침(이전 GUARD·CHECK),
    VERIFY = 답변 검사 4항목 결과(통과 또는 바로잡은 건수). GUARD는 LLM 전 사전 검사만. ToT(여러 계획 탐색)는 쓰지 않는다.
+   [제안] 11/17: GRAPH = LangGraph가 지나간 노드 경로(예: prepare → route → agent:staff → agent:contract → merge → finalize).
    [제안] 과제 리더 수정 요청 흐름도 보인다: SIMULATE 끝이 '수정 요청 카드(과제 리더는 저장 불가, PM·PMO 승인 대기)',
    '수정 요청 보내기'는 REQUEST 줄, PM·PMO 승인은 SAVE "PM·PMO '승인 후 반영'(승인자 권한으로 계획 다시 생성)".
 9. [구현] v4 답변 채점 저지(LLM-as-a-Judge, 11/16 담당자 요청, `pmo/judge.py`·`python -m scripts.judge_evals`):
@@ -617,7 +626,7 @@
 - [x] 현재 기본 모델: qwen3:8b, 추론 끔 (실제 데이터) · 시연·평가는 OpenAI API gpt-4.1 (11/15)
 - [ ] 평가 질문 확대 후 qwen3:14b·gemma4:12b 재비교
 - [x] Text-to-SQL: LlamaIndex 사용 (조회 SQL 생성만)
-- [ ] LangGraph 등 Agent 프레임워크 도입 시점 (11/16: 지금은 미도입, VDI 운영·구매시스템 연동 단계에서 재검토 — 3장)
+- [x] LangGraph 도입: 11/17 라우터 멀티에이전트 최상위 흐름을 StateGraph로 실행 (확인 카드 interrupt·Agent 내부 루프는 VDI 운영 단계에서 재검토 — 3장)
 - [x] 업무 카테고리별 전문 Agent 수동 선택 (3개 + 자동(전체))
 - [x] 자동 라우터 멀티에이전트 (v3.1, 키워드 → LLM 분류, 여러 업무 질문은 Agent 차례 호출)
 - [ ] Agent별 Text-to-SQL 테이블 제한
