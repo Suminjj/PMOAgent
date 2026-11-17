@@ -233,3 +233,12 @@ def test_replace_with_said_values_has_no_basis_for_them(service):
                                                       "grade": "L5", "purchase_rate": "9000000"})
     basis = next(str(r["변경"]) for r in plan["rows"] if r["항목"] == "말하지 않아 정한 값")
     assert "종료일" not in basis and "등급" not in basis and "매입단가" not in basis and "투입 Type" in basis
+
+
+def test_cards_do_not_show_internal_ids(service):
+    """10/20 담당자: 내부 관리번호는 화면에 보이지 않는다(확인 카드 포함)."""
+    for action, values in (("assignment_replace", {"person_id": "류협력", "new_person_id": "노협력", "start_date": "2026-12-01"}),
+                           ("assignment_transfer", {"person_id": "명협력", "to_project": "APC Analysis",
+                                                    "start_date": "2026-12-01"})):
+        plan = build_plan(service, action, values)
+        assert "EV-" not in " ".join(str(v) for r in plan["rows"] for v in r.values())

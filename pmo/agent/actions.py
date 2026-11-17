@@ -36,6 +36,11 @@ def _person_label(p: dict) -> str:
     return f"{p['name']} · {p['company'] or '업체 미입력'} · {p['id']}"
 
 
+def _person_display(p: dict) -> str:
+    """확인 카드에 보일 인력 표시. 내부 관리번호는 화면에 보이지 않는다(10/20 담당자) → 이름·업체·직무로 구분."""
+    return " · ".join(x for x in (p["name"], p.get("company") or "업체 미입력", p.get("job_role")) if x)
+
+
 def resolve_person(service, value: str | None) -> tuple[str | None, list[dict]]:
     """관리번호가 아니라 이름(직함 포함)이 들어와도 사람을 찾는다. (확정 id 또는 None, 후보 목록)
 
@@ -140,7 +145,7 @@ def _plan_contract_save(service, values: dict) -> dict:
               ("계약 시작일", "start_date"), ("계약 종료일", "end_date"))
     if current and all(clean[k] == cur.get(k) for _, k in fields):
         raise ValidationError(f"{person['name']}의 계약 {_contract_label(cur)}에서 바뀌는 값이 없습니다.")
-    rows = [_row("인력", _person_label(person), _person_label(person)),
+    rows = [_row("인력", _person_display(person), _person_display(person)),
             _row("대상 계약", _contract_label(cur) if current else "(없음)", "수정" if current else "신규 등록")]
     rows += [_row(label, cur.get(k) if current else None, clean[k]) for label, k in fields]
     return {
@@ -158,7 +163,7 @@ def _plan_contract_delete(service, values: dict) -> dict:
     if contract["has_successor"]:
         raise ValidationError(f"{_contract_label(contract)}은(는) 연장 계약이 이전 계약으로 지정하고 있어 삭제할 수 없습니다.")
     return {
-        "rows": [_row("인력", _person_label(person), _person_label(person)),
+        "rows": [_row("인력", _person_display(person), _person_display(person)),
                  _row("계약", _contract_label(contract), "삭제"),
                  _row("계약 종료 알림", "함께 삭제", "삭제")],
         "check": "삭제할 계약이 맞는지 확인했습니다. (삭제 전 값은 변경 이력에 남습니다)",
@@ -175,7 +180,7 @@ def _plan_account(service, values: dict) -> dict:
     if account == person["account_id"]:
         raise ValidationError(f"{person['name']}의 계정 ID는 이미 {account}입니다.")
     return {
-        "rows": [_row("인력", _person_label(person), _person_label(person)),
+        "rows": [_row("인력", _person_display(person), _person_display(person)),
                  _row("계정 ID", person["account_id"], account)],
         "check": None,
         "params": {"person": {k: person[k] for k in ("id", "name", "company", "category")},
@@ -368,7 +373,7 @@ def _plan_assignment_update(service, values: dict) -> dict:
     start, end = date.fromisoformat(a["start_date"]), date.fromisoformat(a["end_date"])
     seg_start = max(start, month[0]) if month else max(start, effective) if effective else start
     seg_end = min(end, month[1]) if month else end
-    rows = [_row("인력", _person_label(person), _person_label(person)), _row("대상 투입", _asg_label(a), _asg_label(a))]
+    rows = [_row("인력", _person_display(person), _person_display(person)), _row("대상 투입", _asg_label(a), _asg_label(a))]
     rows += [_row(labels[k], _won(a.get(k)), _won(v)) if k == "purchase_rate" else _row(labels[k], a.get(k), v)
              for k, v in differs.items()]
     plan_changes = []
@@ -426,7 +431,7 @@ def _plan_assignment_transfer(service, values: dict) -> dict:
     if others:
         raise ValidationError(f"{person['name']}의 새 투입 기간이 다른 투입과 겹칩니다: "
                               + ", ".join(_asg_label(o) for o in others) + ". 종료일을 사용자에게 확인하세요.")
-    rows = [_row("인력", _person_label(person), _person_label(person)),
+    rows = [_row("인력", _person_display(person), _person_display(person)),
             _row("기존 투입", _asg_label(a) + f" {a['mm']}MM",
                  f"{a['project']} {a['start_date']}~{old_end} {old['mm']}MM"),
             _added("새 투입 과제", to_project),
@@ -497,9 +502,9 @@ def _plan_assignment_replace(service, values: dict) -> dict:
     if not said_rate:
         basis.append("매입단가 미입력 (말하지 않아 비워 둠, 나중에 입력)")
     rows = [_row("과제", a["project"], a["project"]),
-            _row("기존 인력", f"{_person_label(old_person)} · {_period(a)} {a['mm']}MM",
+            _row("기존 인력", f"{_person_display(old_person)} · {_period(a)} {a['mm']}MM",
                  f"{a['start_date']}~{old_end} {old['mm']}MM (투입 종료)"),
-            _added("교체 인력", f"{_person_label(new_person)} · {start}~{end} {new['mm']}MM ({kind})"),
+            _added("교체 인력", f"{_person_display(new_person)} · {start}~{end} {new['mm']}MM ({kind})"),
             _added("교체 인력 매출귀속 프로젝트", (revenue or "미정")
                  + (" (기존 인력과 같게)" if revenue == a["revenue_project"] else "")),
             _added("교체 인력 등급·매입단가", f"{grade or '없음(컨설팅)'}"

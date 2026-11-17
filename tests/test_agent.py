@@ -235,7 +235,8 @@ def test_missing_person_is_filled_from_the_question(service):
     result = ask(service, "이가상 계약 종료일 12월 31일로 바꿔줘", client)
     call = result["calls"][0]
     assert call["ok"] and call["arguments"]["person_id"] == "이가상"
-    assert "DEMO-002" in call["data"]["plan"]["rows"][0]["현재"]
+    assert call["data"]["plan"]["params"]["data"]["person_id"] == "DEMO-002"
+    assert "DEMO-002" not in call["data"]["plan"]["rows"][0]["현재"]          # 카드에는 내부 관리번호를 보이지 않는다
 
 
 def test_missing_person_uses_recent_user_message_and_namesakes_still_ask(service):
