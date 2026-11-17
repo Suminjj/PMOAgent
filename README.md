@@ -318,6 +318,8 @@ Streamlit AppTest로 미리보기·취소·저장·수정·재실행 흐름을 �
 - `pmo/tools.py`: Agent가 호출하는 도구 계층
 - `pmo/agent/`: LLM 연결(Ollama), 시스템 프롬프트, Agent 실행 루프, 카테고리별 전문 Agent(`agents.py`)
 - `pmo/agent/graph.py`: 자동 배정(라우터) 처리 흐름을 LangGraph StateGraph로 실행 — prepare → route → clarify 또는 agent(전문 Agent 하나씩 반복) → merge → reroute → finalize
+- `pmo/agent/agent_graph.py`: 전문 Agent 하나의 처리 루프를 LangGraph StateGraph로 실행 — precheck → llm ↔ tools(ReAct) · check_reply(다시 시키기) → verify → rewrite(근거 없는 이름) → finish
+- `scripts/draw_graph.py`: 두 그래프를 LangGraph `draw_mermaid`로 뽑아 `docs/langgraph_router.mmd`·`docs/langgraph_agent.mmd`에 저장
 - `scripts/ask.py`: 터미널에서 자연어 질문
 - `pmo/harness.py`, `scripts/run_evals.py`, `evals/`: 평가 하네스
 - `pmo/demo.py`, `scripts/seed_demo.py`: 가상 데이터

@@ -7,7 +7,7 @@ import re
 import time
 from datetime import date, datetime
 
-from pmo.agent.llm import ChatClient, LLMError
+from pmo.agent.llm import ChatClient
 from pmo.agent import answer_format, guardrails
 from pmo.agent.agents import AGENTS, AgentSpec, allowed_tools, get_agent, system_prompt
 from pmo.config import TIMEZONE
@@ -378,114 +378,14 @@ def ask(service: Service, question: str, client: ChatClient,
                 *[{"role": m["role"], "content": str(m["content"])}
                   for m in (history or [])[-MAX_HISTORY:] if m.get("role") in ("user", "assistant")],
                 {"role": "user", "content": question + (f"\n\n({focus})" if focus else "")}]
-    calls: list[dict] = []
-    answer, error = "", None
-    tokens = {"prompt": 0, "completion": 0, "llm_calls": 0}
-    # v3 사전 검사: 지시 무시·관리하지 않는 정보·업무 범위 밖·다른 카테고리·검수 금액은 LLM 없이 정해진 방식으로 답한다
-    # 여러 업무 질문(라우터)의 각 Agent는 사전 검사를 다시 하지 않는다: 라우터가 이미 했고, 다른 업무 말 때문에
-    # '다른 카테고리로 요청하라'는 정해진 답이 나오던 문제(v3.1 PC 평가 L04)
-    early = None if focus else guardrails.precheck(service, question, spec.key, LABELS, history)
-    if early:
-        trace.log("GUARD", f"사전 검사: {early['kind']} → 정해진 답(LLM 호출 없음)")
-        answer = early["answer"]
-        return _finish(service, client, spec, question, t0, started, answer, [], None, tokens, early["kind"])
-    trace.reset_corrections()
-    trace.log("AGENT", f"{spec.label} Agent 시작 · 도구 {len(tools)}개 · {getattr(client, 'name', 'llm')}"
-                       + (" · 자기 몫만 답하라는 지시 포함" if focus else ""))
+    # 11/17: 사전 가드레일 → LLM ↔ 도구 반복(ReAct) → 다시 시키기(자기 수정) → 답변 검사 → 마무리는
+    # LangGraph StateGraph로 실행한다(pmo/agent/agent_graph.py). 판단은 이 파일·guardrails.py의 함수를 그대로 쓴다.
+    from pmo.agent.agent_graph import run_agent
     texts = [question] + [str(m.get("content") or "") for m in reversed(history or [])]
-    guardrail = None
-    if spec.planned_notice:
-        # 쓸 수 있는 도구가 모두 구현 예정인 Agent: 도구 상태만 확인해 기록하고 정해진 안내로 답한다.
-        for name in spec.tools or ():
-            result = call_tool(service, name, {})
-            calls.append({"tool": name, "arguments": {}, "ok": result["ok"],
-                          "data": result.get("data"), "error": result.get("error")})
-        max_steps, answer = 0, spec.planned_notice
     user_texts = [question] + [str(m.get("content") or "") for m in reversed(history or []) if m.get("role") == "user"]
-    nudged = tool_nudged = False
-    try:
-        steps = 0
-        while steps < max_steps:
-            steps += 1
-            reply = _chat(client, messages, tools, tokens)
-            if not reply["tool_calls"]:
-                answer = _clean_answer(reply["content"])
-                people = guardrails.mentioned_people(service, question)
-                if not calls and people and not tool_nudged and tools and not guardrails.is_redirect(answer):
-                    # v3.1 PC 평가 S07·H01·V01: 질문에 등록 인력이 있는데 도구 없이 답함('이름을 알려주세요'·'없는 인력'·추측).
-                    # 한 번 다시 시켜 도구로 확인하게 한다.
-                    tool_nudged, guardrail = True, "tool_retry"
-                    trace.log("SELF-CORRECT", f"도구 없이 답함 → 다시 시킴(질문 속 인력 {', '.join(people)})")
-                    messages += [{"role": "assistant", "content": reply["content"]},
-                                 {"role": "system", "content": f"도구를 부르지 않고 답했다. 질문의 인력({', '.join(people)})은 등록된 인력이다. "
-                                                               "맡은 도구로 먼저 조회하고 도구 결과로만 답하라."}]
-                    answer = ""
-                    continue
-                if focus and guardrails.is_redirect(answer):
-                    # 여러 업무 질문: 다른 Agent가 맡은 부분의 '다른 카테고리로 가라' 안내 문장만 뺀다(v3.1)
-                    answer = _drop_redirect(answer) or answer
-                    break
-                if allowed is not None and guardrails.is_redirect(answer) and not any(not c.get("forced") for c in calls):
-                    if guardrails.owner_of(question) == spec.key and not nudged:
-                        # 맡은 업무인데 다른 카테고리로 보냄(v2 평가 A02 계정 ID 입력): 한 번 다시 시킨다.
-                        # 질문에 등록 인력이 한 명이면 인력 찾기를 코드가 먼저 실행해 결과를 쥐여 준다(v3 평가 S08 'MM'을 검수로 보냄)
-                        nudged, guardrail = True, "redirect_retry"
-                        trace.log("SELF-CORRECT", "맡은 업무를 다른 카테고리로 보냄 → 다시 시킴")
-                        messages.append({"role": "assistant", "content": reply["content"]})
-                        people = guardrails.mentioned_people(service, question)
-                        if len(people) == 1 and (allowed is None or "find_people" in allowed):
-                            result = call_tool(service, "find_people", {"name": people[0]})
-                            calls.append({"tool": "find_people", "arguments": {"name": people[0]}, "ok": result["ok"],
-                                          "data": result.get("data"), "error": result.get("error"), "forced": True})
-                            messages += [{"role": "assistant", "content": "", "tool_calls": [
-                                {"function": {"name": "find_people", "arguments": {"name": people[0]}}}]},
-                                _tool_message("find_people", result)]
-                        messages.append({"role": "system", "content": f"이 요청은 {spec.label} 업무다. 다른 카테고리로 안내하지 말고 "
-                                                                      "도구 결과로 답하거나 맡은 도구를 호출해 처리하라."})
-                        answer = ""
-                        continue
-                    if guardrails.owner_of(question) == spec.key:
-                        answer, guardrail = guardrails.ANSWERS["redirect_failed"].format(here=spec.label), "redirect_failed"
-                        break
-                    fixed = guardrails.fix_redirect(answer, question, spec.key, LABELS)
-                    if fixed != answer:
-                        answer, guardrail = fixed, "redirect_fixed"
-                break
-            messages.append({"role": "assistant", "content": reply["content"],
-                             "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
-                                            for c in reply["tool_calls"]]})
-            for call in reply["tool_calls"]:
-                messages.append(_execute(service, call, allowed, spec, question, user_texts, texts, day, calls))
-        else:
-            if not answer:
-                error = f"{max_steps}번 안에 답을 마치지 못했습니다."
-    except LLMError as exc:
-        error = str(exc)
-    if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
-        fixed = _not_saved_yet(answer)
-        if fixed != answer:
-            trace.log("SELF-CORRECT", "저장 전인데 '완료' 표현 → '준비를 마쳤습니다(아직 저장 전)'로 고침")
-        answer = fixed
-    if answer and not spec.planned_notice:
-        # 근거 없는 인력 이름이 답변에 있으면 한 번 다시 시키고, 그래도 있으면 답변 보류(v2 평가 C08 '김협력').
-        # v3 평가 C08·G02(전문): 도구 없이 이름을 지어냄 → 다시 시키면 도구를 부르거나 대상을 되물을 기회가 생긴다.
-        made_up = guardrails.ungrounded_names_in_answer(service, answer, texts, guardrails.seen_text(calls))
-        if made_up and error is None:
-            trace.log("SELF-CORRECT", f"근거 없는 인력 이름 {', '.join(made_up)} → 다시 쓰게 함")
-            messages += [{"role": "assistant", "content": answer},
-                         {"role": "system", "content": f"답변의 인력({', '.join(made_up)})은 도구 결과에 없다. 인력 이름을 지어내지 말고, "
-                                                       "도구를 호출해 확인하거나 대상이 없으면 누구의 일인지 사용자에게 물어라."}]
-            try:
-                retry = _continue(service, client, messages, tools, tokens, calls, allowed, spec, question, user_texts,
-                                  texts, day, max_steps=3)
-            except LLMError as exc:
-                retry = ""
-                error = str(exc)
-            if retry and not guardrails.ungrounded_names_in_answer(service, retry, texts, guardrails.seen_text(calls)):
-                answer, guardrail = retry, "hold_retry"
-            else:
-                answer, guardrail = guardrails.hold_answer(service, question, made_up)
-                trace.log("SELF-CORRECT", f"다시 써도 근거 없음 → 답변 보류({guardrail})")
-            if any(c["ok"] and c["tool"].startswith("prepare_") for c in calls):
-                answer = _not_saved_yet(answer)
-    return _finish(service, client, spec, question, t0, started, answer, calls, error, tokens, guardrail)
+    return run_agent({
+        "service": service, "client": client, "spec": spec, "question": question, "focus": focus, "history": history,
+        "day": day, "t0": t0, "started": started, "allowed": allowed, "tools": tools, "texts": texts,
+        "user_texts": user_texts, "max_steps": max_steps, "messages": messages, "calls": [],
+        "tokens": {"prompt": 0, "completion": 0, "llm_calls": 0},
+    })
