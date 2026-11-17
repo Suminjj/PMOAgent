@@ -301,6 +301,7 @@ OPTIONAL_DATES = {"prepare_assignment_update": ("end_date",), "prepare_assignmen
 _GRADE = re.compile(r"(?<![A-Za-z])(L\d)(?!\d)")
 _DAY = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _MONTH = re.compile(r"(\d{1,2})\s*월")
+_FROM = re.compile(r"(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?\s*부터")   # '12월 1일부터'·'12월부터' = 그날부터
 
 
 def _year_for(month: int, today: date) -> int:
@@ -319,6 +320,13 @@ def tidy_args(tool: str, args: dict, question: str, texts: list[str], today: dat
         grades = set(_GRADE.findall(question))
         if len(grades) == 1:
             args = dict(args, grade=grades.pop())
+    start = _FROM.search(question)
+    if (tool == "prepare_assignment_update" and args.get("month") and not args.get("effective_date")
+            and start and "까지" not in question):
+        # 11/17 시연: '12월 1일부터'를 모델이 '그 달만'(month=2026-12)으로 넣어 12월 한 달만 바뀜 → 그날부터로 바로잡는다
+        m, d = int(start.group(1)), int(start.group(2) or 1)
+        args = {k: v for k, v in args.items() if k != "month"}
+        args["effective_date"] = date(_year_for(m, today), m, d).isoformat()
     if tool == "prepare_assignment_update" and not args.get("month") and not args.get("effective_date"):
         # 사용자가 '12월'(그 달만)·'12월 1일부터'(그날부터)를 말했는데 모델이 빠뜨리면 채운다(v2 평가 R02 투입 2건 되물음)
         day = _DAY.search(question)

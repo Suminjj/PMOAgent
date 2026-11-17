@@ -171,6 +171,19 @@ def test_placeholders_and_unsaid_dates_are_dropped(service):
     q = "명협력 12월 1일부터 등급 L6으로 바꿔줘."
     assert guardrails.tidy_args("prepare_assignment_update", {"person_id": "명협력", "grade": "L6"},
                                 q, [q], TODAY)["effective_date"] == "2026-12-01"
+    # 11/17 시연: '12월 1일부터'인데 모델이 month=2026-12(그 달만)를 넣음 → 그날부터로 바로잡는다
+    q = "서협력 12월 1일부터 매출귀속 프로젝트를 30133686-D039로 바꿔줘."
+    args = guardrails.tidy_args("prepare_assignment_update",
+                                {"person_id": "서협력", "month": "2026-12", "revenue_project": "30133686-D039"},
+                                q, [q], TODAY)
+    assert args.get("effective_date") == "2026-12-01" and "month" not in args
+    q = "서협력 12월부터 매출귀속 프로젝트를 30133686-D039로 바꿔줘."
+    assert guardrails.tidy_args("prepare_assignment_update", {"person_id": "서협력", "month": "2026-12"},
+                                q, [q], TODAY) == {"person_id": "서협력", "effective_date": "2026-12-01"}
+    for q in ("서협력 12월 한 달만 매출귀속 프로젝트를 30133686-D039로 바꿔줘.",
+              "서협력 12월 1일부터 12월 31일까지 매출귀속 프로젝트를 30133686-D039로 바꿔줘."):
+        assert guardrails.tidy_args("prepare_assignment_update", {"person_id": "서협력", "month": "2026-12"},
+                                    q, [q], TODAY)["month"] == "2026-12"          # 그 달만은 그대로
     q = "류협력을 12월 1일부터 노협력으로 교체, 1월 31일까지"
     assert guardrails.tidy_args("prepare_assignment_replace", {"end_date": "2027-01-31"}, q, [q], TODAY)["end_date"]
 
