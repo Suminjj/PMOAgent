@@ -1,6 +1,8 @@
 streamlit==1.65.0
 openpyxl==3.1.5
 tzdata>=2025.1
+# 11/17: 라우터 멀티에이전트 처리 흐름(pmo/agent/graph.py)을 LangGraph StateGraph로 실행한다.
+langgraph>=0.6,<2
 holidays==0.106
 # 홈 화면 Agent의 자유 조회(Text-to-SQL). 없어도 나머지 기능은 동작한다.
 llama-index-core==0.14.25

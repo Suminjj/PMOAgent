@@ -23,7 +23,7 @@ import time
 from datetime import datetime
 
 COLORS = {"USER": "97", "ROUTER": "95", "PLANNING": "95", "AGENT": "96", "LLM": "94", "TOOL CALL": "92",
-          "GUARD": "93", "SIMULATE": "96", "SELF-CORRECT": "93", "VERIFY": "92", "SAVE": "92", "REQUEST": "96", "DONE": "97",
+          "GUARD": "93", "SIMULATE": "96", "SELF-CORRECT": "93", "VERIFY": "92", "SAVE": "92", "REQUEST": "96", "DONE": "97", "GRAPH": "95",
           "ERROR": "91"}
 WIDTH = 12
 _ready = False

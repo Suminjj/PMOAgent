@@ -46,7 +46,7 @@ python -m streamlit run app.py
 도구 호출(입력·결과)·가드레일·답변 검사·확인 카드·저장이 앱을 실행한 PowerShell 창에 한 줄씩 나옵니다(화면에는 보이지 않음, 기본 꺼짐).
 태그: USER · ROUTER · PLANNING(실행 계획, LLM 분류면 규칙 후보와 비교) · AGENT · LLM · TOOL CALL ·
 SIMULATE(저장 없이 만든 변경 계획과 단계) · SELF-CORRECT(코드가 입력·답변을 바로잡거나 다시 시킴) · VERIFY(답변 검사 결과) ·
-GUARD(사전 검사) · SAVE · DONE.
+GUARD(사전 검사) · SAVE · DONE · GRAPH(LangGraph가 지나간 노드 경로).
 도구 입력에 인력 이름이 찍히므로 실제 데이터 DB에서는 켜지 않습니다.
 
 ```powershell
@@ -218,6 +218,7 @@ LLM이 없어도 다른 화면 기능은 그대로 동작합니다.
 
    입력창 위의 **업무 카테고리**는 기본이 **자동 배정**(v3.1 라우터)입니다. 질문을 보고 맞는 전문 Agent(인력관리·구매계약·검수)를
    자동으로 고르고, "이가상 투입 과제랑 계약 종료일 알려줘"처럼 여러 업무를 한 번에 물으면 Agent를 차례로 불러 답을 합칩니다.
+   이 흐름은 LangGraph StateGraph(`pmo/agent/graph.py`)로 실행합니다(`langgraph`는 `requirements.txt`에 포함).
    답변 위에 어느 Agent가 처리했는지 표시됩니다. 카테고리를 직접 고르면 그 Agent만 필요한 도구와 업무 지침(`agent_skills/`)으로 답하고,
    맡은 업무 밖의 질문이면 다른 카테고리를 고르라고 안내합니다. 터미널에서는 `--agent contract`처럼 지정합니다.
 
@@ -316,6 +317,7 @@ Streamlit AppTest로 미리보기·취소·저장·수정·재실행 흐름을 �
 - `pmo/contracts.py`: 계약 검증과 알림 기준 계산
 - `pmo/tools.py`: Agent가 호출하는 도구 계층
 - `pmo/agent/`: LLM 연결(Ollama), 시스템 프롬프트, Agent 실행 루프, 카테고리별 전문 Agent(`agents.py`)
+- `pmo/agent/graph.py`: 자동 배정(라우터) 처리 흐름을 LangGraph StateGraph로 실행 — prepare → route → clarify 또는 agent(전문 Agent 하나씩 반복) → merge → reroute → finalize
 - `scripts/ask.py`: 터미널에서 자연어 질문
 - `pmo/harness.py`, `scripts/run_evals.py`, `evals/`: 평가 하네스
 - `pmo/demo.py`, `scripts/seed_demo.py`: 가상 데이터
