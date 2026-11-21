@@ -63,7 +63,7 @@ def test_agent_sees_prepare_and_query_tools():
 
 def test_name_and_title_are_resolved_to_person(service):
     plan = build_plan(service, "account_id", {"person_id": "이가상 차장", "account_id": "lee.fake"})
-    assert "DEMO-002" in plan["rows"][0]["현재"]
+    assert plan["params"]["person"]["id"] == "DEMO-002" and plan["rows"][0]["현재"].startswith("이가상")
 
 
 def test_ambiguous_or_missing_targets_ask_instead_of_planning(service):
